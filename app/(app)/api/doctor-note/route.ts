@@ -64,7 +64,7 @@ Return ONLY JSON in the exact format specified in the system message.
 `;
 
         const response = await openai.responses.create({
-            model: "gpt-4.1-mini",
+            model: "gpt-4o-mini",
             input: [
                 {
                     role: "system",
