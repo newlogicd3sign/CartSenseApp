@@ -11,6 +11,20 @@ import {
     addDoc,
     serverTimestamp,
 } from "firebase/firestore";
+import {
+    ArrowLeft,
+    Flame,
+    Beef,
+    Wheat,
+    Droplet,
+    ShoppingCart,
+    ChefHat,
+    Users,
+    CheckCircle,
+    Clock,
+    ExternalLink,
+    Bookmark,
+} from "lucide-react";
 
 type Ingredient = {
     name: string;
@@ -18,14 +32,12 @@ type Ingredient = {
     category?: string;
     aisle?: string;
     price?: number;
-    // Kroger enrichment (all optional)
     krogerProductId?: string;
     productName?: string;
     productImageUrl?: string;
     productSize?: string;
     productAisle?: string;
 };
-
 
 type SavedMeal = {
     id: string;
@@ -43,6 +55,7 @@ type SavedMeal = {
     steps: string[];
     prompt?: string | null;
     savedAt?: any;
+    imageUrl?: string;
 };
 
 export default function SavedMealDetailPage() {
@@ -58,8 +71,9 @@ export default function SavedMealDetailPage() {
 
     const [addingToList, setAddingToList] = useState(false);
     const [addMessage, setAddMessage] = useState<string | null>(null);
+    const [selectedIngredients, setSelectedIngredients] = useState<Set<number>>(new Set());
+    const [krogerConnected, setKrogerConnected] = useState(false);
 
-    // Auth
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
             if (!firebaseUser) {
@@ -68,13 +82,25 @@ export default function SavedMealDetailPage() {
             }
 
             setUser(firebaseUser);
+
+            // Fetch user prefs to check Kroger connection
+            try {
+                const userRef = doc(db, "users", firebaseUser.uid);
+                const userSnap = await getDoc(userRef);
+                if (userSnap.exists()) {
+                    const data = userSnap.data();
+                    setKrogerConnected(Boolean(data.krogerConnected));
+                }
+            } catch (err) {
+                console.error("Error loading user prefs", err);
+            }
+
             setLoadingUser(false);
         });
 
         return () => unsub();
     }, [router]);
 
-    // Load saved meal from Firestore
     useEffect(() => {
         const fetchMeal = async () => {
             if (!user) return;
@@ -102,16 +128,49 @@ export default function SavedMealDetailPage() {
         fetchMeal();
     }, [user, mealId]);
 
+    // Initialize all ingredients as selected when meal loads
+    useEffect(() => {
+        if (meal) {
+            setSelectedIngredients(new Set(meal.ingredients.map((_, idx) => idx)));
+        }
+    }, [meal]);
+
+    const toggleIngredient = (idx: number) => {
+        setSelectedIngredients((prev) => {
+            const newSet = new Set(prev);
+            if (newSet.has(idx)) {
+                newSet.delete(idx);
+            } else {
+                newSet.add(idx);
+            }
+            return newSet;
+        });
+    };
+
+    const toggleAllIngredients = () => {
+        if (!meal) return;
+        if (selectedIngredients.size === meal.ingredients.length) {
+            setSelectedIngredients(new Set());
+        } else {
+            setSelectedIngredients(new Set(meal.ingredients.map((_, idx) => idx)));
+        }
+    };
+
     const handleAddToShoppingList = async () => {
         if (!user || !meal) return;
+        if (selectedIngredients.size === 0) {
+            setAddMessage("Please select at least one ingredient to add.");
+            return;
+        }
 
         try {
             setAddingToList(true);
             setAddMessage(null);
 
             const itemsCol = collection(db, "shoppingLists", user.uid, "items");
+            const ingredientsToAdd = meal.ingredients.filter((_, idx) => selectedIngredients.has(idx));
 
-            const writes = meal.ingredients.map((ing) =>
+            const writes = ingredientsToAdd.map((ing) =>
                 addDoc(itemsCol, {
                     name: ing.name,
                     quantity: ing.quantity,
@@ -119,22 +178,19 @@ export default function SavedMealDetailPage() {
                     mealName: meal.name,
                     checked: false,
                     createdAt: serverTimestamp(),
-
-                    // NEW: Kroger metadata (all optional)
                     krogerProductId: ing.krogerProductId ?? null,
                     productName: ing.productName ?? null,
                     productImageUrl: ing.productImageUrl ?? null,
                     productSize: ing.productSize ?? null,
                     productAisle: ing.productAisle ?? null,
                     price: typeof ing.price === "number" ? ing.price : null,
-                }),
+                })
             );
-
 
             await Promise.all(writes);
 
             setAddMessage(
-                `Added ${meal.ingredients.length} items to your shopping list.`,
+                `Added ${ingredientsToAdd.length} item${ingredientsToAdd.length !== 1 ? "s" : ""} to your shopping list.`
             );
         } catch (err) {
             console.error("Error adding to shopping list", err);
@@ -148,280 +204,273 @@ export default function SavedMealDetailPage() {
         const d = ts?.toDate?.() || new Date();
         const date = d.toLocaleDateString([], { month: "long", day: "numeric" });
         const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-        return `${date} • ${time}`;
+        return `${date} at ${time}`;
     };
 
     if (loadingUser || loadingMeal) {
         return (
-            <div style={{ padding: "2rem" }}>
-                <p>Loading your saved meal…</p>
+            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
+                <div className="text-center">
+                    <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
+                    <p className="text-gray-500">Loading your meal...</p>
+                </div>
             </div>
         );
     }
 
     if (!user) {
         return (
-            <div style={{ padding: "2rem" }}>
-                <p>Redirecting to login…</p>
+            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
+                <p className="text-gray-500">Redirecting to login...</p>
             </div>
         );
     }
 
     if (!meal) {
         return (
-            <div style={{ padding: "2rem" }}>
-                <p>Couldn’t find that saved meal.</p>
-                <button
-                    onClick={() => router.push("/saved-meals")}
-                    style={{
-                        marginTop: "1rem",
-                        padding: "0.5rem 1rem",
-                        borderRadius: "999px",
-                        border: "1px solid #d1d5db",
-                        fontSize: "0.85rem",
-                        background: "#f9fafb",
-                    }}
-                >
-                    Back to saved meals
-                </button>
+            <div className="min-h-screen bg-[#f8fafb] px-6 py-8">
+                <div className="max-w-2xl mx-auto text-center">
+                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Bookmark className="w-8 h-8 text-gray-400" />
+                    </div>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Meal not found</h3>
+                    <p className="text-gray-500 mb-6">We couldn't find that saved meal.</p>
+                    <button
+                        onClick={() => router.push("/saved-meals")}
+                        className="px-6 py-3 bg-[#4A90E2]/10 text-[#4A90E2] rounded-xl hover:bg-[#4A90E2]/20 transition-colors"
+                    >
+                        Back to saved meals
+                    </button>
+                </div>
             </div>
         );
     }
 
-    const netCarbs = meal.macros.carbs;
-
     return (
-        <div style={{ padding: "2rem", maxWidth: 800 }}>
-            <button
-                onClick={() => router.push("/saved-meals")}
-                style={{
-                    marginBottom: "1.5rem",
-                    padding: "0.4rem 0.9rem",
-                    borderRadius: "999px",
-                    border: "1px solid #d1d5db",
-                    fontSize: "0.85rem",
-                    background: "#f9fafb",
-                }}
-            >
-                ← Back to saved meals
-            </button>
-
-            <p style={{ fontSize: "0.8rem", textTransform: "uppercase" }}>
-                {meal.mealType}
-            </p>
-            <h1 style={{ margin: "0.25rem 0 0.5rem" }}>{meal.name}</h1>
-            <p style={{ fontSize: "0.95rem", marginBottom: "0.75rem" }}>
-                {meal.description}
-            </p>
-
-            {meal.savedAt && (
-                <p
-                    style={{
-                        fontSize: "0.85rem",
-                        color: "#6b7280",
-                        marginBottom: "0.75rem",
-                    }}
-                >
-                    Saved {formatSavedAt(meal.savedAt)}
-                </p>
-            )}
-
-            {/* Macros row */}
-            <div
-                style={{
-                    display: "flex",
-                    gap: "1rem",
-                    fontSize: "0.85rem",
-                    marginBottom: "1rem",
-                }}
-            >
-                <span>🔥 {meal.macros.calories} kcal</span>
-                <span>🥩 {meal.macros.protein}g protein</span>
-                <span>🍚 {meal.macros.carbs}g carbs</span>
-                <span>🫒 {meal.macros.fat}g fat</span>
+        <div className="min-h-screen bg-[#f8fafb]">
+            {/* Header with Back Button */}
+            <div className="bg-white border-b border-gray-100 px-6 py-4 sticky top-0 z-20">
+                <div className="max-w-3xl mx-auto">
+                    <button
+                        onClick={() => router.push("/saved-meals")}
+                        className="flex items-center gap-2 text-gray-500 hover:text-gray-700 transition-colors"
+                    >
+                        <ArrowLeft className="w-5 h-5" />
+                        <span className="text-sm">Back to saved meals</span>
+                    </button>
+                </div>
             </div>
 
-            {/* Prompt context */}
-            {meal.prompt && (
-                <div
-                    style={{
-                        marginBottom: "1.5rem",
-                        padding: "0.75rem 1rem",
-                        background: "#f3f4f6",
-                        borderRadius: "8px",
-                        fontSize: "0.9rem",
-                    }}
-                >
-                    <strong>Your original request:</strong>
-                    <br />
-                    {meal.prompt}
-                </div>
-            )}
-
-            {/* Nutrition per serving */}
-            <div
-                style={{
-                    borderTop: "1px solid #e5e7eb",
-                    paddingTop: "1rem",
-                    marginTop: "0.5rem",
-                }}
-            >
-                <h3 style={{ marginBottom: "0.5rem" }}>Nutrition per serving</h3>
-                <p style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>
-                    Servings: {meal.servings}
-                </p>
-                <div
-                    style={{
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: "1.5rem",
-                        fontSize: "0.9rem",
-                    }}
-                >
-                    <div>
-                        <div
-                            style={{
-                                fontSize: "1.3rem",
-                                fontWeight: 600,
-                            }}
-                        >
-                            {meal.macros.calories}
+            {/* Hero Section - Image Left, Content Right */}
+            <div className="px-6 py-6">
+                <div className="max-w-3xl mx-auto">
+                    <div className="bg-white rounded-2xl border border-gray-100 p-4 flex gap-4">
+                        {/* Thumbnail - Left */}
+                        <div className="w-24 h-24 sm:w-32 sm:h-32 flex-shrink-0 bg-gray-100 rounded-xl overflow-hidden">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                                src={meal.imageUrl ?? "https://placehold.co/256x256/e5e7eb/9ca3af?text=Meal"}
+                                alt={meal.name}
+                                className="w-full h-full object-cover"
+                            />
                         </div>
-                        <div>kcal</div>
-                    </div>
-                    <div>
-                        <div>{meal.macros.protein}g</div>
-                        <div>Protein</div>
-                    </div>
-                    <div>
-                        <div>{netCarbs}g</div>
-                        <div>Net Carbs</div>
-                    </div>
-                    <div>
-                        <div>{meal.macros.fat}g</div>
-                        <div>Fat</div>
+
+                        {/* Content - Right */}
+                        <div className="flex-1 flex flex-col min-w-0">
+                            <div className="flex items-center gap-2 mb-2">
+                                <span className="inline-block px-2 py-0.5 bg-gray-100 rounded-md text-xs font-medium text-gray-600 capitalize">
+                                    {meal.mealType}
+                                </span>
+                                <div className="w-5 h-5 bg-[#4A90E2] rounded-full flex items-center justify-center">
+                                    <Bookmark className="w-2.5 h-2.5 text-white fill-white" />
+                                </div>
+                            </div>
+                            <h1 className="text-lg sm:text-xl font-medium text-gray-900 mb-1 line-clamp-2">{meal.name}</h1>
+                            <p className="text-sm text-gray-500 line-clamp-2">{meal.description}</p>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            {/* Ingredients */}
-            <div
-                style={{
-                    borderTop: "1px solid #e5e7eb",
-                    paddingTop: "1rem",
-                    marginTop: "1rem",
-                }}
-            >
-                <h3 style={{ marginBottom: "0.5rem" }}>
-                    Ingredients ({meal.ingredients.length})
-                </h3>
-                <ul
-                    style={{
-                        listStyle: "none",
-                        padding: 0,
-                        margin: 0,
-                    }}
-                >
-                    {meal.ingredients.map((ing, idx) => (
-                        <li
-                            key={idx}
-                            style={{
-                                display: "flex",
-                                flexDirection: "column",
-                                padding: "0.4rem 0",
-                                borderBottom:
-                                    idx === meal.ingredients.length - 1
-                                        ? "none"
-                                        : "1px solid #f3f4f6",
-                            }}
-                        >
-                            <div style={{ fontWeight: 500 }}>{ing.name}</div>
-                            <div
-                                style={{
-                                    fontSize: "0.85rem",
-                                    color: "#4b5563",
-                                }}
-                            >
-                                {ing.quantity}
-                                {ing.category ? ` • ${ing.category}` : ""}
-                                {ing.aisle ? ` • Aisle ${ing.aisle}` : ""}
-                                {typeof ing.price === "number"
-                                    ? ` • $${ing.price.toFixed(2)}`
-                                    : ""}
+            {/* Content */}
+            <div className="px-6 pb-6">
+                <div className="max-w-3xl mx-auto space-y-6">
+                    {/* Saved At Badge */}
+                    {meal.savedAt && (
+                        <div className="flex items-center gap-2 px-3 py-2 bg-gray-100 rounded-xl w-fit">
+                            <Clock className="w-4 h-4 text-gray-500" />
+                            <span className="text-sm text-gray-600">
+                                Saved {formatSavedAt(meal.savedAt)}
+                            </span>
+                        </div>
+                    )}
+
+                    {/* Original Prompt */}
+                    {meal.prompt && (
+                        <div className="bg-[#4A90E2]/5 border border-[#4A90E2]/20 rounded-2xl p-4">
+                            <p className="text-xs font-medium text-[#4A90E2] uppercase tracking-wide mb-1">
+                                Original request
+                            </p>
+                            <p className="text-sm text-gray-700">{meal.prompt}</p>
+                        </div>
+                    )}
+
+                    {/* Macros Card */}
+                    <div className="bg-white rounded-2xl border border-gray-100 p-5">
+                        <div className="flex items-center gap-2 mb-4">
+                            <Users className="w-5 h-5 text-gray-400" />
+                            <span className="text-sm text-gray-500">{meal.servings} servings</span>
+                        </div>
+                        <div className="grid grid-cols-4 gap-4">
+                            <div className="text-center">
+                                <div className="w-12 h-12 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-2">
+                                    <Flame className="w-6 h-6 text-orange-500" />
+                                </div>
+                                <div className="text-lg font-medium text-gray-900">{meal.macros.calories}</div>
+                                <div className="text-xs text-gray-500">kcal</div>
                             </div>
-                        </li>
-                    ))}
-                </ul>
-            </div>
+                            <div className="text-center">
+                                <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-2">
+                                    <Beef className="w-6 h-6 text-blue-500" />
+                                </div>
+                                <div className="text-lg font-medium text-gray-900">{meal.macros.protein}g</div>
+                                <div className="text-xs text-gray-500">Protein</div>
+                            </div>
+                            <div className="text-center">
+                                <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-2">
+                                    <Wheat className="w-6 h-6 text-amber-500" />
+                                </div>
+                                <div className="text-lg font-medium text-gray-900">{meal.macros.carbs}g</div>
+                                <div className="text-xs text-gray-500">Carbs</div>
+                            </div>
+                            <div className="text-center">
+                                <div className="w-12 h-12 bg-purple-50 rounded-full flex items-center justify-center mx-auto mb-2">
+                                    <Droplet className="w-6 h-6 text-purple-500" />
+                                </div>
+                                <div className="text-lg font-medium text-gray-900">{meal.macros.fat}g</div>
+                                <div className="text-xs text-gray-500">Fat</div>
+                            </div>
+                        </div>
+                    </div>
 
-            {/* Cooking Steps */}
-            <div
-                style={{
-                    borderTop: "1px solid #e5e7eb",
-                    paddingTop: "1rem",
-                    marginTop: "1rem",
-                }}
-            >
-                <h3 style={{ marginBottom: "0.5rem" }}>Cooking Steps</h3>
-                <ol
-                    style={{
-                        paddingLeft: "1.25rem",
-                        margin: 0,
-                    }}
-                >
-                    {meal.steps.map((step, idx) => (
-                        <li
-                            key={idx}
-                            style={{
-                                marginBottom: "0.4rem",
-                                fontSize: "0.9rem",
-                            }}
-                        >
-                            {step}
-                        </li>
-                    ))}
-                </ol>
-            </div>
+                    {/* Ingredients */}
+                    <div className="bg-white rounded-2xl border border-gray-100 p-5">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="font-medium text-gray-900">
+                                Ingredients ({selectedIngredients.size} of {meal.ingredients.length} selected)
+                            </h3>
+                            <button
+                                onClick={toggleAllIngredients}
+                                className="text-sm text-[#4A90E2] hover:underline"
+                            >
+                                {selectedIngredients.size === meal.ingredients.length ? "Deselect all" : "Select all"}
+                            </button>
+                        </div>
+                        <p className="text-xs text-gray-500 mb-4">Uncheck items you already have at home</p>
+                        <ul className="space-y-3">
+                            {meal.ingredients.map((ing, idx) => (
+                                <li
+                                    key={idx}
+                                    onClick={() => toggleIngredient(idx)}
+                                    className={`flex items-center gap-3 pb-3 border-b border-gray-50 last:border-0 last:pb-0 cursor-pointer transition-opacity ${
+                                        !selectedIngredients.has(idx) ? "opacity-50" : ""
+                                    }`}
+                                >
+                                    {krogerConnected && ing.productImageUrl ? (
+                                        <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img
+                                                src={ing.productImageUrl}
+                                                alt={ing.productName || ing.name}
+                                                className="w-full h-full object-cover"
+                                            />
+                                        </div>
+                                    ) : null}
+                                    <div className="flex-1 min-w-0">
+                                        <div className={`font-medium ${selectedIngredients.has(idx) ? "text-gray-900" : "text-gray-500 line-through"}`}>{ing.name}</div>
+                                        <div className="text-sm text-gray-500">
+                                            {ing.quantity}
+                                            {ing.category && ` • ${ing.category}`}
+                                            {krogerConnected && ing.productAisle && ` • ${ing.productAisle}`}
+                                            {krogerConnected && typeof ing.price === "number" && (
+                                                <span className="text-[#4A90E2]"> • ${ing.price.toFixed(2)}</span>
+                                            )}
+                                        </div>
+                                        {krogerConnected && ing.krogerProductId && (
+                                            <a
+                                                href={`https://www.kroger.com/p/${ing.krogerProductId}`}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                onClick={(e) => e.stopPropagation()}
+                                                className="inline-flex items-center gap-1 text-xs text-[#4A90E2] mt-1 hover:underline"
+                                            >
+                                                View at Kroger
+                                                <ExternalLink className="w-3 h-3" />
+                                            </a>
+                                        )}
+                                    </div>
+                                    <div className="flex-shrink-0">
+                                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+                                            selectedIngredients.has(idx)
+                                                ? "bg-[#4A90E2] border-[#4A90E2]"
+                                                : "border-gray-300 bg-white"
+                                        }`}>
+                                            {selectedIngredients.has(idx) && (
+                                                <CheckCircle className="w-4 h-4 text-white" />
+                                            )}
+                                        </div>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
 
-            {/* Actions */}
-            <div
-                style={{
-                    borderTop: "1px solid #e5e7eb",
-                    paddingTop: "1rem",
-                    marginTop: "1rem",
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: "0.5rem",
-                }}
-            >
-                <button
-                    onClick={handleAddToShoppingList}
-                    disabled={addingToList}
-                    style={{
-                        padding: "0.4rem 0.9rem",
-                        borderRadius: "999px",
-                        border: "1px solid #111827",
-                        fontSize: "0.85rem",
-                        opacity: addingToList ? 0.7 : 1,
-                        cursor: addingToList ? "default" : "pointer",
-                    }}
-                >
-                    {addingToList
-                        ? "Adding…"
-                        : `Add ${meal.ingredients.length} items to shopping list`}
-                </button>
-            </div>
+                    {/* Cooking Steps */}
+                    <div className="bg-white rounded-2xl border border-gray-100 p-5">
+                        <div className="flex items-center gap-2 mb-4">
+                            <ChefHat className="w-5 h-5 text-gray-400" />
+                            <h3 className="font-medium text-gray-900">Cooking Steps</h3>
+                        </div>
+                        <ol className="space-y-4">
+                            {meal.steps.map((step, idx) => (
+                                <li key={idx} className="flex gap-4">
+                                    <div className="w-7 h-7 bg-[#4A90E2]/10 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-medium text-[#4A90E2]">
+                                        {idx + 1}
+                                    </div>
+                                    <p className="text-gray-600 text-sm pt-1">{step}</p>
+                                </li>
+                            ))}
+                        </ol>
+                    </div>
 
-            {addMessage && (
-                <p
-                    style={{
-                        marginTop: "0.75rem",
-                        fontSize: "0.85rem",
-                    }}
-                >
-                    {addMessage}
-                </p>
-            )}
+                    {/* Action Button */}
+                    <button
+                        onClick={handleAddToShoppingList}
+                        disabled={addingToList || selectedIngredients.size === 0}
+                        className="w-full py-4 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white rounded-2xl shadow-lg hover:shadow-xl transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                        {addingToList ? (
+                            <>
+                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                <span>Adding...</span>
+                            </>
+                        ) : (
+                            <>
+                                <ShoppingCart className="w-5 h-5" />
+                                <span>Add {selectedIngredients.size} item{selectedIngredients.size !== 1 ? "s" : ""} to shopping list</span>
+                            </>
+                        )}
+                    </button>
+
+                    {/* Success Message */}
+                    {addMessage && (
+                        <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                            <CheckCircle className="w-5 h-5 text-emerald-500" />
+                            <span className="text-sm text-emerald-700">{addMessage}</span>
+                        </div>
+                    )}
+                </div>
+            </div>
         </div>
     );
 }

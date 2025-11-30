@@ -1,24 +1,18 @@
 // app/api/meals/route.ts
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import { randomUUID } from "crypto";
+import { randomUUID, createHash } from "crypto";
 import { searchKrogerProduct } from "@/lib/kroger";
 import { adminDb } from "@/lib/firebaseAdmin";
-import {
-    collection,
-    query,
-    orderBy,
-    limit,
-    getDocs,
-    doc,
-    getDoc,
-} from "firebase/firestore";
+import { FieldValue } from "firebase-admin/firestore";
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY, // ✅ FIXED: process.env.OPENAI_API_KEY
 });
 
 const ENABLE_KROGER = process.env.ENABLE_KROGER_INTEGRATION === "true";
+const FREE_TIER_MONTHLY_LIMIT = 10;
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 // ---------- Types ----------
 
@@ -357,9 +351,11 @@ async function enrichMealsWithKroger(meals: Meal[]): Promise<Meal[]> {
     return [...enrichedMeals, ...meals.slice(MAX_MEALS_WITH_PRODUCTS)];
 }
 
-// ---------- Image generation (hero images) ----------
+// ---------- Image generation (hero images) with Firestore caching ----------
 
 const MAX_MEALS_WITH_IMAGES = 3;
+const IMAGE_CACHE_COLLECTION = "mealImageCache";
+const IMAGE_CACHE_TTL_DAYS = 30; // Cache images for 30 days
 
 function buildMealImagePrompt(meal: Meal): string {
     const ingredientNames = meal.ingredients.map((i) => i.name).join(", ");
@@ -374,6 +370,70 @@ Style: bright natural lighting, top-down angle, realistic, appetizing, no text, 
 `.trim();
 }
 
+// Generate a stable cache key based on meal name and top ingredients
+function getMealImageCacheKey(meal: Meal): string {
+    const topIngredients = meal.ingredients
+        .slice(0, 5)
+        .map((i) => i.name.toLowerCase().trim())
+        .sort()
+        .join(",");
+    const keySource = `${meal.name.toLowerCase().trim()}|${meal.mealType}|${topIngredients}`;
+    return createHash("sha256").update(keySource).digest("hex").slice(0, 32);
+}
+
+// Check Firestore cache for existing image
+async function getCachedImage(cacheKey: string): Promise<string | null> {
+    try {
+        const docRef = adminDb.collection(IMAGE_CACHE_COLLECTION).doc(cacheKey);
+        const snap = await docRef.get();
+
+        if (!snap.exists) {
+            return null;
+        }
+
+        const data = snap.data() as { imageUrl?: string; createdAt?: any } | undefined;
+        if (!data?.imageUrl) {
+            return null;
+        }
+
+        // Check if cache is expired
+        if (data.createdAt) {
+            const createdAt = typeof data.createdAt.toDate === "function"
+                ? data.createdAt.toDate()
+                : new Date(data.createdAt);
+            const ageMs = Date.now() - createdAt.getTime();
+            const maxAgeMs = IMAGE_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000;
+
+            if (ageMs > maxAgeMs) {
+                console.log(`[MEALS] Cache expired for key ${cacheKey}`);
+                return null;
+            }
+        }
+
+        console.log(`[MEALS] Cache HIT for image key ${cacheKey}`);
+        return data.imageUrl;
+    } catch (err) {
+        console.error("[MEALS] Error checking image cache:", err);
+        return null;
+    }
+}
+
+// Store generated image in Firestore cache
+async function cacheImage(cacheKey: string, imageUrl: string, mealName: string): Promise<void> {
+    try {
+        const docRef = adminDb.collection(IMAGE_CACHE_COLLECTION).doc(cacheKey);
+        await docRef.set({
+            imageUrl,
+            mealName,
+            createdAt: FieldValue.serverTimestamp(),
+        });
+        console.log(`[MEALS] Cached image for "${mealName}" with key ${cacheKey}`);
+    } catch (err) {
+        console.error("[MEALS] Error caching image:", err);
+        // Non-blocking, continue even if cache write fails
+    }
+}
+
 async function generateImageForMeal(meal: Meal): Promise<string | undefined> {
     if (!process.env.OPENAI_API_KEY) {
         console.warn("⚠️ No OPENAI_API_KEY set, skipping image generation");
@@ -382,13 +442,14 @@ async function generateImageForMeal(meal: Meal): Promise<string | undefined> {
 
     try {
         const prompt = buildMealImagePrompt(meal);
-        console.log("[MEALS] Generating image for meal:", meal.name);
+        console.log("[MEALS] Generating thumbnail image for meal:", meal.name);
 
+        // Using DALL-E 2 with 256x256 for much lower cost (~$0.016 vs $0.04-0.08 for DALL-E 3)
         const result = await openai.images.generate({
-            model: "gpt-image-1",
+            model: "dall-e-2",
             prompt,
             n: 1,
-            size: "1024x1024",
+            size: "256x256",
         });
 
         const url = result.data?.[0]?.url;
@@ -397,7 +458,7 @@ async function generateImageForMeal(meal: Meal): Promise<string | undefined> {
             return undefined;
         }
 
-        console.log("[MEALS] Got image URL for meal:", meal.name, url);
+        console.log("[MEALS] Got thumbnail URL for meal:", meal.name, url);
         return url;
     } catch (err: any) {
         console.error("[MEALS] Error generating image for meal:", meal.name);
@@ -407,16 +468,40 @@ async function generateImageForMeal(meal: Meal): Promise<string | undefined> {
     }
 }
 
+// Get or generate image for a meal (with caching)
+async function getOrGenerateImage(meal: Meal): Promise<string | undefined> {
+    const cacheKey = getMealImageCacheKey(meal);
+
+    // Check cache first
+    const cachedUrl = await getCachedImage(cacheKey);
+    if (cachedUrl) {
+        return cachedUrl;
+    }
+
+    // Generate new image
+    const imageUrl = await generateImageForMeal(meal);
+
+    // Cache the result (non-blocking)
+    if (imageUrl) {
+        cacheImage(cacheKey, imageUrl, meal.name).catch(() => {
+            // Ignore cache write errors
+        });
+    }
+
+    return imageUrl;
+}
+
 async function attachImagesToMeals(meals: Meal[]): Promise<Meal[]> {
     if (meals.length === 0) return meals;
 
     const count = Math.min(MAX_MEALS_WITH_IMAGES, meals.length);
     console.log(
-        `[MEALS] Attaching hero images to first ${count} meal(s) (if possible)`,
+        `[MEALS] Attaching hero images to first ${count} meal(s) in PARALLEL with caching`,
     );
 
     const limitedMeals = meals.slice(0, count);
 
+    // Generate all images in parallel (with caching)
     const mealsWithImages = await Promise.all(
         limitedMeals.map(async (meal, index) => {
             if (meal.imageUrl) {
@@ -427,10 +512,10 @@ async function attachImagesToMeals(meals: Meal[]): Promise<Meal[]> {
                 return meal;
             }
 
-            let imageUrl = await generateImageForMeal(meal);
+            let imageUrl = await getOrGenerateImage(meal);
 
             if (!imageUrl) {
-                imageUrl = `https://placehold.co/1024x600/cccccc/555555?text=${encodeURIComponent(
+                imageUrl = `https://placehold.co/256x256/cccccc/555555?text=${encodeURIComponent(
                     meal.name,
                 )}`;
                 console.log(
@@ -458,9 +543,8 @@ async function loadUserHistoryForModel(
 
     try {
         console.log("[MEALS] Loading user history for uid:", uid);
-        const eventsRef = collection(adminDb, "userEvents", uid, "events");
-        const q = query(eventsRef, orderBy("createdAt", "desc"), limit(50));
-        const snap = await getDocs(q);
+        const eventsRef = adminDb.collection("userEvents").doc(uid).collection("events");
+        const snap = await eventsRef.orderBy("createdAt", "desc").limit(50).get();
 
         const events: HistoryEventForModel[] = snap.docs.map((docSnap) => {
             const d = docSnap.data() as RawUserEvent;
@@ -500,14 +584,15 @@ async function loadDoctorInstructions(
 
     try {
         console.log("[MEALS] Loading doctor instructions for uid:", uid);
-        const userRef = doc(adminDb, "users", uid);
-        const snap = await getDoc(userRef);
-        if (!snap.exists()) {
+        const userRef = adminDb.collection("users").doc(uid);
+        const snap = await userRef.get();
+        if (!snap.exists) {
             console.log("[MEALS]  -> No user doc found for doctor instructions");
             return null;
         }
 
-        const data = snap.data() as { doctorInstructions?: DoctorInstructions };
+        const data = snap.data() as { doctorInstructions?: DoctorInstructions } | undefined;
+        if (!data) return null;
         const docInst = data.doctorInstructions;
 
         if (!docInst) {
@@ -759,10 +844,71 @@ export async function POST(request: Request) {
                 {
                     error: "NOT_ALLOWED",
                     message:
-                        "CartSense can’t respond to this request. Try asking for meal ideas, recipes, or grocery help instead.",
+                        "CartSense can't respond to this request. Try asking for meal ideas, recipes, or grocery help instead.",
                 },
                 { status: 400 },
             );
+        }
+
+        // Check monthly prompt limit for free users
+        let monthlyPromptCount = 0;
+        let promptPeriodStart: Date | null = null;
+        let needsReset = false;
+
+        if (uid) {
+            const userRef = adminDb.collection("users").doc(uid);
+            const userSnap = await userRef.get();
+            if (userSnap.exists) {
+                const userData = userSnap.data() as {
+                    monthlyPromptCount?: number;
+                    promptPeriodStart?: any;
+                    isPremium?: boolean;
+                } | undefined;
+
+                if (userData) {
+                    const isPremium = userData.isPremium ?? false;
+                    monthlyPromptCount = userData.monthlyPromptCount ?? 0;
+
+                    // Get the period start date
+                    if (userData.promptPeriodStart) {
+                        if (typeof userData.promptPeriodStart.toDate === "function") {
+                            promptPeriodStart = userData.promptPeriodStart.toDate();
+                        } else if (userData.promptPeriodStart instanceof Date) {
+                            promptPeriodStart = userData.promptPeriodStart;
+                        }
+                    }
+
+                    // Check if period is older than 30 days and needs reset
+                    const now = new Date();
+                    if (!promptPeriodStart || (now.getTime() - promptPeriodStart.getTime()) >= THIRTY_DAYS_MS) {
+                        console.log("[MEALS] Resetting monthly prompt count - period expired or not set");
+                        needsReset = true;
+                        monthlyPromptCount = 0;
+                        promptPeriodStart = now;
+                    }
+
+                    // Check limit for non-premium users
+                    if (!isPremium && monthlyPromptCount >= FREE_TIER_MONTHLY_LIMIT) {
+                        console.warn("[MEALS] User has reached monthly free tier limit:", uid);
+
+                        // Calculate days until reset
+                        const resetDate = promptPeriodStart ? new Date(promptPeriodStart.getTime() + THIRTY_DAYS_MS) : null;
+                        const daysUntilReset = resetDate ? Math.ceil((resetDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)) : 30;
+
+                        return NextResponse.json(
+                            {
+                                error: "PROMPT_LIMIT_REACHED",
+                                message: `You've used all ${FREE_TIER_MONTHLY_LIMIT} free meal generations for this month. Your limit resets in ${daysUntilReset} day${daysUntilReset !== 1 ? "s" : ""}.`,
+                                monthlyPromptCount,
+                                monthlyPromptLimit: FREE_TIER_MONTHLY_LIMIT,
+                                promptPeriodStart: promptPeriodStart?.toISOString() ?? null,
+                                daysUntilReset,
+                            },
+                            { status: 403 },
+                        );
+                    }
+                }
+            }
         }
 
         // 🔍 Load user history (learning profile input)
@@ -802,6 +948,38 @@ export async function POST(request: Request) {
 
         console.log("[MEALS] Final response meals:", meals.length);
 
+        // Increment monthly prompt count after successful generation
+        let newMonthlyPromptCount = monthlyPromptCount;
+        if (uid && meals.length > 0) {
+            try {
+                const userRef = adminDb.collection("users").doc(uid);
+
+                if (needsReset) {
+                    // Reset period and set count to 1
+                    await userRef.update({
+                        monthlyPromptCount: 1,
+                        promptPeriodStart: FieldValue.serverTimestamp(),
+                    });
+                    newMonthlyPromptCount = 1;
+                    console.log("[MEALS] Reset period and set monthly prompt count to 1 for user:", uid);
+                } else {
+                    // Just increment
+                    await userRef.update({
+                        monthlyPromptCount: FieldValue.increment(1),
+                    });
+                    newMonthlyPromptCount = monthlyPromptCount + 1;
+                    console.log("[MEALS] Incremented monthly prompt count for user:", uid, "->", newMonthlyPromptCount);
+                }
+            } catch (err) {
+                console.error("[MEALS] Error updating monthly prompt count:", err);
+            }
+        }
+
+        // Calculate days until reset for response
+        const now = new Date();
+        const resetDate = promptPeriodStart ? new Date(promptPeriodStart.getTime() + THIRTY_DAYS_MS) : null;
+        const daysUntilReset = resetDate ? Math.max(0, Math.ceil((resetDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000))) : 30;
+
         return NextResponse.json({
             meals,
             meta: {
@@ -810,6 +988,10 @@ export async function POST(request: Request) {
                     doctorContext?.blockedIngredients ?? [],
                 blockedGroupsFromDoctor:
                     doctorContext?.blockedFoodGroups ?? [],
+                monthlyPromptCount: newMonthlyPromptCount,
+                monthlyPromptLimit: FREE_TIER_MONTHLY_LIMIT,
+                promptPeriodStart: promptPeriodStart?.toISOString() ?? null,
+                daysUntilReset,
             },
         });
     } catch (err) {

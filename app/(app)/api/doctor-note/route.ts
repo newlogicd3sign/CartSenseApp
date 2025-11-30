@@ -84,10 +84,8 @@ Return ONLY JSON in the exact format specified in the system message.
                         },
                         {
                             type: "input_image",
-                            image_url: {
-                                // data URL from client
-                                url: imageDataUrl,
-                            },
+                            image_url: imageDataUrl,
+                            detail: "auto",
                         },
                     ],
                 },
@@ -95,17 +93,31 @@ Return ONLY JSON in the exact format specified in the system message.
         });
 
         const firstOutput = response.output[0];
-        const firstContent = firstOutput.content[0];
 
-        if (firstContent.type !== "output_text") {
+        if (!firstOutput || firstOutput.type !== "message" || !("content" in firstOutput)) {
             return NextResponse.json(
                 { error: "Unexpected OpenAI response format" },
                 { status: 500 }
             );
         }
 
-        const rawText = firstContent.text;
+        const firstContent = firstOutput.content[0];
+
+        if (!firstContent || firstContent.type !== "output_text") {
+            return NextResponse.json(
+                { error: "Unexpected OpenAI response format" },
+                { status: 500 }
+            );
+        }
+
+        let rawText = firstContent.text;
         let parsed: DoctorNoteParsed;
+
+        // Strip markdown code blocks if present (```json ... ``` or ``` ... ```)
+        rawText = rawText.trim();
+        if (rawText.startsWith("```")) {
+            rawText = rawText.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
+        }
 
         try {
             parsed = JSON.parse(rawText) as DoctorNoteParsed;
