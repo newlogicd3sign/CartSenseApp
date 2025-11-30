@@ -6,7 +6,31 @@ import { auth, db } from "@/lib/firebaseClient";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { getRandomAccentColor, getRandomAccentColorExcluding, type AccentColor } from "@/lib/utils";
-import { Sparkles, Send, AlertCircle } from "lucide-react";
+import { Sparkles, AlertCircle, UtensilsCrossed, ChefHat, Soup, Pizza, Salad, Sandwich, Croissant, Apple, Carrot, Beef, Fish, Citrus, Drumstick, Wheat, Ham, CookingPot, Hamburger } from "lucide-react";
+
+const foodIcons = [
+    UtensilsCrossed,
+    ChefHat,
+    Soup,
+    Pizza,
+    Salad,
+    Sandwich,
+    Croissant,
+    Apple,
+    Carrot,
+    Beef,
+    Fish,
+    Citrus,
+    Drumstick,
+    Wheat,
+    Ham,
+    CookingPot,
+    Hamburger,
+];
+
+function getRandomFoodIcon() {
+    return foodIcons[Math.floor(Math.random() * foodIcons.length)];
+}
 
 const foodGreetings = [
     "What's cooking today",
@@ -41,9 +65,11 @@ export default function PromptPage() {
     const [accentColor, setAccentColor] = useState<AccentColor>({ primary: "#4A90E2", dark: "#357ABD" });
     const [badgeColor, setBadgeColor] = useState<AccentColor>({ primary: "#a855f7", dark: "#9333ea" });
     const [animateFromSetup, setAnimateFromSetup] = useState(false);
+    const [FoodIcon, setFoodIcon] = useState<typeof UtensilsCrossed>(() => UtensilsCrossed);
 
     useEffect(() => {
         setGreeting(getRandomGreeting());
+        setFoodIcon(() => getRandomFoodIcon());
         const primaryColor = getRandomAccentColor();
         setAccentColor(primaryColor);
         setBadgeColor(getRandomAccentColorExcluding(primaryColor));
@@ -171,7 +197,7 @@ export default function PromptPage() {
                             className="w-full mt-4 py-4 text-white rounded-2xl shadow-lg hover:shadow-xl transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                             style={{ background: `linear-gradient(to right, ${accentColor.primary}, ${accentColor.dark})` }}
                         >
-                            <Send className="w-5 h-5" />
+                            <FoodIcon className="w-5 h-5" />
                             <span>Generate Meals</span>
                         </button>
 

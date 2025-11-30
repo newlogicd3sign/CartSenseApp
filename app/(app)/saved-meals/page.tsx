@@ -24,6 +24,7 @@ import {
     Trash2,
     X,
 } from "lucide-react";
+import { getRandomAccentColor, type AccentColor } from "@/lib/utils";
 
 type Ingredient = {
     name: string;
@@ -63,6 +64,11 @@ export default function SavedMealsPage() {
 
     const [searchQuery, setSearchQuery] = useState("");
     const [mealToDelete, setMealToDelete] = useState<SavedMeal | null>(null);
+    const [accentColor, setAccentColor] = useState<AccentColor>({ primary: "#3b82f6", dark: "#2563eb" });
+
+    useEffect(() => {
+        setAccentColor(getRandomAccentColor());
+    }, []);
 
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, (firebaseUser) => {
@@ -206,7 +212,10 @@ export default function SavedMealsPage() {
                             </p>
                             <button
                                 onClick={() => router.push("/prompt")}
-                                className="px-6 py-3 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white rounded-xl shadow-lg hover:shadow-xl transition-all"
+                                style={{
+                                    background: `linear-gradient(to right, ${accentColor.primary}, ${accentColor.dark})`,
+                                }}
+                                className="px-6 py-3 text-white rounded-xl shadow-lg hover:shadow-xl transition-all"
                             >
                                 Generate new meals
                             </button>

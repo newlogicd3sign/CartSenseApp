@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { auth } from "@/lib/firebaseClient";
 import { signOut } from "firebase/auth";
-import { Search, ShoppingCart, BookmarkCheck, User, LogOut } from "lucide-react";
+import { Search, List, BookmarkCheck, User, LogOut } from "lucide-react";
 import { getRandomAccentColor, type AccentColor } from "@/lib/utils";
 import Image from "next/image";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
@@ -21,7 +21,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     const navItems = [
         { href: "/prompt", label: "Search", icon: Search },
-        { href: "/shopping-list", label: "Shopping List", icon: ShoppingCart },
+        { href: "/shopping-list", label: "Shopping List", icon: List },
         { href: "/saved-meals", label: "Saved Meals", icon: BookmarkCheck },
         { href: "/account", label: "Account", icon: User },
     ];

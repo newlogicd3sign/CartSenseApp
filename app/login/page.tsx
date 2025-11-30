@@ -34,23 +34,20 @@ export default function LoginPage() {
 
     return (
         <div className="min-h-screen bg-[#f8fafb] flex flex-col">
-            {/* Hero Section */}
-            <div className="bg-gradient-to-br from-[#4A90E2] to-[#357ABD] px-6 pt-12 pb-16 text-white">
+            {/* Main Content */}
+            <div className="flex-1 px-6 pt-12 lg:pt-16">
                 <div className="max-w-[428px] mx-auto">
-                    <div className="flex items-center gap-3 mb-6">
-                        <Image src={CartSenseLogo} alt="CartSense" className="h-10 w-auto brightness-0 invert" />
+                    {/* Logo & Header */}
+                    <div className="text-center mb-8">
+                        <Image src={CartSenseLogo} alt="CartSense" className="h-12 w-auto mx-auto mb-6" />
+                        <h1 className="text-2xl lg:text-3xl font-medium text-gray-900 mb-2">Welcome back</h1>
+                        <p className="text-gray-500 text-base">
+                            Sign in to continue your meal planning journey
+                        </p>
                     </div>
-                    <h1 className="text-3xl font-medium mb-2 text-white">Welcome back</h1>
-                    <p className="text-white/80 text-base">
-                        Sign in to continue your meal planning journey
-                    </p>
-                </div>
-            </div>
 
-            {/* Form Section */}
-            <div className="flex-1 -mt-8">
-                <div className="max-w-[428px] mx-auto px-6">
-                    <div className="bg-white rounded-3xl shadow-lg p-6">
+                    {/* Form Card */}
+                    <div className="bg-white rounded-2xl shadow-lg p-6">
                         <form onSubmit={handleLogin} className="space-y-4">
                             {/* Email Input */}
                             <div>
@@ -99,8 +96,8 @@ export default function LoginPage() {
                             {/* Submit Button */}
                             <button
                                 type="submit"
-                                disabled={loading}
-                                className="w-full py-4 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                disabled={loading || !email.trim() || !password}
+                                className="w-full py-4 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                             >
                                 {loading ? (
                                     <>
@@ -134,7 +131,14 @@ export default function LoginPage() {
 
                     {/* Footer Text */}
                     <p className="text-center text-sm text-gray-400 mt-6 px-4">
-                        By signing in, you agree to our Terms of Service and Privacy Policy
+                        By signing in, you agree to our{" "}
+                        <Link href="/terms" className="text-[#4A90E2] hover:underline">
+                            Terms & Conditions
+                        </Link>{" "}
+                        and{" "}
+                        <Link href="/privacy-policy" className="text-[#4A90E2] hover:underline">
+                            Privacy Policy
+                        </Link>
                     </p>
                 </div>
             </div>
