@@ -93,9 +93,17 @@ Return ONLY JSON in the exact format specified in the system message.
         });
 
         const firstOutput = response.output[0];
+
+        if (!firstOutput || firstOutput.type !== "message" || !("content" in firstOutput)) {
+            return NextResponse.json(
+                { error: "Unexpected OpenAI response format" },
+                { status: 500 }
+            );
+        }
+
         const firstContent = firstOutput.content[0];
 
-        if (firstContent.type !== "output_text") {
+        if (!firstContent || firstContent.type !== "output_text") {
             return NextResponse.json(
                 { error: "Unexpected OpenAI response format" },
                 { status: 500 }

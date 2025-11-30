@@ -1,7 +1,6 @@
 // app/(app)/api/kroger/cart/route.ts
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { searchKrogerProduct, type KrogerProductMatch } from "@/lib/kroger";
 
 const TOKEN_URL = process.env.KROGER_TOKEN_URL ?? "https://api-ce.kroger.com/v1/connect/oauth2/token";
@@ -58,7 +57,7 @@ async function refreshKrogerToken(
     const expiresAt = Date.now() + expires_in * 1000;
 
     // Update tokens in Firebase
-    await updateDoc(doc(adminDb, "users", userId), {
+    await adminDb.collection("users").doc(userId).update({
         "krogerTokens.accessToken": access_token,
         "krogerTokens.refreshToken": refresh_token || refreshToken,
         "krogerTokens.expiresAt": expiresAt,
@@ -69,7 +68,7 @@ async function refreshKrogerToken(
 }
 
 async function getValidAccessToken(userId: string): Promise<string | null> {
-    const userDocSnap = await getDoc(doc(adminDb, "users", userId));
+    const userDocSnap = await adminDb.collection("users").doc(userId).get();
     const userData = userDocSnap.data();
 
     if (!userData?.krogerTokens) {
@@ -87,7 +86,7 @@ async function getValidAccessToken(userId: string): Promise<string | null> {
 }
 
 async function getUserDefaultLocationId(userId: string): Promise<string | null> {
-    const userDocSnap = await getDoc(doc(adminDb, "users", userId));
+    const userDocSnap = await adminDb.collection("users").doc(userId).get();
     const userData = userDocSnap.data();
     return userData?.defaultKrogerLocationId || null;
 }
@@ -182,7 +181,7 @@ export async function POST(request: Request) {
             // Check if token is invalid
             if (cartRes.status === 401) {
                 // Mark account as unlinked
-                await updateDoc(doc(adminDb, "users", userId), {
+                await adminDb.collection("users").doc(userId).update({
                     krogerLinked: false,
                 });
 

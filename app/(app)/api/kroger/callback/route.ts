@@ -2,7 +2,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { adminDb } from "@/lib/firebaseAdmin";
-import { doc, setDoc } from "firebase/firestore";
 
 const TOKEN_URL = process.env.KROGER_TOKEN_URL ?? "https://api-ce.kroger.com/v1/connect/oauth2/token";
 const CLIENT_ID = process.env.KROGER_CLIENT_ID!;
@@ -86,8 +85,7 @@ export async function GET(request: Request) {
         // Store tokens in Firebase
         const expiresAt = Date.now() + expires_in * 1000;
 
-        await setDoc(
-            doc(adminDb, "users", userId),
+        await adminDb.collection("users").doc(userId).set(
             {
                 krogerLinked: true,
                 krogerTokens: {

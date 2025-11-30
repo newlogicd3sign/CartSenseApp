@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
 import { onAuthStateChanged, type User } from "firebase/auth";
@@ -116,8 +116,9 @@ type KrogerLocationSearchResult = {
     zipCode: string;
 };
 
-export default function AccountPage() {
+function AccountPageContent() {
     const router = useRouter();
+    const searchParams = useSearchParams();
 
     const [user, setUser] = useState<User | null>(null);
     const [userDoc, setUserDoc] = useState<UserPrefsDoc | null>(null);
@@ -146,7 +147,6 @@ export default function AccountPage() {
 
     const [krogerMessage, setKrogerMessage] = useState<string | null>(null);
     const [krogerMessageType, setKrogerMessageType] = useState<"success" | "error">("success");
-    const searchParams = useSearchParams();
 
     const formatDoctorUpdatedAt = (value?: any) => {
         if (!value) return "";
@@ -1003,5 +1003,22 @@ export default function AccountPage() {
                 </div>
             </div>
         </div>
+    );
+}
+
+export default function AccountPage() {
+    return (
+        <Suspense
+            fallback={
+                <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
+                    <div className="text-center">
+                        <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
+                        <p className="text-gray-500">Loading your account...</p>
+                    </div>
+                </div>
+            }
+        >
+            <AccountPageContent />
+        </Suspense>
     );
 }
