@@ -13,6 +13,17 @@ import {
     orderBy,
     getDoc,
 } from "firebase/firestore";
+import {
+    ShoppingCart,
+    Trash2,
+    ExternalLink,
+    CheckCircle,
+    AlertCircle,
+    X,
+    Link,
+    Clock,
+    ChefHat,
+} from "lucide-react";
 
 type ShoppingItem = {
     id: string;
@@ -60,7 +71,6 @@ export default function ShoppingListPage() {
     const [items, setItems] = useState<ShoppingItem[]>([]);
     const [loadingItems, setLoadingItems] = useState(true);
 
-    // Kroger integration state
     const [krogerLinkStatus, setKrogerLinkStatus] = useState<KrogerLinkStatus>("loading");
     const [addingToKroger, setAddingToKroger] = useState(false);
     const [krogerMessage, setKrogerMessage] = useState<string | null>(null);
@@ -68,7 +78,6 @@ export default function ShoppingListPage() {
     const [krogerResults, setKrogerResults] = useState<EnrichedItem[] | null>(null);
     const [showKrogerResults, setShowKrogerResults] = useState(false);
 
-    // 1️⃣ Auth
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, (firebaseUser) => {
             if (!firebaseUser) {
@@ -83,7 +92,6 @@ export default function ShoppingListPage() {
         return () => unsub();
     }, [router]);
 
-    // Check Kroger link status
     useEffect(() => {
         if (!user) return;
 
@@ -105,7 +113,6 @@ export default function ShoppingListPage() {
         void checkKrogerStatus();
     }, [user]);
 
-    // 2️⃣ Subscribe to shopping list items
     useEffect(() => {
         if (!user) return;
 
@@ -128,13 +135,12 @@ export default function ShoppingListPage() {
                 console.error("Error listening to shopping list", error);
                 setItems([]);
                 setLoadingItems(false);
-            },
+            }
         );
 
         return () => unsub();
     }, [user]);
 
-    // Handle adding all items to Kroger cart
     const handleAddToKrogerCart = async () => {
         if (!user || items.length === 0) return;
 
@@ -143,7 +149,6 @@ export default function ShoppingListPage() {
         setKrogerResults(null);
 
         try {
-            // Send items by name - the API will search for matching Kroger products
             const cartItems = items.map((item) => ({
                 id: item.id,
                 name: item.name,
@@ -171,7 +176,6 @@ export default function ShoppingListPage() {
                 setKrogerMessageType("success");
             }
 
-            // Show results if we have enriched items
             if (data.enrichedItems && data.enrichedItems.length > 0) {
                 setKrogerResults(data.enrichedItems);
                 setShowKrogerResults(true);
@@ -195,7 +199,6 @@ export default function ShoppingListPage() {
         }
     };
 
-    // Helper to get Date from Firestore Timestamp
     const toDate = (ts: unknown): Date => {
         if (ts && typeof ts === "object" && "toDate" in ts && typeof (ts as { toDate: () => Date }).toDate === "function") {
             return (ts as { toDate: () => Date }).toDate();
@@ -203,30 +206,25 @@ export default function ShoppingListPage() {
         return new Date();
     };
 
-    // 3️⃣ Group items by date label
     const grouped: Record<string, ShoppingItem[]> = items.reduce(
         (acc, item) => {
             const ts = toDate(item.createdAt);
-            const dateKey = ts.toDateString(); // ex: "Tue Nov 25 2025"
+            const dateKey = ts.toDateString();
             if (!acc[dateKey]) acc[dateKey] = [];
             acc[dateKey].push(item);
             return acc;
         },
-        {} as Record<string, ShoppingItem[]>,
+        {} as Record<string, ShoppingItem[]>
     );
 
     const sortedDates = Object.keys(grouped).sort(
-        (a, b) => new Date(b).getTime() - new Date(a).getTime(),
+        (a, b) => new Date(b).getTime() - new Date(a).getTime()
     );
-
-    const formatTime = (ts: unknown) => {
-        const d = toDate(ts);
-        return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    };
 
     const formatDate = (ts: unknown) => {
         const d = toDate(ts);
         return d.toLocaleDateString([], {
+            weekday: "long",
             month: "long",
             day: "numeric",
         });
@@ -234,399 +232,285 @@ export default function ShoppingListPage() {
 
     if (loadingUser || loadingItems) {
         return (
-            <div style={{ padding: "2rem" }}>
-                <p>Loading your shopping list…</p>
+            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
+                <div className="text-center">
+                    <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
+                    <p className="text-gray-500">Loading your shopping list...</p>
+                </div>
             </div>
         );
     }
 
     if (!user) {
         return (
-            <div style={{ padding: "2rem" }}>
-                <p>Redirecting to login…</p>
+            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
+                <p className="text-gray-500">Redirecting to login...</p>
             </div>
         );
     }
 
     return (
-        <div style={{ padding: "2rem", maxWidth: 900 }}>
-            <div
-                style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    flexWrap: "wrap",
-                    gap: "1rem",
-                }}
-            >
-                <div>
-                    <h1>Shopping List</h1>
-                    <p style={{ marginTop: "0.5rem", color: "#4b5563", fontSize: "0.95rem" }}>
-                        Items you've added from your CartSense meals.
-                    </p>
-                </div>
+        <div className="min-h-screen bg-[#f8fafb]">
+            {/* Header */}
+            <div className="bg-white border-b border-gray-100 px-6 py-6">
+                <div className="max-w-3xl mx-auto">
+                    <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-[#4A90E2]/10 rounded-xl flex items-center justify-center">
+                                <ShoppingCart className="w-5 h-5 text-[#4A90E2]" />
+                            </div>
+                            <div>
+                                <h1 className="text-xl lg:text-2xl text-gray-900">Shopping List</h1>
+                                <p className="text-sm text-gray-500">
+                                    {items.length} item{items.length !== 1 ? "s" : ""}
+                                </p>
+                            </div>
+                        </div>
 
-                {items.length > 0 && (
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.5rem" }}>
-                        {krogerLinkStatus === "linked" ? (
-                            <button
-                                onClick={() => void handleAddToKrogerCart()}
-                                disabled={addingToKroger}
-                                style={{
-                                    padding: "0.5rem 1rem",
-                                    borderRadius: "999px",
-                                    border: "1px solid #0056a3",
-                                    fontSize: "0.9rem",
-                                    background: "#0056a3",
-                                    color: "#ffffff",
-                                    cursor: addingToKroger ? "default" : "pointer",
-                                    opacity: addingToKroger ? 0.7 : 1,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "0.5rem",
-                                }}
-                            >
-                                {addingToKroger ? "Adding..." : "Add All to Kroger Cart"}
-                            </button>
-                        ) : krogerLinkStatus === "not_linked" ? (
-                            <button
-                                onClick={() => router.push("/account")}
-                                style={{
-                                    padding: "0.5rem 1rem",
-                                    borderRadius: "999px",
-                                    border: "1px solid #d1d5db",
-                                    fontSize: "0.9rem",
-                                    background: "#ffffff",
-                                    color: "#374151",
-                                    cursor: "pointer",
-                                }}
-                            >
-                                Link Kroger to Add to Cart
-                            </button>
-                        ) : null}
-
-                        {krogerMessage && (
-                            <p
-                                style={{
-                                    fontSize: "0.85rem",
-                                    color: krogerMessageType === "success" ? "#059669" : "#b91c1c",
-                                    textAlign: "right",
-                                    maxWidth: 280,
-                                }}
-                            >
-                                {krogerMessage}
-                            </p>
+                        {/* Kroger Actions */}
+                        {items.length > 0 && (
+                            <div className="flex flex-col items-end gap-2">
+                                {krogerLinkStatus === "linked" ? (
+                                    <button
+                                        onClick={() => void handleAddToKrogerCart()}
+                                        disabled={addingToKroger}
+                                        className="px-4 py-2.5 bg-[#0056a3] text-white rounded-xl text-sm font-medium hover:bg-[#004080] transition-colors disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2"
+                                    >
+                                        {addingToKroger ? (
+                                            <>
+                                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                <span>Adding...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <ExternalLink className="w-4 h-4" />
+                                                <span>Add to Kroger Cart</span>
+                                            </>
+                                        )}
+                                    </button>
+                                ) : krogerLinkStatus === "not_linked" ? (
+                                    <button
+                                        onClick={() => router.push("/account")}
+                                        className="px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors flex items-center gap-2"
+                                    >
+                                        <Link className="w-4 h-4" />
+                                        <span>Link Kroger</span>
+                                    </button>
+                                ) : null}
+                            </div>
                         )}
                     </div>
-                )}
+
+                    {/* Kroger Message */}
+                    {krogerMessage && (
+                        <div
+                            className={`mt-4 flex items-center gap-2 p-3 rounded-xl ${
+                                krogerMessageType === "success"
+                                    ? "bg-emerald-50 border border-emerald-200"
+                                    : "bg-red-50 border border-red-200"
+                            }`}
+                        >
+                            {krogerMessageType === "success" ? (
+                                <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0" />
+                            ) : (
+                                <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+                            )}
+                            <span
+                                className={`text-sm ${
+                                    krogerMessageType === "success" ? "text-emerald-700" : "text-red-700"
+                                }`}
+                            >
+                                {krogerMessage}
+                            </span>
+                        </div>
+                    )}
+                </div>
             </div>
 
-            {items.length === 0 ? (
-                <div style={{ marginTop: "1.5rem" }}>
-                    <p>Your shopping list is empty.</p>
-                    <button
-                        onClick={() => router.push("/prompt")}
-                        style={{
-                            marginTop: "1rem",
-                            padding: "0.5rem 1rem",
-                            borderRadius: "999px",
-                            border: "1px solid #d1d5db",
-                            fontSize: "0.85rem",
-                            background: "#f9fafb",
-                        }}
-                    >
-                        Search for meals
-                    </button>
-                </div>
-            ) : (
-                sortedDates.map((dateKey) => {
-                    const sectionItems = grouped[dateKey];
-                    const firstTS = sectionItems[0]?.createdAt;
-
-                    return (
-                        <div
-                            key={dateKey}
-                            style={{
-                                marginTop: "2rem",
-                                border: "1px solid #e5e7eb",
-                                borderRadius: "12px",
-                                overflow: "hidden",
-                            }}
-                        >
-                            {/* Date header */}
-                            <div
-                                style={{
-                                    padding: "0.75rem 1rem",
-                                    background: "#f9fafb",
-                                    borderBottom: "1px solid #e5e7eb",
-                                }}
-                            >
-                                <strong style={{ fontSize: "1rem" }}>
-                                    {formatDate(firstTS)} ({sectionItems.length} items)
-                                </strong>
-                                <div
-                                    style={{
-                                        fontSize: "0.85rem",
-                                        color: "#4b5563",
-                                        marginTop: "0.2rem",
-                                    }}
-                                >
-                                    {formatTime(firstTS)}
-                                </div>
+            {/* Content */}
+            <div className="px-6 py-6">
+                <div className="max-w-3xl mx-auto">
+                    {items.length === 0 ? (
+                        <div className="text-center py-16">
+                            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <ShoppingCart className="w-8 h-8 text-gray-400" />
                             </div>
-
-                            {/* Items in this date group */}
-                            <ul
-                                style={{
-                                    listStyle: "none",
-                                    margin: 0,
-                                    padding: 0,
-                                }}
+                            <h3 className="text-lg font-medium text-gray-900 mb-2">Your list is empty</h3>
+                            <p className="text-gray-500 mb-6">
+                                Add ingredients from meals to start building your shopping list.
+                            </p>
+                            <button
+                                onClick={() => router.push("/prompt")}
+                                className="px-6 py-3 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white rounded-xl shadow-lg hover:shadow-xl transition-all"
                             >
-                                {sectionItems.map((item) => (
-                                    <li
-                                        key={item.id}
-                                        style={{
-                                            padding: "0.75rem 1rem",
-                                            borderBottom: "1px solid #f3f4f6",
-                                            display: "flex",
-                                            justifyContent: "space-between",
-                                            alignItems: "center",
-                                            gap: "0.75rem",
-                                        }}
-                                    >
-                                        <div>
-                                            <div style={{ fontWeight: 500 }}>{item.name}</div>
-                                            <div
-                                                style={{
-                                                    fontSize: "0.85rem",
-                                                    color: "#4b5563",
-                                                }}
-                                            >
-                                                {item.quantity}
-                                                {item.mealName
-                                                    ? ` • from "${item.mealName}"`
-                                                    : ""}
+                                Generate meals
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="space-y-6">
+                            {sortedDates.map((dateKey) => {
+                                const sectionItems = grouped[dateKey];
+                                const firstTS = sectionItems[0]?.createdAt;
+
+                                return (
+                                    <div key={dateKey} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                                        {/* Date Header */}
+                                        <div className="px-5 py-4 bg-gray-50 border-b border-gray-100">
+                                            <div className="flex items-center gap-2">
+                                                <Clock className="w-4 h-4 text-gray-400" />
+                                                <span className="font-medium text-gray-900">
+                                                    {formatDate(firstTS)}
+                                                </span>
+                                                <span className="text-sm text-gray-500">
+                                                    ({sectionItems.length} item{sectionItems.length !== 1 ? "s" : ""})
+                                                </span>
                                             </div>
                                         </div>
 
-                                        <button
-                                            onClick={() => handleRemoveItem(item.id)}
-                                            style={{
-                                                padding: "0.25rem 0.6rem",
-                                                borderRadius: "999px",
-                                                border: "1px solid #ef4444",
-                                                background: "#fef2f2",
-                                                color: "#b91c1c",
-                                                fontSize: "0.8rem",
-                                                whiteSpace: "nowrap",
-                                            }}
-                                        >
-                                            Remove
-                                        </button>
-                                    </li>
-                                ))}
-                            </ul>
+                                        {/* Items */}
+                                        <ul className="divide-y divide-gray-50">
+                                            {sectionItems.map((item) => (
+                                                <li
+                                                    key={item.id}
+                                                    className="px-5 py-4 flex items-center justify-between gap-4"
+                                                >
+                                                    <div className="flex items-start gap-3 min-w-0">
+                                                        <div className="w-10 h-10 bg-gray-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                                                            <ChefHat className="w-5 h-5 text-gray-300" />
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <div className="font-medium text-gray-900 truncate">
+                                                                {item.name}
+                                                            </div>
+                                                            <div className="text-sm text-gray-500">
+                                                                {item.quantity}
+                                                                {item.mealName && (
+                                                                    <span className="text-[#4A90E2]">
+                                                                        {" "}
+                                                                        • {item.mealName}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <button
+                                                        onClick={() => handleRemoveItem(item.id)}
+                                                        className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors flex-shrink-0"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                );
+                            })}
                         </div>
-                    );
-                })
-            )}
+                    )}
+                </div>
+            </div>
 
             {/* Kroger Results Modal */}
             {showKrogerResults && krogerResults && (
-                <div
-                    style={{
-                        position: "fixed",
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        background: "rgba(0, 0, 0, 0.5)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        zIndex: 1000,
-                        padding: "1rem",
-                    }}
-                    onClick={() => setShowKrogerResults(false)}
-                >
+                <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
                     <div
-                        style={{
-                            background: "#ffffff",
-                            borderRadius: "12px",
-                            maxWidth: 600,
-                            width: "100%",
-                            maxHeight: "80vh",
-                            overflow: "auto",
-                            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <div
-                            style={{
-                                padding: "1.25rem",
-                                borderBottom: "1px solid #e5e7eb",
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                            }}
-                        >
-                            <h2 style={{ margin: 0, fontSize: "1.1rem" }}>
-                                Kroger Cart Results
-                            </h2>
+                        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+                        onClick={() => setShowKrogerResults(false)}
+                    />
+                    <div className="relative w-full max-w-lg bg-white rounded-t-3xl sm:rounded-3xl max-h-[85vh] flex flex-col animate-slide-up overflow-hidden">
+                        {/* Header */}
+                        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 shrink-0">
+                            <div>
+                                <h2 className="text-lg font-medium text-gray-900">Kroger Cart Results</h2>
+                                <p className="text-sm text-gray-500 mt-0.5">{krogerMessage}</p>
+                            </div>
                             <button
                                 onClick={() => setShowKrogerResults(false)}
-                                style={{
-                                    background: "none",
-                                    border: "none",
-                                    fontSize: "1.5rem",
-                                    cursor: "pointer",
-                                    color: "#6b7280",
-                                    lineHeight: 1,
-                                }}
+                                className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
                             >
-                                &times;
+                                <X className="w-5 h-5 text-gray-400" />
                             </button>
                         </div>
 
-                        <div style={{ padding: "1rem" }}>
-                            <p
-                                style={{
-                                    marginBottom: "1rem",
-                                    fontSize: "0.9rem",
-                                    color: krogerMessageType === "success" ? "#059669" : "#6b7280",
-                                }}
-                            >
-                                {krogerMessage}
-                            </p>
-
-                            <div
-                                style={{
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    gap: "0.75rem",
-                                }}
-                            >
+                        {/* Content */}
+                        <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+                            <div className="space-y-3">
                                 {krogerResults.map((item, idx) => (
                                     <div
                                         key={idx}
-                                        style={{
-                                            padding: "0.75rem",
-                                            border: "1px solid #e5e7eb",
-                                            borderRadius: "8px",
-                                            display: "flex",
-                                            gap: "0.75rem",
-                                            alignItems: "flex-start",
-                                            background: item.found ? "#f0fdf4" : "#fef2f2",
-                                        }}
+                                        className={`p-4 rounded-xl border ${
+                                            item.found
+                                                ? "bg-emerald-50 border-emerald-200"
+                                                : "bg-red-50 border-red-200"
+                                        }`}
                                     >
-                                        {item.product?.imageUrl && (
-                                            <img
-                                                src={item.product.imageUrl}
-                                                alt={item.product.name}
-                                                style={{
-                                                    width: 60,
-                                                    height: 60,
-                                                    objectFit: "contain",
-                                                    borderRadius: "4px",
-                                                    background: "#ffffff",
-                                                }}
-                                            />
-                                        )}
-                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                            <div
-                                                style={{
-                                                    fontSize: "0.85rem",
-                                                    color: "#6b7280",
-                                                    marginBottom: "0.25rem",
-                                                }}
-                                            >
-                                                {item.originalName} ({item.quantity})
-                                            </div>
-                                            {item.found && item.product ? (
-                                                <>
-                                                    <div
-                                                        style={{
-                                                            fontWeight: 500,
-                                                            fontSize: "0.9rem",
-                                                            color: "#166534",
-                                                        }}
-                                                    >
-                                                        {item.product.name}
-                                                    </div>
-                                                    <div
-                                                        style={{
-                                                            fontSize: "0.8rem",
-                                                            color: "#4b5563",
-                                                            marginTop: "0.25rem",
-                                                        }}
-                                                    >
-                                                        {item.product.size && (
-                                                            <span>{item.product.size}</span>
-                                                        )}
-                                                        {item.product.price && (
-                                                            <span>
-                                                                {item.product.size ? " • " : ""}$
-                                                                {item.product.price.toFixed(2)}
-                                                            </span>
-                                                        )}
-                                                        {item.product.aisle && (
-                                                            <span>
-                                                                {item.product.size || item.product.price
-                                                                    ? " • "
-                                                                    : ""}
-                                                                {item.product.aisle}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </>
-                                            ) : (
-                                                <div
-                                                    style={{
-                                                        fontSize: "0.85rem",
-                                                        color: "#b91c1c",
-                                                    }}
-                                                >
-                                                    No matching product found
+                                        <div className="flex gap-3">
+                                            {item.product?.imageUrl && (
+                                                <div className="w-14 h-14 rounded-lg overflow-hidden bg-white flex-shrink-0">
+                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                    <img
+                                                        src={item.product.imageUrl}
+                                                        alt={item.product.name}
+                                                        className="w-full h-full object-contain"
+                                                    />
                                                 </div>
                                             )}
-                                        </div>
-                                        <div
-                                            style={{
-                                                fontSize: "0.75rem",
-                                                padding: "0.15rem 0.5rem",
-                                                borderRadius: "999px",
-                                                background: item.found ? "#dcfce7" : "#fee2e2",
-                                                color: item.found ? "#166534" : "#991b1b",
-                                                whiteSpace: "nowrap",
-                                            }}
-                                        >
-                                            {item.found ? "Added" : "Not found"}
+                                            <div className="flex-1 min-w-0">
+                                                <div className="text-xs text-gray-500 mb-1">
+                                                    {item.originalName} ({item.quantity})
+                                                </div>
+                                                {item.found && item.product ? (
+                                                    <>
+                                                        <div className="font-medium text-gray-900 text-sm">
+                                                            {item.product.name}
+                                                        </div>
+                                                        <div className="text-xs text-gray-500 mt-1">
+                                                            {item.product.size && (
+                                                                <span>{item.product.size}</span>
+                                                            )}
+                                                            {item.product.price && (
+                                                                <span>
+                                                                    {item.product.size ? " • " : ""}$
+                                                                    {item.product.price.toFixed(2)}
+                                                                </span>
+                                                            )}
+                                                            {item.product.aisle && (
+                                                                <span>
+                                                                    {item.product.size || item.product.price
+                                                                        ? " • "
+                                                                        : ""}
+                                                                    {item.product.aisle}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </>
+                                                ) : (
+                                                    <div className="text-sm text-red-600">
+                                                        No matching product found
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div
+                                                className={`px-2 py-1 rounded-full text-xs font-medium h-fit ${
+                                                    item.found
+                                                        ? "bg-emerald-100 text-emerald-700"
+                                                        : "bg-red-100 text-red-700"
+                                                }`}
+                                            >
+                                                {item.found ? "Added" : "Not found"}
+                                            </div>
                                         </div>
                                     </div>
                                 ))}
                             </div>
                         </div>
 
-                        <div
-                            style={{
-                                padding: "1rem 1.25rem",
-                                borderTop: "1px solid #e5e7eb",
-                                display: "flex",
-                                justifyContent: "flex-end",
-                            }}
-                        >
+                        {/* Footer */}
+                        <div className="px-6 py-4 border-t border-gray-100 bg-white shrink-0">
                             <button
                                 onClick={() => setShowKrogerResults(false)}
-                                style={{
-                                    padding: "0.5rem 1rem",
-                                    borderRadius: "999px",
-                                    border: "1px solid #111827",
-                                    fontSize: "0.9rem",
-                                    background: "#111827",
-                                    color: "#ffffff",
-                                    cursor: "pointer",
-                                }}
+                                className="w-full py-3 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white rounded-xl font-medium"
                             >
                                 Done
                             </button>

@@ -5,13 +5,14 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
+import { ArrowLeft, Flame, Beef, Wheat, Droplet, Heart, ChevronRight, Sparkles } from "lucide-react";
 
 type Ingredient = {
     name: string;
     quantity: string;
-    category?: string; // Pantry / Produce / Dairy, etc.
-    aisle?: string; // optional for future Kroger mapping
-    price?: number; // optional
+    category?: string;
+    aisle?: string;
+    price?: number;
 };
 
 type Meal = {
@@ -28,8 +29,6 @@ type Meal = {
     };
     ingredients: Ingredient[];
     steps: string[];
-
-    // 🖼 NEW: hero image for this meal
     imageUrl?: string;
 };
 
@@ -39,13 +38,12 @@ type MealsMeta = {
     blockedGroupsFromDoctor?: string[];
 };
 
-// What we now store in sessionStorage under "generatedMeals"
 type StoredMealsPayload =
     | {
     meals: Meal[];
     meta?: MealsMeta;
 }
-    | Meal[]; // backward-compat for old sessions
+    | Meal[];
 
 export default function MealsPage() {
     const router = useRouter();
@@ -60,7 +58,6 @@ export default function MealsPage() {
     const [mealsMeta, setMealsMeta] = useState<MealsMeta | null>(null);
     const [loadingMeals, setLoadingMeals] = useState(true);
 
-    // 1️⃣ Load user + preferences
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
             if (!firebaseUser) {
@@ -82,7 +79,6 @@ export default function MealsPage() {
         return () => unsub();
     }, [router]);
 
-    // 2️⃣ Load meals from sessionStorage (NOT from URL)
     useEffect(() => {
         if (!user || !prefs) return;
 
@@ -97,7 +93,6 @@ export default function MealsPage() {
                 const parsed: StoredMealsPayload = JSON.parse(stored);
 
                 if (Array.isArray(parsed)) {
-                    // Old shape: just an array of meals
                     setMeals(parsed);
                     setMealsMeta(null);
                 } else {
@@ -112,20 +107,23 @@ export default function MealsPage() {
         }
 
         setLoadingMeals(false);
-    }, [user, prefs]); // 👈 fixed-size deps: always [user, prefs]
+    }, [user, prefs]);
 
     if (loadingUser) {
         return (
-            <div style={{ padding: "2rem" }}>
-                <p>Loading your CartSense profile…</p>
+            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
+                <div className="text-center">
+                    <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
+                    <p className="text-gray-500">Loading your profile...</p>
+                </div>
             </div>
         );
     }
 
     if (!user) {
         return (
-            <div style={{ padding: "2rem" }}>
-                <p>Redirecting to login…</p>
+            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
+                <p className="text-gray-500">Redirecting to login...</p>
             </div>
         );
     }
@@ -140,237 +138,155 @@ export default function MealsPage() {
     const blockedGroups = mealsMeta?.blockedGroupsFromDoctor || [];
 
     return (
-        <div style={{ padding: "2rem", maxWidth: 800 }}>
-            <h1>Meals for {prefs?.name || user.email}</h1>
-
-            <p style={{ marginTop: "0.5rem" }}>
-                Based on your diet focus{" "}
-                <strong>{prefs?.dietType || "not set yet"}</strong>
-                {prefs?.allergiesAndSensitivities &&
-                    prefs.allergiesAndSensitivities.allergies?.length > 0 && (
-                        <>
-                            {" "}
-                            and avoiding{" "}
-                            <strong>
-                                {prefs.allergiesAndSensitivities.allergies.join(", ")}
-                            </strong>
-                        </>
-                    )}
-                .
-            </p>
-
-            <div
-                style={{
-                    marginTop: "1rem",
-                    padding: "0.75rem 1rem",
-                    background: "#f3f4f6",
-                    borderRadius: "8px",
-                    fontSize: "0.9rem",
-                }}
-            >
-                <strong>Your request:</strong>
-                <br />
-                {displayedPrompt}
+        <div className="min-h-screen bg-[#f8fafb]">
+            {/* Header */}
+            <div className="bg-white border-b border-gray-100 px-6 py-4 sticky top-0 z-20 lg:static">
+                <div className="max-w-3xl mx-auto">
+                    <button
+                        onClick={() => router.push("/prompt")}
+                        className="flex items-center gap-2 text-gray-500 hover:text-gray-700 transition-colors mb-3"
+                    >
+                        <ArrowLeft className="w-5 h-5" />
+                        <span className="text-sm">Back to search</span>
+                    </button>
+                    <h1 className="text-xl lg:text-2xl text-gray-900">Your Meal Suggestions</h1>
+                    <p className="text-sm text-gray-500 mt-1">
+                        Based on: <span className="text-gray-700">{displayedPrompt}</span>
+                    </p>
+                </div>
             </div>
 
-            {/* Doctor note indicator + details */}
+            {/* Doctor Note Applied Banner */}
             {doctorApplied && (
-                <div style={{ marginTop: "0.75rem" }}>
-                    {/* Pill */}
-                    <div
-                        style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "0.4rem",
-                            padding: "0.25rem 0.75rem",
-                            borderRadius: "999px",
-                            border: "1px solid #0f766e",
-                            background: "#ecfdf5",
-                            fontSize: "0.8rem",
-                            color: "#0f766e",
-                        }}
-                    >
-                        <span
-                            style={{
-                                width: 6,
-                                height: 6,
-                                borderRadius: "999px",
-                                background: "#0f766e",
-                            }}
-                        />
-                        Doctor note applied
-                    </div>
-
-                    {(blockedIngredients.length > 0 || blockedGroups.length > 0) && (
-                        <div
-                            style={{
-                                marginTop: "0.5rem",
-                                border: "1px solid #d1fae5",
-                                background: "#ecfdf5",
-                                borderRadius: "0.75rem",
-                                padding: "0.75rem 1rem",
-                                fontSize: "0.8rem",
-                                color: "#047857",
-                            }}
-                        >
-                            <p style={{ margin: 0, marginBottom: "0.3rem" }}>
-                                These meals were filtered using your doctor’s diet
-                                instructions.
-                            </p>
-                            {blockedIngredients.length > 0 && (
-                                <p style={{ margin: 0 }}>
-                                    <strong>Blocked ingredients:</strong>{" "}
-                                    {blockedIngredients.join(", ")}
-                                </p>
-                            )}
-                            {blockedGroups.length > 0 && (
-                                <p style={{ margin: 0 }}>
-                                    <strong>Blocked groups:</strong>{" "}
-                                    {blockedGroups.join(", ")}
+                <div className="px-6 pt-4">
+                    <div className="max-w-3xl mx-auto">
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
+                            <div className="flex items-center gap-2 mb-2">
+                                <div className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center">
+                                    <Heart className="w-3.5 h-3.5 text-white" />
+                                </div>
+                                <span className="text-sm font-medium text-emerald-700">
+                                    Doctor's instructions applied
+                                </span>
+                            </div>
+                            {(blockedIngredients.length > 0 || blockedGroups.length > 0) && (
+                                <p className="text-xs text-emerald-600">
+                                    These meals avoid{" "}
+                                    {blockedIngredients.length > 0 && (
+                                        <span className="font-medium">{blockedIngredients.join(", ")}</span>
+                                    )}
+                                    {blockedIngredients.length > 0 && blockedGroups.length > 0 && " and "}
+                                    {blockedGroups.length > 0 && (
+                                        <span className="font-medium">{blockedGroups.join(", ")}</span>
+                                    )}
+                                    {" "}as specified in your diet instructions.
                                 </p>
                             )}
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Content */}
+            <div className="px-6 py-6">
+                <div className="max-w-3xl mx-auto">
+                    {loadingMeals ? (
+                        <div className="flex flex-col items-center justify-center py-16">
+                            <div className="w-16 h-16 bg-gradient-to-br from-[#4A90E2] to-[#357ABD] rounded-full flex items-center justify-center mb-4">
+                                <Sparkles className="w-8 h-8 text-white animate-pulse" />
+                            </div>
+                            <p className="text-gray-500">Generating meals for you...</p>
+                        </div>
+                    ) : meals.length === 0 ? (
+                        <div className="text-center py-16">
+                            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <Sparkles className="w-8 h-8 text-gray-400" />
+                            </div>
+                            <h3 className="text-lg font-medium text-gray-900 mb-2">No meals generated</h3>
+                            <p className="text-gray-500 mb-6">
+                                Try going back and submitting a new prompt.
+                            </p>
+                            <button
+                                onClick={() => router.push("/prompt")}
+                                className="px-6 py-3 bg-[#4A90E2]/10 text-[#4A90E2] rounded-xl hover:bg-[#4A90E2]/20 transition-colors"
+                            >
+                                Try again
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="flex flex-col gap-3">
+                            {meals.map((meal) => {
+                                const thumbSrc =
+                                    meal.imageUrl ??
+                                    "https://placehold.co/256x256/e5e7eb/9ca3af?text=Meal";
+
+                                return (
+                                    <div
+                                        key={meal.id}
+                                        className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow border border-gray-100 flex p-4 gap-4"
+                                    >
+                                        {/* Thumbnail - Left */}
+                                        <div className="w-20 h-20 flex-shrink-0 bg-gray-100 rounded-xl overflow-hidden">
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img
+                                                src={thumbSrc}
+                                                alt={meal.name}
+                                                className="w-full h-full object-cover"
+                                            />
+                                        </div>
+
+                                        {/* Content - Right */}
+                                        <div className="flex-1 flex flex-col min-w-0">
+                                            <span className="inline-block self-start px-2 py-0.5 bg-gray-100 rounded-md text-xs font-medium text-gray-600 capitalize mb-1">
+                                                {meal.mealType}
+                                            </span>
+                                            <h2 className="text-base font-medium text-gray-900 mb-1 line-clamp-1">
+                                                {meal.name}
+                                            </h2>
+                                            <p className="text-sm text-gray-500 line-clamp-1 mb-2">
+                                                {meal.description}
+                                            </p>
+
+                                            {/* Macros */}
+                                            <div className="flex items-center gap-3 text-xs text-gray-500 mb-3">
+                                                <div className="flex items-center gap-1">
+                                                    <Flame className="w-3 h-3 text-orange-500" />
+                                                    <span>{meal.macros.calories}</span>
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <Beef className="w-3 h-3 text-blue-500" />
+                                                    <span>{meal.macros.protein}g</span>
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <Wheat className="w-3 h-3 text-amber-500" />
+                                                    <span>{meal.macros.carbs}g</span>
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <Droplet className="w-3 h-3 text-purple-500" />
+                                                    <span>{meal.macros.fat}g</span>
+                                                </div>
+                                            </div>
+
+                                            {/* View Button */}
+                                            <button
+                                                onClick={() =>
+                                                    router.push(
+                                                        `/meals/${meal.id}?prompt=${encodeURIComponent(displayedPrompt)}`
+                                                    )
+                                                }
+                                                className="self-start flex items-center gap-1 px-4 py-2 bg-[#4A90E2]/10 text-[#4A90E2] text-sm font-medium rounded-xl hover:bg-[#4A90E2]/20 transition-colors"
+                                            >
+                                                <span>View meal</span>
+                                                <ChevronRight className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     )}
                 </div>
-            )}
-
-            {loadingMeals ? (
-                <div style={{ marginTop: "2rem" }}>
-                    <p>Generating meals for you…</p>
-                </div>
-            ) : meals.length === 0 ? (
-                <div style={{ marginTop: "2rem" }}>
-                    <p>
-                        No meals were generated. Try going back and submitting a new
-                        prompt.
-                    </p>
-                </div>
-            ) : (
-                <div style={{ marginTop: "2rem", display: "grid", gap: "1rem" }}>
-                    {meals.map((meal) => {
-                        const heroSrc =
-                            meal.imageUrl ??
-                            "https://placehold.co/800x450?text=Meal+Image";
-
-                        return (
-                            <div
-                                key={meal.id}
-                                style={{
-                                    border: "1px solid #e5e7eb",
-                                    borderRadius: "12px",
-                                    padding: "0", // image sits flush, content gets its own padding
-                                    overflow: "hidden",
-                                    boxShadow: "0 10px 25px rgba(15, 23, 42, 0.12)",
-                                }}
-                            >
-                                {/* 🖼 Hero image */}
-                                <div
-                                    style={{
-                                        width: "100%",
-                                        aspectRatio: "4 / 3",
-                                        background: "#e5e7eb",
-                                        overflow: "hidden",
-                                    }}
-                                >
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img
-                                        src={heroSrc}
-                                        alt={meal.name}
-                                        style={{
-                                            width: "100%",
-                                            height: "100%",
-                                            objectFit: "cover",
-                                            display: "block",
-                                        }}
-                                    />
-                                </div>
-
-                                {/* Card content */}
-                                <div
-                                    style={{
-                                        padding: "1rem 1.25rem",
-                                    }}
-                                >
-                                    <p
-                                        style={{
-                                            fontSize: "0.8rem",
-                                            textTransform: "uppercase",
-                                        }}
-                                    >
-                                        {meal.mealType}
-                                    </p>
-                                    <h2
-                                        style={{
-                                            margin: "0.25rem 0 0.5rem",
-                                        }}
-                                    >
-                                        {meal.name}
-                                    </h2>
-                                    <p
-                                        style={{
-                                            fontSize: "0.9rem",
-                                            marginBottom: "0.75rem",
-                                        }}
-                                    >
-                                        {meal.description}
-                                    </p>
-
-                                    {/* High-level macros row */}
-                                    <div
-                                        style={{
-                                            display: "flex",
-                                            gap: "1rem",
-                                            fontSize: "0.85rem",
-                                            marginBottom: "0.75rem",
-                                        }}
-                                    >
-                                        <span>🔥 {meal.macros.calories} kcal</span>
-                                        <span>🥩 {meal.macros.protein}g protein</span>
-                                        <span>🍚 {meal.macros.carbs}g carbs</span>
-                                        <span>🫒 {meal.macros.fat}g fat</span>
-                                    </div>
-
-                                    <button
-                                        onClick={() =>
-                                            router.push(
-                                                `/meals/${meal.id}?prompt=${encodeURIComponent(
-                                                    displayedPrompt,
-                                                )}`,
-                                            )
-                                        }
-                                        style={{
-                                            padding: "0.4rem 0.9rem",
-                                            borderRadius: "999px",
-                                            border: "1px solid #111827",
-                                            fontSize: "0.85rem",
-                                            marginBottom: 0,
-                                            cursor: "pointer",
-                                            background: "#ffffff",
-                                        }}
-                                    >
-                                        View meal
-                                    </button>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-
-            <button
-                style={{
-                    marginTop: "2rem",
-                    padding: "0.5rem 1rem",
-                    borderRadius: "999px",
-                    border: "1px solid #d1d5db",
-                    fontSize: "0.85rem",
-                    background: "#f9fafb",
-                    cursor: "pointer",
-                }}
-                onClick={() => router.push("/prompt")}
-            >
-                Back to prompt
-            </button>
+            </div>
         </div>
     );
 }
