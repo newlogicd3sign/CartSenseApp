@@ -6,7 +6,9 @@ import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ShoppingCart, Mail, Lock, ArrowRight, AlertCircle, CheckCircle } from "lucide-react";
+import Image from "next/image";
+import { Mail, Lock, ArrowRight, AlertCircle, CheckCircle } from "lucide-react";
+import CartSenseLogo from "@/app/CartSenseLogo.svg";
 
 export default function SignupPage() {
     const router = useRouter();
@@ -55,10 +57,7 @@ export default function SignupPage() {
             <div className="bg-gradient-to-br from-[#4A90E2] to-[#357ABD] px-6 pt-12 pb-16 text-white">
                 <div className="max-w-[428px] mx-auto">
                     <div className="flex items-center gap-3 mb-6">
-                        <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
-                            <ShoppingCart className="w-6 h-6 text-white" />
-                        </div>
-                        <span className="text-2xl font-medium">CartSense</span>
+                        <Image src={CartSenseLogo} alt="CartSense" className="h-10 w-auto brightness-0 invert" />
                     </div>
                     <h1 className="text-3xl font-medium mb-2 text-white">Create Account</h1>
                     <p className="text-white/80 text-base">

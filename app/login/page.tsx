@@ -5,7 +5,9 @@ import { auth } from "@/lib/firebaseClient";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ShoppingCart, Mail, Lock, ArrowRight, AlertCircle } from "lucide-react";
+import Image from "next/image";
+import { Mail, Lock, ArrowRight, AlertCircle } from "lucide-react";
+import CartSenseLogo from "@/app/CartSenseLogo.svg";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -21,6 +23,7 @@ export default function LoginPage() {
 
         try {
             await signInWithEmailAndPassword(auth, email, password);
+            sessionStorage.setItem("animateEntry", "true");
             router.push("/prompt");
         } catch (error: any) {
             setMessage(error.message || "Login failed");
@@ -35,10 +38,7 @@ export default function LoginPage() {
             <div className="bg-gradient-to-br from-[#4A90E2] to-[#357ABD] px-6 pt-12 pb-16 text-white">
                 <div className="max-w-[428px] mx-auto">
                     <div className="flex items-center gap-3 mb-6">
-                        <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
-                            <ShoppingCart className="w-6 h-6 text-white" />
-                        </div>
-                        <span className="text-2xl font-medium">CartSense</span>
+                        <Image src={CartSenseLogo} alt="CartSense" className="h-10 w-auto brightness-0 invert" />
                     </div>
                     <h1 className="text-3xl font-medium mb-2 text-white">Welcome back</h1>
                     <p className="text-white/80 text-base">
