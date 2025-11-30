@@ -84,10 +84,8 @@ Return ONLY JSON in the exact format specified in the system message.
                         },
                         {
                             type: "input_image",
-                            image_url: {
-                                // data URL from client
-                                url: imageDataUrl,
-                            },
+                            image_url: imageDataUrl,
+                            detail: "auto",
                         },
                     ],
                 },
@@ -104,8 +102,14 @@ Return ONLY JSON in the exact format specified in the system message.
             );
         }
 
-        const rawText = firstContent.text;
+        let rawText = firstContent.text;
         let parsed: DoctorNoteParsed;
+
+        // Strip markdown code blocks if present (```json ... ``` or ``` ... ```)
+        rawText = rawText.trim();
+        if (rawText.startsWith("```")) {
+            rawText = rawText.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
+        }
 
         try {
             parsed = JSON.parse(rawText) as DoctorNoteParsed;

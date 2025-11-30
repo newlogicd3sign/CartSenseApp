@@ -15,6 +15,27 @@ import {
     serverTimestamp,
     setDoc,
 } from "firebase/firestore";
+import {
+    User as UserIcon,
+    Mail,
+    Heart,
+    AlertTriangle,
+    FileText,
+    ShoppingCart,
+    MapPin,
+    Search,
+    CheckCircle,
+    AlertCircle,
+    ChevronRight,
+    Edit3,
+    X,
+    Trash2,
+    Plus,
+    ExternalLink,
+    LogOut,
+    Zap,
+} from "lucide-react";
+import { signOut } from "firebase/auth";
 
 const ALLERGY_OPTIONS = [
     "Dairy",
@@ -54,7 +75,7 @@ type DoctorDietInstructions = {
     summaryText?: string;
     blockedIngredients?: string[];
     blockedGroups?: string[];
-    updatedAt?: any; // Firestore Timestamp or string
+    updatedAt?: any;
 };
 
 type UserPrefsDoc = {
@@ -67,10 +88,16 @@ type UserPrefsDoc = {
     defaultKrogerLocationId?: string | null;
     krogerLinked?: boolean;
     doctorDietInstructions?: DoctorDietInstructions | null;
+    monthlyPromptCount?: number;
+    promptPeriodStart?: any;
+    isPremium?: boolean;
 };
 
+const FREE_TIER_MONTHLY_LIMIT = 10;
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
 type UserLocation = {
-    id: string; // Firestore doc ID
+    id: string;
     krogerLocationId: string;
     name: string;
     addressLine1?: string;
@@ -89,7 +116,7 @@ type KrogerLocationSearchResult = {
     zipCode: string;
 };
 
-export default function AccountPage(): JSX.Element {
+export default function AccountPage() {
     const router = useRouter();
 
     const [user, setUser] = useState<User | null>(null);
@@ -99,17 +126,14 @@ export default function AccountPage(): JSX.Element {
     const [locations, setLocations] = useState<UserLocation[]>([]);
     const [loadingLocations, setLoadingLocations] = useState(true);
 
-    // Location saving state
     const [savingLocation, setSavingLocation] = useState(false);
     const [locationMessage, setLocationMessage] = useState<string | null>(null);
 
-    // ZIP → store search
     const [zipSearch, setZipSearch] = useState("");
     const [storeResults, setStoreResults] = useState<KrogerLocationSearchResult[]>([]);
     const [searchingStores, setSearchingStores] = useState(false);
     const [storeSearchError, setStoreSearchError] = useState<string | null>(null);
 
-    // Diet & Allergies editing
     const [editingDietAllergies, setEditingDietAllergies] = useState(false);
     const [selectedDietType, setSelectedDietType] = useState("");
     const [selectedAllergies, setSelectedAllergies] = useState<string[]>([]);
@@ -117,21 +141,17 @@ export default function AccountPage(): JSX.Element {
     const [savingDietAllergies, setSavingDietAllergies] = useState(false);
     const [dietAllergiesMessage, setDietAllergiesMessage] = useState<string | null>(null);
 
-    // Diet instructions state (formerly “doctor note”)
     const [removingDoctorNote, setRemovingDoctorNote] = useState(false);
     const [doctorNoteMessage, setDoctorNoteMessage] = useState<string | null>(null);
 
-    // Kroger account linking
     const [krogerMessage, setKrogerMessage] = useState<string | null>(null);
     const [krogerMessageType, setKrogerMessageType] = useState<"success" | "error">("success");
     const searchParams = useSearchParams();
 
-    // Helper: format doctor.updatedAt
     const formatDoctorUpdatedAt = (value?: any) => {
         if (!value) return "";
         let date: Date | null = null;
 
-        // Firestore Timestamp
         if (value && typeof value === "object" && typeof value.toDate === "function") {
             date = value.toDate();
         } else if (typeof value === "string") {
@@ -142,7 +162,6 @@ export default function AccountPage(): JSX.Element {
         return date.toLocaleDateString();
     };
 
-    // Handle Kroger OAuth callback params
     useEffect(() => {
         const krogerLinked = searchParams.get("kroger_linked");
         const krogerError = searchParams.get("kroger_error");
@@ -150,9 +169,7 @@ export default function AccountPage(): JSX.Element {
         if (krogerLinked === "success") {
             setKrogerMessage("Your Kroger account has been linked successfully!");
             setKrogerMessageType("success");
-            // Update local state
             setUserDoc((prev) => (prev ? { ...prev, krogerLinked: true } : { krogerLinked: true }));
-            // Clear URL params
             router.replace("/account");
         } else if (krogerError) {
             const errorMessages: Record<string, string> = {
@@ -169,7 +186,6 @@ export default function AccountPage(): JSX.Element {
         }
     }, [searchParams, router]);
 
-    // 1️⃣ Auth + user doc
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
             if (!firebaseUser) {
@@ -198,19 +214,13 @@ export default function AccountPage(): JSX.Element {
         return () => unsub();
     }, [router]);
 
-    // 2️⃣ Load locations for this user
     useEffect(() => {
         if (!user) return;
 
         const loadLocations = async () => {
             setLoadingLocations(true);
             try {
-                const locCol = collection(
-                    db,
-                    "krogerLocations",
-                    user.uid,
-                    "locations",
-                );
+                const locCol = collection(db, "krogerLocations", user.uid, "locations");
                 const snap = await getDocs(locCol);
 
                 const locs: UserLocation[] = [];
@@ -240,44 +250,35 @@ export default function AccountPage(): JSX.Element {
         void loadLocations();
     }, [user]);
 
-    // 4️⃣ Set default location
     const handleSetDefault = async (loc: UserLocation) => {
         if (!user) return;
 
         try {
             setLocationMessage(null);
 
-            // 1) update user doc
             const userRef = doc(db, "users", user.uid);
             await updateDoc(userRef, {
                 defaultKrogerLocationId: loc.krogerLocationId,
             });
 
-            // 2) flip isDefault on all location docs
             const batch = writeBatch(db);
-            const locCol = collection(
-                db,
-                "krogerLocations",
-                user.uid,
-                "locations",
-            );
+            const locCol = collection(db, "krogerLocations", user.uid, "locations");
             for (const l of locations) {
                 const ref = doc(locCol, l.id);
                 batch.update(ref, { isDefault: l.id === loc.id });
             }
             await batch.commit();
 
-            // 3) update local state
             setLocations((prev) =>
                 prev.map((l) => ({
                     ...l,
                     isDefault: l.id === loc.id,
-                })),
+                }))
             );
             setUserDoc((prev) =>
                 prev
                     ? { ...prev, defaultKrogerLocationId: loc.krogerLocationId }
-                    : { defaultKrogerLocationId: loc.krogerLocationId },
+                    : { defaultKrogerLocationId: loc.krogerLocationId }
             );
 
             setLocationMessage("Default store updated.");
@@ -287,7 +288,6 @@ export default function AccountPage(): JSX.Element {
         }
     };
 
-    // 5️⃣ Search stores by ZIP (calls /api/kroger/locations)
     const handleSearchStoresByZip = async () => {
         const zip = zipSearch.trim();
         if (!zip) {
@@ -301,21 +301,15 @@ export default function AccountPage(): JSX.Element {
             setStoreSearchError(null);
             setStoreResults([]);
 
-            const res = await fetch(
-                `/api/kroger/locations?zip=${encodeURIComponent(zip)}`,
-            );
+            const res = await fetch(`/api/kroger/locations?zip=${encodeURIComponent(zip)}`);
 
             if (!res.ok) {
                 const data = await res.json().catch(() => null);
-                setStoreSearchError(
-                    data?.message || "Could not load stores for that ZIP.",
-                );
+                setStoreSearchError(data?.message || "Could not load stores for that ZIP.");
                 return;
             }
 
-            const data = (await res.json()) as {
-                locations?: KrogerLocationSearchResult[];
-            };
+            const data = (await res.json()) as { locations?: KrogerLocationSearchResult[] };
             const locs = data.locations ?? [];
             setStoreResults(locs);
             if (locs.length === 0) {
@@ -329,7 +323,6 @@ export default function AccountPage(): JSX.Element {
         }
     };
 
-    // Save the store directly from search result
     const handleUseStoreFromSearch = async (store: KrogerLocationSearchResult) => {
         if (!user) return;
 
@@ -337,12 +330,7 @@ export default function AccountPage(): JSX.Element {
             setSavingLocation(true);
             setLocationMessage(null);
 
-            const locCol = collection(
-                db,
-                "krogerLocations",
-                user.uid,
-                "locations",
-            );
+            const locCol = collection(db, "krogerLocations", user.uid, "locations");
 
             const isFirstLocation = locations.length === 0;
 
@@ -357,13 +345,11 @@ export default function AccountPage(): JSX.Element {
                 createdAt: serverTimestamp(),
             });
 
-            // Update user doc with new default
             const userRef = doc(db, "users", user.uid);
             await updateDoc(userRef, {
                 defaultKrogerLocationId: store.locationId,
             });
 
-            // Update local state
             const newLocation: UserLocation = {
                 id: docRef.id,
                 krogerLocationId: store.locationId,
@@ -382,17 +368,16 @@ export default function AccountPage(): JSX.Element {
             setUserDoc((prev) =>
                 prev
                     ? { ...prev, defaultKrogerLocationId: store.locationId }
-                    : { defaultKrogerLocationId: store.locationId },
+                    : { defaultKrogerLocationId: store.locationId }
             );
 
-            // Clear search results after saving
             setStoreResults([]);
             setZipSearch("");
 
             setLocationMessage(
                 isFirstLocation
                     ? `${store.name} saved as your default store.`
-                    : `${store.name} saved and set as default.`,
+                    : `${store.name} saved and set as default.`
             );
         } catch (err) {
             console.error("Error saving location", err);
@@ -402,21 +387,18 @@ export default function AccountPage(): JSX.Element {
         }
     };
 
-    // Toggle allergy selection
     const toggleAllergy = (item: string) => {
         setSelectedAllergies((prev) =>
             prev.includes(item) ? prev.filter((a) => a !== item) : [...prev, item]
         );
     };
 
-    // Toggle sensitivity selection
     const toggleSensitivity = (item: string) => {
         setSelectedSensitivities((prev) =>
             prev.includes(item) ? prev.filter((a) => a !== item) : [...prev, item]
         );
     };
 
-    // Start editing diet/allergies/sensitivities
     const handleEditDietAllergies = () => {
         setSelectedDietType(userDoc?.dietType ?? "");
         setSelectedAllergies(userDoc?.allergiesAndSensitivities?.allergies ?? []);
@@ -425,13 +407,11 @@ export default function AccountPage(): JSX.Element {
         setEditingDietAllergies(true);
     };
 
-    // Cancel editing
     const handleCancelEditDietAllergies = () => {
         setEditingDietAllergies(false);
         setDietAllergiesMessage(null);
     };
 
-    // Save diet/allergies/sensitivities
     const handleSaveDietAllergies = async () => {
         if (!user) return;
 
@@ -452,7 +432,6 @@ export default function AccountPage(): JSX.Element {
                 { merge: true }
             );
 
-            // Update local state
             setUserDoc((prev) => ({
                 ...prev,
                 dietType: selectedDietType || undefined,
@@ -472,7 +451,6 @@ export default function AccountPage(): JSX.Element {
         }
     };
 
-    // Remove diet instructions
     const handleRemoveDoctorInstructions = async () => {
         if (!user) return;
 
@@ -485,14 +463,11 @@ export default function AccountPage(): JSX.Element {
                 doctorDietInstructions: null,
             });
 
-            // Update local state
             setUserDoc((prev) =>
-                prev ? { ...prev, doctorDietInstructions: null } : prev,
+                prev ? { ...prev, doctorDietInstructions: null } : prev
             );
 
-            setDoctorNoteMessage(
-                "Diet instructions removed. Future meals will no longer use this filter.",
-            );
+            setDoctorNoteMessage("Diet instructions removed.");
         } catch (err) {
             console.error("Error removing diet instructions", err);
             setDoctorNoteMessage("Could not remove diet instructions.");
@@ -501,1029 +476,532 @@ export default function AccountPage(): JSX.Element {
         }
     };
 
-    // Helper to get diet type label
+    const handleLogout = async () => {
+        await signOut(auth);
+        router.push("/login");
+    };
+
     const getDietLabel = (value: string | undefined) => {
         if (!value) return null;
         const opt = DIET_OPTIONS.find((o) => o.value === value);
         return opt?.label ?? value;
     };
 
-    // Diet instructions derived (uses doctorDietInstructions field under the hood)
-    const doctor = (userDoc?.doctorDietInstructions ??
-        null) as DoctorDietInstructions | null;
+    const doctor = (userDoc?.doctorDietInstructions ?? null) as DoctorDietInstructions | null;
     const hasDoctorNote = Boolean(doctor?.hasActiveNote);
-
-    // 6️⃣ Render
 
     if (loadingUser) {
         return (
-            <div style={{ padding: "2rem" }}>
-                <p>Loading your account…</p>
+            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
+                <div className="text-center">
+                    <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
+                    <p className="text-gray-500">Loading your account...</p>
+                </div>
             </div>
         );
     }
 
     if (!user) {
         return (
-            <div style={{ padding: "2rem" }}>
-                <p>Redirecting to login…</p>
+            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
+                <p className="text-gray-500">Redirecting to login...</p>
             </div>
         );
     }
 
     return (
-        <div
-            style={{
-                padding: "2rem",
-                maxWidth: 900,
-                margin: "0 auto",
-                display: "flex",
-                flexDirection: "column",
-                gap: "2rem",
-            }}
-        >
+        <div className="min-h-screen bg-[#f8fafb]">
             {/* Header */}
-            <div>
-                <h1 style={{ marginBottom: "0.25rem" }}>Account</h1>
-                <p style={{ fontSize: "0.9rem", color: "#6b7280" }}>
-                    Manage your profile, dietary preferences, diet instructions, and shopping
-                    locations.
-                </p>
+            <div className="bg-white border-b border-gray-100 px-6 py-6">
+                <div className="max-w-3xl mx-auto">
+                    <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 bg-gradient-to-br from-[#4A90E2] to-[#357ABD] rounded-full flex items-center justify-center">
+                            <UserIcon className="w-6 h-6 text-white" />
+                        </div>
+                        <div>
+                            <h1 className="text-xl lg:text-2xl text-gray-900">
+                                {userDoc?.name || "Account"}
+                            </h1>
+                            <p className="text-sm text-gray-500">{user.email}</p>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            {/* Basic user info */}
-            <section
-                style={{
-                    border: "1px solid #e5e7eb",
-                    borderRadius: "0.75rem",
-                    padding: "1.25rem",
-                }}
-            >
-                <h2
-                    style={{
-                        marginBottom: "0.75rem",
-                        fontSize: "1rem",
-                    }}
-                >
-                    Profile
-                </h2>
-                <p style={{ fontSize: "0.9rem" }}>
-                    <strong>Email:</strong> {user.email}
-                </p>
-                {userDoc?.name && (
-                    <p style={{ fontSize: "0.9rem" }}>
-                        <strong>Name:</strong> {userDoc.name}
-                    </p>
-                )}
-                {userDoc?.dietType && (
-                    <p style={{ fontSize: "0.9rem" }}>
-                        <strong>Diet type:</strong> {userDoc.dietType}
-                    </p>
-                )}
-                {userDoc?.allergiesAndSensitivities && (
-                    <div style={{ marginTop: "0.5rem", fontSize: "0.9rem" }}>
-                        {userDoc.allergiesAndSensitivities.allergies &&
-                            userDoc.allergiesAndSensitivities.allergies
-                                .length > 0 && (
-                                <p>
-                                    <strong>Allergies:</strong>{" "}
-                                    {userDoc.allergiesAndSensitivities.allergies.join(
-                                        ", ",
-                                    )}
-                                </p>
-                            )}
-                        {userDoc.allergiesAndSensitivities.sensitivities &&
-                            userDoc.allergiesAndSensitivities.sensitivities
-                                .length > 0 && (
-                                <p>
-                                    <strong>Sensitivities:</strong>{" "}
-                                    {userDoc.allergiesAndSensitivities.sensitivities.join(
-                                        ", ",
-                                    )}
-                                </p>
-                            )}
-                    </div>
-                )}
-            </section>
+            {/* Content */}
+            <div className="px-6 py-6">
+                <div className="max-w-3xl mx-auto space-y-4">
+                    {/* Usage Card - Free Tier */}
+                    {!userDoc?.isPremium && (() => {
+                        // Calculate monthly prompt count and days until reset
+                        let monthlyCount = userDoc?.monthlyPromptCount ?? 0;
+                        let daysUntilReset = 30;
 
-            {/* Diet Type & Allergies */}
-            <section
-                style={{
-                    border: "1px solid #e5e7eb",
-                    borderRadius: "0.75rem",
-                    padding: "1.25rem",
-                }}
-            >
-                <div
-                    style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        marginBottom: "0.75rem",
-                    }}
-                >
-                    <h2 style={{ fontSize: "1rem", margin: 0 }}>
-                        Diet & Allergies
-                    </h2>
-                    {!editingDietAllergies && (
-                        <button
-                            type="button"
-                            onClick={handleEditDietAllergies}
-                            style={{
-                                padding: "0.25rem 0.7rem",
-                                borderRadius: "999px",
-                                border: "1px solid #111827",
-                                fontSize: "0.8rem",
-                                background: "#ffffff",
-                                color: "#111827",
-                                cursor: "pointer",
-                            }}
-                        >
-                            Edit
-                        </button>
-                    )}
-                </div>
-                <p style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: "1rem" }}>
-                    Help us personalize meals and avoid ingredients that don&apos;t work for you.
-                </p>
+                        if (userDoc?.promptPeriodStart) {
+                            const startDate = typeof userDoc.promptPeriodStart.toDate === "function"
+                                ? userDoc.promptPeriodStart.toDate()
+                                : new Date(userDoc.promptPeriodStart);
+                            const now = new Date();
 
-                {!editingDietAllergies ? (
-                    <div style={{ fontSize: "0.9rem" }}>
-                        {userDoc?.dietType ? (
-                            <p style={{ marginBottom: "0.5rem" }}>
-                                <strong>Diet focus:</strong>{" "}
-                                {getDietLabel(userDoc.dietType)}
-                            </p>
-                        ) : (
-                            <p style={{ marginBottom: "0.5rem", color: "#6b7280" }}>
-                                <strong>Diet focus:</strong> Not set
-                            </p>
-                        )}
-                        {userDoc?.allergiesAndSensitivities?.allergies &&
-                        userDoc.allergiesAndSensitivities.allergies.length > 0 ? (
-                            <p style={{ marginBottom: "0.5rem" }}>
-                                <strong>Allergies:</strong>{" "}
-                                {userDoc.allergiesAndSensitivities.allergies.join(", ")}
-                            </p>
-                        ) : (
-                            <p style={{ marginBottom: "0.5rem", color: "#6b7280" }}>
-                                <strong>Allergies:</strong> None selected
-                            </p>
-                        )}
-                        {userDoc?.allergiesAndSensitivities?.sensitivities &&
-                        userDoc.allergiesAndSensitivities.sensitivities.length > 0 ? (
-                            <p>
-                                <strong>Sensitivities:</strong>{" "}
-                                {userDoc.allergiesAndSensitivities.sensitivities.join(", ")}
-                            </p>
-                        ) : (
-                            <p style={{ color: "#6b7280" }}>
-                                <strong>Sensitivities:</strong> None selected
-                            </p>
-                        )}
+                            if (now.getTime() - startDate.getTime() >= THIRTY_DAYS_MS) {
+                                // Period expired
+                                monthlyCount = 0;
+                                daysUntilReset = 30;
+                            } else {
+                                const resetDate = new Date(startDate.getTime() + THIRTY_DAYS_MS);
+                                daysUntilReset = Math.max(0, Math.ceil((resetDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)));
+                            }
+                        }
 
-                        {dietAllergiesMessage && (
-                            <p
-                                style={{
-                                    marginTop: "0.75rem",
-                                    fontSize: "0.85rem",
-                                    color: "#059669",
-                                }}
-                            >
-                                {dietAllergiesMessage}
-                            </p>
-                        )}
-                    </div>
-                ) : (
-                    <div>
-                        {/* Diet type select */}
-                        <div style={{ marginBottom: "1.25rem" }}>
-                            <h3 style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>
-                                Diet focus
-                            </h3>
-                            <select
-                                value={selectedDietType}
-                                onChange={(e) => setSelectedDietType(e.target.value)}
-                                style={{
-                                    padding: "0.4rem 0.5rem",
-                                    borderRadius: "0.5rem",
-                                    border: "1px solid #d1d5db",
-                                    fontSize: "0.85rem",
-                                    minWidth: 200,
-                                }}
-                            >
-                                <option value="">None</option>
-                                {DIET_OPTIONS.map((opt) => (
-                                    <option key={opt.value} value={opt.value}>
-                                        {opt.label}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
+                        return (
+                            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                                <div className="px-5 py-4 border-b border-gray-100">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center">
+                                            <Zap className="w-5 h-5 text-purple-500" />
+                                        </div>
+                                        <div>
+                                            <h2 className="font-medium text-gray-900">Monthly Usage</h2>
+                                            <p className="text-xs text-gray-500">Free tier meal generations</p>
+                                        </div>
+                                    </div>
+                                </div>
 
-                        {/* Allergies checkboxes */}
-                        <div style={{ marginBottom: "1.25rem" }}>
-                            <h3 style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>
-                                Allergies
-                            </h3>
-                            <div
-                                style={{
-                                    display: "flex",
-                                    flexWrap: "wrap",
-                                    gap: "0.5rem",
-                                }}
-                            >
-                                {ALLERGY_OPTIONS.map((item) => (
-                                    <label
-                                        key={item}
-                                        style={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: "0.3rem",
-                                            padding: "0.3rem 0.6rem",
-                                            borderRadius: "0.5rem",
-                                            border: selectedAllergies.includes(item)
-                                                ? "1px solid #111827"
-                                                : "1px solid #d1d5db",
-                                            background: selectedAllergies.includes(item)
-                                                ? "#f3f4f6"
-                                                : "#ffffff",
-                                            cursor: "pointer",
-                                            fontSize: "0.85rem",
-                                        }}
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedAllergies.includes(item)}
-                                            onChange={() => toggleAllergy(item)}
-                                            style={{ margin: 0 }}
+                                <div className="px-5 py-4">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <span className="text-sm text-gray-700">Meal generations used</span>
+                                        <span className="text-sm font-medium text-gray-900">
+                                            {monthlyCount} / {FREE_TIER_MONTHLY_LIMIT}
+                                        </span>
+                                    </div>
+                                    <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                                        <div
+                                            className={`h-full rounded-full transition-all ${
+                                                monthlyCount >= FREE_TIER_MONTHLY_LIMIT
+                                                    ? "bg-red-500"
+                                                    : monthlyCount >= FREE_TIER_MONTHLY_LIMIT * 0.8
+                                                    ? "bg-amber-500"
+                                                    : "bg-purple-500"
+                                            }`}
+                                            style={{ width: `${Math.min((monthlyCount / FREE_TIER_MONTHLY_LIMIT) * 100, 100)}%` }}
                                         />
-                                        {item}
-                                    </label>
-                                ))}
+                                    </div>
+                                    {monthlyCount >= FREE_TIER_MONTHLY_LIMIT ? (
+                                        <p className="text-sm text-red-600 mt-3">
+                                            You've used all free prompts for this month. Resets in {daysUntilReset} day{daysUntilReset !== 1 ? "s" : ""}.
+                                        </p>
+                                    ) : monthlyCount >= FREE_TIER_MONTHLY_LIMIT * 0.8 ? (
+                                        <p className="text-sm text-amber-600 mt-3">
+                                            {FREE_TIER_MONTHLY_LIMIT - monthlyCount} generation{FREE_TIER_MONTHLY_LIMIT - monthlyCount !== 1 ? "s" : ""} remaining. Resets in {daysUntilReset} day{daysUntilReset !== 1 ? "s" : ""}.
+                                        </p>
+                                    ) : (
+                                        <p className="text-sm text-gray-500 mt-3">
+                                            {FREE_TIER_MONTHLY_LIMIT - monthlyCount} generation{FREE_TIER_MONTHLY_LIMIT - monthlyCount !== 1 ? "s" : ""} remaining. Resets in {daysUntilReset} day{daysUntilReset !== 1 ? "s" : ""}.
+                                        </p>
+                                    )}
+                                </div>
                             </div>
-                        </div>
+                        );
+                    })()}
 
-                        {/* Sensitivities checkboxes */}
-                        <div style={{ marginBottom: "1.25rem" }}>
-                            <h3 style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>
-                                Sensitivities
-                            </h3>
-                            <div
-                                style={{
-                                    display: "flex",
-                                    flexWrap: "wrap",
-                                    gap: "0.5rem",
-                                }}
-                            >
-                                {SENSITIVITY_OPTIONS.map((item) => (
-                                    <label
-                                        key={item}
-                                        style={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: "0.3rem",
-                                            padding: "0.3rem 0.6rem",
-                                            borderRadius: "0.5rem",
-                                            border: selectedSensitivities.includes(item)
-                                                ? "1px solid #111827"
-                                                : "1px solid #d1d5db",
-                                            background: selectedSensitivities.includes(item)
-                                                ? "#f3f4f6"
-                                                : "#ffffff",
-                                            cursor: "pointer",
-                                            fontSize: "0.85rem",
-                                        }}
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedSensitivities.includes(item)}
-                                            onChange={() => toggleSensitivity(item)}
-                                            style={{ margin: 0 }}
-                                        />
-                                        {item}
-                                    </label>
-                                ))}
+                    {/* Diet & Allergies Card */}
+                    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center">
+                                    <Heart className="w-5 h-5 text-emerald-500" />
+                                </div>
+                                <div>
+                                    <h2 className="font-medium text-gray-900">Diet & Allergies</h2>
+                                    <p className="text-xs text-gray-500">Personalize your meal suggestions</p>
+                                </div>
                             </div>
+                            {!editingDietAllergies && (
+                                <button
+                                    onClick={handleEditDietAllergies}
+                                    className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors"
+                                >
+                                    <Edit3 className="w-4 h-4 text-gray-400" />
+                                </button>
+                            )}
                         </div>
 
-                        {/* Save / Cancel buttons */}
-                        <div style={{ display: "flex", gap: "0.5rem" }}>
-                            <button
-                                type="button"
-                                onClick={() => void handleSaveDietAllergies()}
-                                disabled={savingDietAllergies}
-                                style={{
-                                    padding: "0.4rem 0.9rem",
-                                    borderRadius: "999px",
-                                    border: "1px solid #111827",
-                                    fontSize: "0.85rem",
-                                    background: "#111827",
-                                    color: "#ffffff",
-                                    opacity: savingDietAllergies ? 0.7 : 1,
-                                    cursor: savingDietAllergies ? "default" : "pointer",
-                                }}
-                            >
-                                {savingDietAllergies ? "Saving…" : "Save changes"}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleCancelEditDietAllergies}
-                                disabled={savingDietAllergies}
-                                style={{
-                                    padding: "0.4rem 0.9rem",
-                                    borderRadius: "999px",
-                                    border: "1px solid #d1d5db",
-                                    fontSize: "0.85rem",
-                                    background: "#ffffff",
-                                    color: "#111827",
-                                    cursor: savingDietAllergies ? "default" : "pointer",
-                                }}
-                            >
-                                Cancel
-                            </button>
-                        </div>
-                    </div>
-                )}
-            </section>
+                        <div className="px-5 py-4">
+                            {!editingDietAllergies ? (
+                                <div className="space-y-3">
+                                    <div>
+                                        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Diet Focus</span>
+                                        <p className="text-sm text-gray-900 mt-0.5">
+                                            {getDietLabel(userDoc?.dietType) || "Not set"}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Allergies</span>
+                                        <p className="text-sm text-gray-900 mt-0.5">
+                                            {userDoc?.allergiesAndSensitivities?.allergies?.length
+                                                ? userDoc.allergiesAndSensitivities.allergies.join(", ")
+                                                : "None"}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Sensitivities</span>
+                                        <p className="text-sm text-gray-900 mt-0.5">
+                                            {userDoc?.allergiesAndSensitivities?.sensitivities?.length
+                                                ? userDoc.allergiesAndSensitivities.sensitivities.join(", ")
+                                                : "None"}
+                                        </p>
+                                    </div>
+                                    {dietAllergiesMessage && (
+                                        <div className="flex items-center gap-2 p-2 bg-emerald-50 rounded-lg">
+                                            <CheckCircle className="w-4 h-4 text-emerald-500" />
+                                            <span className="text-sm text-emerald-700">{dietAllergiesMessage}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="text-sm font-medium text-gray-700 mb-2 block">Diet Focus</label>
+                                        <select
+                                            value={selectedDietType}
+                                            onChange={(e) => setSelectedDietType(e.target.value)}
+                                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:border-[#4A90E2] focus:outline-none"
+                                        >
+                                            <option value="">None</option>
+                                            {DIET_OPTIONS.map((opt) => (
+                                                <option key={opt.value} value={opt.value}>
+                                                    {opt.label}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
 
-            {/* Diet instructions (from doctor, but user-facing label is generic) */}
-            <section
-                style={{
-                    border: "1px solid #e5e7eb",
-                    borderRadius: "0.75rem",
-                    padding: "1.25rem",
-                }}
-            >
-                <div
-                    style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        marginBottom: "0.75rem",
-                    }}
-                >
-                    <h2 style={{ fontSize: "1rem", margin: 0 }}>Diet instructions</h2>
+                                    <div>
+                                        <label className="text-sm font-medium text-gray-700 mb-2 block">Allergies</label>
+                                        <div className="flex flex-wrap gap-2">
+                                            {ALLERGY_OPTIONS.map((item) => (
+                                                <button
+                                                    key={item}
+                                                    type="button"
+                                                    onClick={() => toggleAllergy(item)}
+                                                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                                                        selectedAllergies.includes(item)
+                                                            ? "bg-[#4A90E2] text-white"
+                                                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                                    }`}
+                                                >
+                                                    {item}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
 
-                    {hasDoctorNote && (
-                        <button
-                            type="button"
-                            style={{
-                                padding: "0.25rem 0.7rem",
-                                borderRadius: "999px",
-                                border: "1px solid #111827",
-                                fontSize: "0.8rem",
-                                background: "#ffffff",
-                                color: "#111827",
-                                cursor: "pointer",
-                            }}
-                            onClick={() => {
-                                router.push("/doctor-note");
-                            }}
-                        >
-                            Edit
-                        </button>
-                    )}
-                </div>
+                                    <div>
+                                        <label className="text-sm font-medium text-gray-700 mb-2 block">Sensitivities</label>
+                                        <div className="flex flex-wrap gap-2">
+                                            {SENSITIVITY_OPTIONS.map((item) => (
+                                                <button
+                                                    key={item}
+                                                    type="button"
+                                                    onClick={() => toggleSensitivity(item)}
+                                                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                                                        selectedSensitivities.includes(item)
+                                                            ? "bg-[#4A90E2] text-white"
+                                                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                                    }`}
+                                                >
+                                                    {item}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
 
-                <p
-                    style={{
-                        fontSize: "0.85rem",
-                        color: "#6b7280",
-                        marginBottom: "0.75rem",
-                    }}
-                >
-                    Tell CartSense what foods your doctor asked you to stay away from. We&apos;ll
-                    filter meal suggestions around those foods where possible.
-                </p>
-
-                {!hasDoctorNote ? (
-                    <>
-                        <div
-                            style={{
-                                padding: "0.75rem 1rem",
-                                borderRadius: "0.75rem",
-                                border: "1px dashed #d1d5db",
-                                background: "#f9fafb",
-                                fontSize: "0.85rem",
-                                color: "#4b5563",
-                                marginBottom: "0.75rem",
-                            }}
-                        >
-                            <strong>No diet instructions saved yet.</strong>
-                            <br />
-                            Upload a photo of your doctor&apos;s note or add foods manually, and
-                            CartSense will avoid them in your meal suggestions.
-                        </div>
-
-                        <button
-                            type="button"
-                            style={{
-                                padding: "0.45rem 0.9rem",
-                                borderRadius: "999px",
-                                border: "1px solid #111827",
-                                fontSize: "0.85rem",
-                                background: "#111827",
-                                color: "#ffffff",
-                                cursor: "pointer",
-                            }}
-                            onClick={() => {
-                                router.push("/doctor-note");
-                            }}
-                        >
-                            Add diet instructions
-                        </button>
-                    </>
-                ) : (
-                    <>
-                        <div
-                            style={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: "0.4rem",
-                                padding: "0.25rem 0.75rem",
-                                borderRadius: "999px",
-                                border: "1px solid #0f766e",
-                                background: "#ecfdf5",
-                                fontSize: "0.8rem",
-                                color: "#0f766e",
-                                marginBottom: "0.5rem",
-                            }}
-                        >
-                            <span
-                                style={{
-                                    width: 6,
-                                    height: 6,
-                                    borderRadius: "999px",
-                                    background: "#0f766e",
-                                }}
-                            />
-                            Diet instructions active
-                        </div>
-
-                        {doctor?.updatedAt && (
-                            <p
-                                style={{
-                                    fontSize: "0.8rem",
-                                    color: "#6b7280",
-                                    marginTop: 0,
-                                    marginBottom: "0.5rem",
-                                }}
-                            >
-                                Last updated: {formatDoctorUpdatedAt(doctor.updatedAt)}
-                            </p>
-                        )}
-
-                        {doctor?.summaryText && (
-                            <p
-                                style={{
-                                    fontSize: "0.85rem",
-                                    marginBottom: "0.5rem",
-                                }}
-                            >
-                                <strong>Summary:</strong> {doctor.summaryText}
-                            </p>
-                        )}
-
-                        {doctor?.blockedIngredients &&
-                            doctor.blockedIngredients.length > 0 && (
-                                <div style={{ marginBottom: "0.4rem" }}>
-                                    <strong style={{ fontSize: "0.8rem" }}>
-                                        Blocked ingredients:
-                                    </strong>
-                                    <div
-                                        style={{
-                                            display: "flex",
-                                            flexWrap: "wrap",
-                                            gap: "0.35rem",
-                                            marginTop: "0.35rem",
-                                        }}
-                                    >
-                                        {doctor.blockedIngredients.map((item) => (
-                                            <span
-                                                key={item}
-                                                style={{
-                                                    fontSize: "0.75rem",
-                                                    padding: "0.15rem 0.5rem",
-                                                    borderRadius: "999px",
-                                                    border: "1px solid #d1d5db",
-                                                    background: "#f9fafb",
-                                                }}
-                                            >
-                                                {item}
-                                            </span>
-                                        ))}
+                                    <div className="flex gap-3 pt-2">
+                                        <button
+                                            onClick={() => void handleSaveDietAllergies()}
+                                            disabled={savingDietAllergies}
+                                            className="flex-1 py-3 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white rounded-xl font-medium disabled:opacity-70"
+                                        >
+                                            {savingDietAllergies ? "Saving..." : "Save Changes"}
+                                        </button>
+                                        <button
+                                            onClick={handleCancelEditDietAllergies}
+                                            className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
+                                        >
+                                            Cancel
+                                        </button>
                                     </div>
                                 </div>
                             )}
+                        </div>
+                    </div>
 
-                        {doctor?.blockedGroups && doctor.blockedGroups.length > 0 && (
-                            <div style={{ marginBottom: "0.4rem" }}>
-                                <strong style={{ fontSize: "0.8rem" }}>
-                                    Blocked groups:
-                                </strong>
-                                <div
-                                    style={{
-                                        display: "flex",
-                                        flexWrap: "wrap",
-                                        gap: "0.35rem",
-                                        marginTop: "0.35rem",
-                                    }}
-                                >
-                                    {doctor.blockedGroups.map((item) => (
-                                        <span
-                                            key={item}
-                                            style={{
-                                                fontSize: "0.75rem",
-                                                padding: "0.15rem 0.5rem",
-                                                borderRadius: "999px",
-                                                border: "1px solid #d1d5db",
-                                                background: "#f9fafb",
-                                            }}
-                                        >
-                                            {item}
-                                        </span>
-                                    ))}
+                    {/* Diet Instructions Card */}
+                    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
+                                    <FileText className="w-5 h-5 text-blue-500" />
+                                </div>
+                                <div>
+                                    <h2 className="font-medium text-gray-900">Diet Instructions</h2>
+                                    <p className="text-xs text-gray-500">From your healthcare provider</p>
                                 </div>
                             </div>
-                        )}
-
-                        <button
-                            type="button"
-                            onClick={() => void handleRemoveDoctorInstructions()}
-                            disabled={removingDoctorNote}
-                            style={{
-                                marginTop: "0.75rem",
-                                padding: "0.35rem 0.8rem",
-                                borderRadius: "999px",
-                                border: "1px solid #d1d5db",
-                                fontSize: "0.8rem",
-                                background: "#ffffff",
-                                color: "#b91c1c",
-                                cursor: removingDoctorNote ? "default" : "pointer",
-                                opacity: removingDoctorNote ? 0.7 : 1,
-                            }}
-                        >
-                            {removingDoctorNote
-                                ? "Removing…"
-                                : "Remove diet instructions"}
-                        </button>
-
-                        {doctorNoteMessage && (
-                            <p
-                                style={{
-                                    marginTop: "0.5rem",
-                                    fontSize: "0.8rem",
-                                    color: "#4b5563",
-                                }}
-                            >
-                                {doctorNoteMessage}
-                            </p>
-                        )}
-                    </>
-                )}
-            </section>
-
-            {/* Kroger Account */}
-            <section
-                style={{
-                    border: "1px solid #e5e7eb",
-                    borderRadius: "0.75rem",
-                    padding: "1.25rem",
-                }}
-            >
-                <h2
-                    style={{
-                        marginBottom: "0.75rem",
-                        fontSize: "1rem",
-                    }}
-                >
-                    Kroger Account
-                </h2>
-                <p style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: "1rem" }}>
-                    Link your Kroger account to add items directly to your Kroger cart.
-                </p>
-
-                {userDoc?.krogerLinked ? (
-                    <div
-                        style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "0.75rem",
-                            padding: "0.75rem 1rem",
-                            background: "#f0fdf4",
-                            border: "1px solid #bbf7d0",
-                            borderRadius: "0.5rem",
-                        }}
-                    >
-                        <span
-                            style={{
-                                width: "8px",
-                                height: "8px",
-                                borderRadius: "50%",
-                                background: "#22c55e",
-                            }}
-                        />
-                        <span style={{ fontSize: "0.9rem", color: "#166534" }}>
-                            Your Kroger account is linked
-                        </span>
-                    </div>
-                ) : (
-                    <button
-                        type="button"
-                        onClick={() => {
-                            if (user) {
-                                window.location.href = `/api/kroger/auth?userId=${user.uid}`;
-                            }
-                        }}
-                        style={{
-                            padding: "0.5rem 1rem",
-                            borderRadius: "999px",
-                            border: "1px solid #0056a3",
-                            fontSize: "0.9rem",
-                            background: "#0056a3",
-                            color: "#ffffff",
-                            cursor: "pointer",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "0.5rem",
-                        }}
-                    >
-                        Link Kroger Account
-                    </button>
-                )}
-
-                {krogerMessage && (
-                    <p
-                        style={{
-                            marginTop: "0.75rem",
-                            fontSize: "0.85rem",
-                            color: krogerMessageType === "success" ? "#059669" : "#b91c1c",
-                        }}
-                    >
-                        {krogerMessage}
-                    </p>
-                )}
-            </section>
-
-            {/* Locations */}
-            <section
-                style={{
-                    border: "1px solid #e5e7eb",
-                    borderRadius: "0.75rem",
-                    padding: "1.25rem",
-                }}
-            >
-                <h2
-                    style={{
-                        marginBottom: "0.75rem",
-                        fontSize: "1rem",
-                    }}
-                >
-                    Shopping locations
-                </h2>
-                <p style={{ fontSize: "0.85rem", color: "#6b7280" }}>
-                    Link your Kroger store to help CartSense pick products and
-                    prices.
-                </p>
-
-                {/* Existing locations */}
-                <div style={{ marginTop: "1rem", marginBottom: "1rem" }}>
-                    <h3
-                        style={{
-                            fontSize: "0.9rem",
-                            marginBottom: "0.5rem",
-                        }}
-                    >
-                        Your locations
-                    </h3>
-                    {loadingLocations ? (
-                        <p style={{ fontSize: "0.85rem" }}>
-                            Loading locations…
-                        </p>
-                    ) : locations.length === 0 ? (
-                        <p
-                            style={{
-                                fontSize: "0.85rem",
-                                color: "#6b7280",
-                            }}
-                        >
-                            You haven’t added any stores yet.
-                        </p>
-                    ) : (
-                        <ul
-                            style={{
-                                listStyle: "none",
-                                padding: 0,
-                                margin: 0,
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: "0.5rem",
-                            }}
-                        >
-                            {locations.map((loc) => (
-                                <li
-                                    key={loc.id}
-                                    style={{
-                                        border: "1px solid #e5e7eb",
-                                        borderRadius: "0.75rem",
-                                        padding: "0.75rem 0.9rem",
-                                        display: "flex",
-                                        alignItems: "flex-start",
-                                        justifyContent: "space-between",
-                                        gap: "0.75rem",
-                                    }}
+                            {hasDoctorNote && (
+                                <button
+                                    onClick={() => router.push("/doctor-note")}
+                                    className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors"
                                 >
-                                    <div>
-                                        <div
-                                            style={{
-                                                display: "flex",
-                                                alignItems: "center",
-                                                gap: "0.4rem",
-                                                marginBottom: "0.15rem",
-                                            }}
-                                        >
-                                            <span
-                                                style={{
-                                                    fontSize: "0.9rem",
-                                                    fontWeight: 500,
-                                                }}
-                                            >
-                                                {loc.name}
+                                    <Edit3 className="w-4 h-4 text-gray-400" />
+                                </button>
+                            )}
+                        </div>
+
+                        <div className="px-5 py-4">
+                            {!hasDoctorNote ? (
+                                <div>
+                                    <p className="text-sm text-gray-500 mb-4">
+                                        Upload your doctor's diet instructions to automatically filter meal suggestions.
+                                    </p>
+                                    <button
+                                        onClick={() => router.push("/doctor-note")}
+                                        className="flex items-center gap-2 px-4 py-2.5 bg-[#4A90E2]/10 text-[#4A90E2] rounded-xl text-sm font-medium hover:bg-[#4A90E2]/20 transition-colors"
+                                    >
+                                        <Plus className="w-4 h-4" />
+                                        <span>Add Diet Instructions</span>
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-2 h-2 bg-emerald-500 rounded-full" />
+                                        <span className="text-sm font-medium text-emerald-700">Active</span>
+                                        {doctor?.updatedAt && (
+                                            <span className="text-xs text-gray-400">
+                                                • Updated {formatDoctorUpdatedAt(doctor.updatedAt)}
                                             </span>
-                                            {loc.isDefault && (
-                                                <span
-                                                    style={{
-                                                        fontSize: "0.7rem",
-                                                        padding:
-                                                            "0.05rem 0.4rem",
-                                                        borderRadius:
-                                                            "999px",
-                                                        border: "1px solid #111827",
-                                                        textTransform:
-                                                            "uppercase",
-                                                        letterSpacing:
-                                                            "0.05em",
-                                                    }}
-                                                >
-                                                    Default
-                                                </span>
-                                            )}
-                                        </div>
-                                        <p
-                                            style={{
-                                                fontSize: "0.8rem",
-                                                margin: 0,
-                                                color: "#4b5563",
-                                            }}
-                                        >
-                                            <span
-                                                style={{
-                                                    fontFamily:
-                                                        "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace",
-                                                }}
-                                            >
-                                                ID: {loc.krogerLocationId}
-                                            </span>
-                                        </p>
-                                        {(loc.addressLine1 ||
-                                            loc.city ||
-                                            loc.state ||
-                                            loc.zip) && (
-                                            <p
-                                                style={{
-                                                    fontSize: "0.8rem",
-                                                    marginTop: "0.25rem",
-                                                    color: "#4b5563",
-                                                }}
-                                            >
-                                                {loc.addressLine1 && (
-                                                    <>
-                                                        {loc.addressLine1}
-                                                        <br />
-                                                    </>
-                                                )}
-                                                {(loc.city ||
-                                                    loc.state ||
-                                                    loc.zip) && (
-                                                    <>
-                                                        {loc.city &&
-                                                            `${loc.city}, `}
-                                                        {loc.state}
-                                                        {loc.zip &&
-                                                            ` ${loc.zip}`}
-                                                    </>
-                                                )}
-                                            </p>
                                         )}
                                     </div>
 
-                                    {!loc.isDefault && (
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                void handleSetDefault(loc)
-                                            }
-                                            style={{
-                                                alignSelf: "center",
-                                                padding:
-                                                    "0.25rem 0.7rem",
-                                                borderRadius: "999px",
-                                                border: "1px solid #111827",
-                                                fontSize: "0.8rem",
-                                                background: "#111827",
-                                                color: "#ffffff",
-                                                cursor: "pointer",
-                                            }}
-                                        >
-                                            Set as default
-                                        </button>
+                                    {doctor?.summaryText && (
+                                        <p className="text-sm text-gray-600">{doctor.summaryText}</p>
                                     )}
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-                </div>
 
-                {/* Find store by ZIP */}
-                <div
-                    style={{
-                        borderTop: "1px solid #e5e7eb",
-                        paddingTop: "1rem",
-                        marginTop: "0.75rem",
-                        marginBottom: "0.75rem",
-                    }}
-                >
-                    <h3
-                        style={{
-                            fontSize: "0.9rem",
-                            marginBottom: "0.5rem",
-                        }}
-                    >
-                        Find a store by ZIP
-                    </h3>
-
-                    <div
-                        style={{
-                            display: "flex",
-                            flexWrap: "wrap",
-                            gap: "0.5rem",
-                            alignItems: "center",
-                            maxWidth: 420,
-                            marginBottom: "0.5rem",
-                        }}
-                    >
-                        <input
-                            value={zipSearch}
-                            onChange={(e) => setZipSearch(e.target.value)}
-                            placeholder="e.g. 89502"
-                            style={{
-                                flex: "0 0 120px",
-                                padding: "0.4rem 0.5rem",
-                                borderRadius: "0.5rem",
-                                border: "1px solid #d1d5db",
-                                fontSize: "0.85rem",
-                            }}
-                        />
-                        <button
-                            type="button"
-                            onClick={() => void handleSearchStoresByZip()}
-                            disabled={searchingStores}
-                            style={{
-                                padding: "0.4rem 0.9rem",
-                                borderRadius: "999px",
-                                border: "1px solid #111827",
-                                fontSize: "0.85rem",
-                                background: "#111827",
-                                color: "#ffffff",
-                                opacity: searchingStores ? 0.7 : 1,
-                                cursor: searchingStores
-                                    ? "default"
-                                    : "pointer",
-                            }}
-                        >
-                            {searchingStores ? "Searching…" : "Find stores"}
-                        </button>
-                    </div>
-
-                    {storeSearchError && (
-                        <p
-                            style={{
-                                fontSize: "0.8rem",
-                                color: "#b91c1c",
-                                marginBottom: "0.3rem",
-                            }}
-                        >
-                            {storeSearchError}
-                        </p>
-                    )}
-
-                    {storeResults.length > 0 && (
-                        <ul
-                            style={{
-                                listStyle: "none",
-                                padding: 0,
-                                margin: 0,
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: "0.5rem",
-                                maxWidth: 500,
-                            }}
-                        >
-                            {storeResults.map((store) => (
-                                <li
-                                    key={store.locationId}
-                                    style={{
-                                        border: "1px solid #e5e7eb",
-                                        borderRadius: "0.75rem",
-                                        padding: "0.6rem 0.8rem",
-                                        display: "flex",
-                                        justifyContent: "space-between",
-                                        gap: "0.75rem",
-                                    }}
-                                >
-                                    <div>
-                                        <div
-                                            style={{
-                                                fontSize: "0.9rem",
-                                                fontWeight: 500,
-                                                marginBottom: "0.1rem",
-                                            }}
-                                        >
-                                            {store.name}
+                                    {doctor?.blockedIngredients && doctor.blockedIngredients.length > 0 && (
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {doctor.blockedIngredients.map((item) => (
+                                                <span
+                                                    key={item}
+                                                    className="px-2 py-1 bg-red-50 text-red-700 rounded-lg text-xs"
+                                                >
+                                                    {item}
+                                                </span>
+                                            ))}
                                         </div>
-                                        <p
-                                            style={{
-                                                fontSize: "0.8rem",
-                                                margin: 0,
-                                                color: "#4b5563",
-                                            }}
-                                        >
-                                            {store.addressLine1}
-                                            <br />
-                                            {store.city}, {store.state}{" "}
-                                            {store.zipCode}
-                                            <br />
-                                            <span
-                                                style={{
-                                                    fontFamily:
-                                                        "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace",
-                                                }}
-                                            >
-                                                ID: {store.locationId}
-                                            </span>
-                                        </p>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            handleUseStoreFromSearch(store)
-                                        }
-                                        disabled={savingLocation}
-                                        style={{
-                                            alignSelf: "center",
-                                            padding: "0.25rem 0.7rem",
-                                            borderRadius: "999px",
-                                            border: "1px solid #111827",
-                                            fontSize: "0.8rem",
-                                            background: "#ffffff",
-                                            color: "#111827",
-                                            cursor: savingLocation
-                                                ? "default"
-                                                : "pointer",
-                                            opacity: savingLocation ? 0.7 : 1,
-                                        }}
-                                    >
-                                        {savingLocation
-                                            ? "Saving…"
-                                            : "Use this store"}
-                                    </button>
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-                </div>
+                                    )}
 
-                {/* Location message */}
-                {locationMessage && (
-                    <div
-                        style={{
-                            borderTop: "1px solid #e5e7eb",
-                            paddingTop: "1rem",
-                            marginTop: "0.75rem",
-                        }}
-                    >
-                        <p
-                            style={{
-                                fontSize: "0.85rem",
-                                color: "#059669",
-                            }}
-                        >
-                            {locationMessage}
-                        </p>
+                                    <button
+                                        onClick={() => void handleRemoveDoctorInstructions()}
+                                        disabled={removingDoctorNote}
+                                        className="flex items-center gap-2 text-sm text-red-500 hover:text-red-600 transition-colors"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                        <span>{removingDoctorNote ? "Removing..." : "Remove"}</span>
+                                    </button>
+
+                                    {doctorNoteMessage && (
+                                        <p className="text-sm text-gray-500">{doctorNoteMessage}</p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
                     </div>
-                )}
-            </section>
+
+                    {/* Kroger Account Card */}
+                    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                        <div className="px-5 py-4 border-b border-gray-100">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-[#0056a3]/10 rounded-xl flex items-center justify-center">
+                                    <ShoppingCart className="w-5 h-5 text-[#0056a3]" />
+                                </div>
+                                <div>
+                                    <h2 className="font-medium text-gray-900">Kroger Account</h2>
+                                    <p className="text-xs text-gray-500">Connect to add items to cart</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="px-5 py-4">
+                            {userDoc?.krogerLinked ? (
+                                <div className="flex items-center gap-3 p-3 bg-emerald-50 rounded-xl">
+                                    <CheckCircle className="w-5 h-5 text-emerald-500" />
+                                    <span className="text-sm text-emerald-700">Your Kroger account is linked</span>
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={() => {
+                                        if (user) {
+                                            window.location.href = `/api/kroger/auth?userId=${user.uid}`;
+                                        }
+                                    }}
+                                    className="flex items-center gap-2 px-4 py-2.5 bg-[#0056a3] text-white rounded-xl text-sm font-medium hover:bg-[#004080] transition-colors"
+                                >
+                                    <ExternalLink className="w-4 h-4" />
+                                    <span>Link Kroger Account</span>
+                                </button>
+                            )}
+
+                            {krogerMessage && (
+                                <div
+                                    className={`mt-3 flex items-center gap-2 p-3 rounded-xl ${
+                                        krogerMessageType === "success"
+                                            ? "bg-emerald-50"
+                                            : "bg-red-50"
+                                    }`}
+                                >
+                                    {krogerMessageType === "success" ? (
+                                        <CheckCircle className="w-5 h-5 text-emerald-500" />
+                                    ) : (
+                                        <AlertCircle className="w-5 h-5 text-red-500" />
+                                    )}
+                                    <span
+                                        className={`text-sm ${
+                                            krogerMessageType === "success"
+                                                ? "text-emerald-700"
+                                                : "text-red-700"
+                                        }`}
+                                    >
+                                        {krogerMessage}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Shopping Locations Card */}
+                    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                        <div className="px-5 py-4 border-b border-gray-100">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-orange-50 rounded-xl flex items-center justify-center">
+                                    <MapPin className="w-5 h-5 text-orange-500" />
+                                </div>
+                                <div>
+                                    <h2 className="font-medium text-gray-900">Shopping Locations</h2>
+                                    <p className="text-xs text-gray-500">Your preferred Kroger stores</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="px-5 py-4 space-y-4">
+                            {/* Existing locations */}
+                            {loadingLocations ? (
+                                <p className="text-sm text-gray-500">Loading locations...</p>
+                            ) : locations.length === 0 ? (
+                                <p className="text-sm text-gray-500">No stores added yet.</p>
+                            ) : (
+                                <div className="space-y-2">
+                                    {locations.map((loc) => (
+                                        <div
+                                            key={loc.id}
+                                            className="flex items-center justify-between p-3 bg-gray-50 rounded-xl"
+                                        >
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-medium text-gray-900 text-sm">{loc.name}</span>
+                                                    {loc.isDefault && (
+                                                        <span className="px-2 py-0.5 bg-[#4A90E2]/10 text-[#4A90E2] rounded text-xs font-medium">
+                                                            Default
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="text-xs text-gray-500 mt-0.5">
+                                                    {loc.city && loc.state && `${loc.city}, ${loc.state}`}
+                                                </p>
+                                            </div>
+                                            {!loc.isDefault && (
+                                                <button
+                                                    onClick={() => void handleSetDefault(loc)}
+                                                    className="text-xs text-[#4A90E2] hover:underline"
+                                                >
+                                                    Set default
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* ZIP Search */}
+                            <div className="pt-3 border-t border-gray-100">
+                                <label className="text-sm font-medium text-gray-700 mb-2 block">
+                                    Find a store by ZIP
+                                </label>
+                                <div className="flex gap-2">
+                                    <input
+                                        value={zipSearch}
+                                        onChange={(e) => setZipSearch(e.target.value)}
+                                        placeholder="Enter ZIP code"
+                                        className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 focus:border-[#4A90E2] focus:outline-none"
+                                    />
+                                    <button
+                                        onClick={() => void handleSearchStoresByZip()}
+                                        disabled={searchingStores}
+                                        className="px-4 py-2.5 bg-gray-900 text-white rounded-xl text-sm font-medium disabled:opacity-70"
+                                    >
+                                        {searchingStores ? "..." : "Search"}
+                                    </button>
+                                </div>
+
+                                {storeSearchError && (
+                                    <p className="text-sm text-red-500 mt-2">{storeSearchError}</p>
+                                )}
+
+                                {storeResults.length > 0 && (
+                                    <div className="mt-3 space-y-2">
+                                        {storeResults.map((store) => (
+                                            <div
+                                                key={store.locationId}
+                                                className="flex items-center justify-between p-3 border border-gray-200 rounded-xl"
+                                            >
+                                                <div>
+                                                    <span className="font-medium text-gray-900 text-sm">{store.name}</span>
+                                                    <p className="text-xs text-gray-500 mt-0.5">
+                                                        {store.addressLine1}, {store.city}, {store.state}
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleUseStoreFromSearch(store)}
+                                                    disabled={savingLocation}
+                                                    className="px-3 py-1.5 bg-[#4A90E2]/10 text-[#4A90E2] rounded-lg text-xs font-medium hover:bg-[#4A90E2]/20 transition-colors disabled:opacity-70"
+                                                >
+                                                    {savingLocation ? "..." : "Use"}
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {locationMessage && (
+                                <div className="flex items-center gap-2 p-2 bg-emerald-50 rounded-lg">
+                                    <CheckCircle className="w-4 h-4 text-emerald-500" />
+                                    <span className="text-sm text-emerald-700">{locationMessage}</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Logout Button - Mobile only */}
+                    <button
+                        onClick={handleLogout}
+                        className="lg:hidden w-full py-4 bg-white border border-gray-200 text-red-500 rounded-2xl font-medium flex items-center justify-center gap-2 hover:bg-red-50 transition-colors"
+                    >
+                        <LogOut className="w-5 h-5" />
+                        <span>Sign Out</span>
+                    </button>
+                </div>
+            </div>
         </div>
     );
 }
