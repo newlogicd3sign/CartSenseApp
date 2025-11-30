@@ -5,21 +5,32 @@ import { useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
-import { logUserEvent } from "@/lib/logUserEvent";
-import { Sparkles, Send, AlertCircle } from "lucide-react";
+import { getRandomAccentColor, getRandomAccentColorExcluding, type AccentColor } from "@/lib/utils";
+import { Sparkles, AlertCircle, UtensilsCrossed, ChefHat, Soup, Pizza, Salad, Sandwich, Croissant, Apple, Carrot, Beef, Fish, Citrus, Drumstick, Wheat, Ham, CookingPot, Hamburger } from "lucide-react";
 
-type MealsMeta = {
-    usedDoctorInstructions?: boolean;
-    blockedIngredientsFromDoctor?: string[];
-    blockedGroupsFromDoctor?: string[];
-};
+const foodIcons = [
+    UtensilsCrossed,
+    ChefHat,
+    Soup,
+    Pizza,
+    Salad,
+    Sandwich,
+    Croissant,
+    Apple,
+    Carrot,
+    Beef,
+    Fish,
+    Citrus,
+    Drumstick,
+    Wheat,
+    Ham,
+    CookingPot,
+    Hamburger,
+];
 
-type MealsApiResponse = {
-    meals?: any[];
-    meta?: MealsMeta;
-    error?: string;
-    message?: string;
-};
+function getRandomFoodIcon() {
+    return foodIcons[Math.floor(Math.random() * foodIcons.length)];
+}
 
 const foodGreetings = [
     "What's cooking today",
@@ -30,19 +41,6 @@ const foodGreetings = [
     "What's on the menu today",
     "Let's make something amazing",
     "Craving something good",
-];
-
-const loadingMessages = [
-    "Preheating the oven...",
-    "Gathering fresh ingredients...",
-    "Checking the pantry...",
-    "Mixing flavors together...",
-    "Seasoning to perfection...",
-    "Simmering ideas...",
-    "Taste testing recipes...",
-    "Plating your options...",
-    "Adding a pinch of creativity...",
-    "Whisking up something special...",
 ];
 
 function getRandomGreeting() {
@@ -56,38 +54,33 @@ export default function PromptPage() {
     const [loadingUser, setLoadingUser] = useState(true);
 
     const [name, setName] = useState("");
-    const [userPrefs, setUserPrefs] = useState<any>(null);
     const [greeting, setGreeting] = useState("");
 
     const [prompt, setPrompt] = useState("");
     const [message, setMessage] = useState("");
-    const [submitting, setSubmitting] = useState(false);
-    const [loadingMessage, setLoadingMessage] = useState("");
     const [monthlyPromptCount, setMonthlyPromptCount] = useState(0);
     const [monthlyPromptLimit] = useState(10);
     const [daysUntilReset, setDaysUntilReset] = useState(30);
     const [isPremium, setIsPremium] = useState(false);
+    const [accentColor, setAccentColor] = useState<AccentColor>({ primary: "#4A90E2", dark: "#357ABD" });
+    const [badgeColor, setBadgeColor] = useState<AccentColor>({ primary: "#a855f7", dark: "#9333ea" });
+    const [animateFromSetup, setAnimateFromSetup] = useState(false);
+    const [FoodIcon, setFoodIcon] = useState<typeof UtensilsCrossed>(() => UtensilsCrossed);
 
     useEffect(() => {
         setGreeting(getRandomGreeting());
-    }, []);
+        setFoodIcon(() => getRandomFoodIcon());
+        const primaryColor = getRandomAccentColor();
+        setAccentColor(primaryColor);
+        setBadgeColor(getRandomAccentColorExcluding(primaryColor));
 
-    // Rotate loading messages while submitting
-    useEffect(() => {
-        if (!submitting) {
-            setLoadingMessage("");
-            return;
+        // Check if we should animate entry (from login or setup)
+        const animateEntry = sessionStorage.getItem("animateEntry");
+        if (animateEntry === "true") {
+            setAnimateFromSetup(true);
+            sessionStorage.removeItem("animateEntry");
         }
-
-        // Set initial message
-        setLoadingMessage(loadingMessages[Math.floor(Math.random() * loadingMessages.length)]);
-
-        const interval = setInterval(() => {
-            setLoadingMessage(loadingMessages[Math.floor(Math.random() * loadingMessages.length)]);
-        }, 2500);
-
-        return () => clearInterval(interval);
-    }, [submitting]);
+    }, []);
 
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -101,12 +94,11 @@ export default function PromptPage() {
                 if (snap.exists()) {
                     const data = snap.data();
                     setName(data.name || "");
-                    setUserPrefs(data);
                     setIsPremium(data.isPremium ?? false);
 
                     // Calculate monthly prompt usage
                     let count = data.monthlyPromptCount ?? 0;
-                    let periodStart = data.promptPeriodStart;
+                    const periodStart = data.promptPeriodStart;
 
                     // Check if period needs reset (30 days)
                     if (periodStart) {
@@ -137,7 +129,7 @@ export default function PromptPage() {
         return () => unsub();
     }, [router]);
 
-    const handleSubmit = async () => {
+    const handleSubmit = () => {
         const trimmed = prompt.trim();
 
         if (!trimmed) {
@@ -151,72 +143,10 @@ export default function PromptPage() {
         }
 
         setMessage("");
-        setSubmitting(true);
 
-        try {
-            const res = await fetch("/api/meals", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    prompt: trimmed,
-                    prefs: userPrefs,
-                    uid: user.uid,
-                }),
-            });
-
-            const data = (await res.json()) as MealsApiResponse;
-
-            if (!res.ok) {
-                if (
-                    data?.error === "NOT_FOOD_REQUEST" ||
-                    data?.error === "OUT_OF_DOMAIN"
-                ) {
-                    setMessage(
-                        data.message ||
-                        "CartSense can only help with meals, recipes, nutrition and grocery planning. Try something like \"heart-healthy dinners with chicken\" or \"high-protein lunches under 600 calories\"."
-                    );
-                    setPrompt("");
-                } else if (data?.error === "NOT_ALLOWED") {
-                    setMessage(
-                        data.message ||
-                        "CartSense can't respond to this request. Try asking for meal ideas, recipes, or grocery help instead."
-                    );
-                    setPrompt("");
-                } else {
-                    setMessage(
-                        data.message || data.error || "Failed to generate meals."
-                    );
-                }
-                return;
-            }
-
-            const meals = data.meals || [];
-            const payloadToStore = {
-                meals,
-                meta: data.meta,
-            };
-
-            sessionStorage.setItem(
-                "generatedMeals",
-                JSON.stringify(payloadToStore)
-            );
-
-            logUserEvent(user.uid, {
-                type: "prompt_submitted",
-                prompt: trimmed,
-            }).catch((err) => {
-                console.error("Failed to log prompt_submitted event:", err);
-            });
-
-            router.push(`/meals?prompt=${encodeURIComponent(trimmed)}`);
-        } catch (err: any) {
-            console.error(err);
-            setMessage("Error connecting to meals API");
-        } finally {
-            setSubmitting(false);
-        }
+        // Navigate immediately to meals page with stream=true
+        // The meals page will handle the streaming
+        router.push(`/meals?prompt=${encodeURIComponent(trimmed)}&stream=true`);
     };
 
     if (loadingUser) {
@@ -236,20 +166,20 @@ export default function PromptPage() {
             <div className="px-6 pt-8 lg:pt-12">
                 <div className="max-w-2xl mx-auto">
                     {/* Greeting */}
-                    <div className="mb-6">
-                        <h1 className="text-2xl lg:text-3xl font-medium text-gray-900 mb-1">
+                    <div className={`mb-6 ${animateFromSetup ? "animate-greeting-intro" : ""}`}>
+                        <h1 className="text-2xl lg:text-3xl font-medium text-center text-gray-900 mb-1">
                             {greeting}{name ? `, ${name}` : ""}?
                         </h1>
                     </div>
 
                     {/* Search Card */}
-                    <div className="bg-white rounded-2xl shadow-lg p-5 mb-6">
+                    <div className={`bg-white rounded-2xl shadow-lg p-5 mb-6 ${animateFromSetup ? "animate-content-after-greeting" : ""}`}>
                         <textarea
                             value={prompt}
                             onChange={(e) => setPrompt(e.target.value)}
                             placeholder="Ex: Give me heart-healthy meals with chicken, low sodium, easy to cook..."
-                            className="w-full h-28 lg:h-32 p-4 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#4A90E2] focus:outline-none focus:bg-white resize-none transition-colors"
-                            disabled={submitting}
+                            className="w-full h-28 lg:h-32 p-4 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:bg-white resize-none transition-colors"
+                            style={{ borderColor: prompt ? accentColor.primary : undefined }}
                         />
 
                         {/* Error Message */}
@@ -263,31 +193,23 @@ export default function PromptPage() {
                         {/* Submit Button */}
                         <button
                             onClick={handleSubmit}
-                            disabled={submitting || !prompt.trim()}
-                            className="w-full mt-4 py-4 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white rounded-2xl shadow-lg hover:shadow-xl transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            disabled={!prompt.trim()}
+                            className="w-full mt-4 py-4 text-white rounded-2xl shadow-lg hover:shadow-xl transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            style={{ background: `linear-gradient(to right, ${accentColor.primary}, ${accentColor.dark})` }}
                         >
-                            {submitting ? (
-                                <>
-                                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                    <span>Generating meals...</span>
-                                </>
-                            ) : (
-                                <>
-                                    <Send className="w-5 h-5" />
-                                    <span>Generate Meals</span>
-                                </>
-                            )}
+                            <FoodIcon className="w-5 h-5" />
+                            <span>Generate Meals</span>
                         </button>
 
                         {/* AI Powered Label */}
                         <div className="flex items-center justify-center gap-2 mt-4">
-                            <Sparkles className="w-4 h-4 text-gray-400" />
-                            <span className="text-sm text-gray-400">AI powered meal suggestions</span>
+                            <Sparkles className="w-4 h-4" style={{ color: badgeColor.primary }} />
+                            <span className="text-sm" style={{ color: badgeColor.primary }}>AI powered meal suggestions</span>
                         </div>
                     </div>
 
                     {/* Tips Card */}
-                    <div className="bg-white rounded-2xl border border-gray-100 p-5">
+                    <div className={`bg-white rounded-2xl border border-gray-100 p-5 ${animateFromSetup ? "animate-content-after-greeting" : ""}`}>
                         <h3 className="font-medium text-gray-900 mb-3">Tips for better results</h3>
                         <ul className="space-y-2">
                             {[
@@ -297,7 +219,7 @@ export default function PromptPage() {
                                 "Specify meal type (breakfast, lunch, dinner, snacks)",
                             ].map((tip, i) => (
                                 <li key={i} className="flex items-start gap-2 text-sm text-gray-500">
-                                    <span className="text-[#4A90E2] mt-0.5">•</span>
+                                    <span style={{ color: accentColor.primary }} className="mt-0.5">•</span>
                                     {tip}
                                 </li>
                             ))}
@@ -306,7 +228,7 @@ export default function PromptPage() {
 
                     {/* Prompt Counter - Free Tier */}
                     {!isPremium && (
-                        <div className="mt-4 bg-white rounded-2xl border border-gray-100 p-5">
+                        <div className={`mt-4 bg-white rounded-2xl border border-gray-100 p-5 ${animateFromSetup ? "animate-content-after-greeting" : ""}`}>
                             <div className="flex items-center justify-between mb-3">
                                 <span className="text-sm font-medium text-gray-700">Monthly usage</span>
                                 <span className="text-sm text-gray-500">
@@ -320,14 +242,17 @@ export default function PromptPage() {
                                             ? "bg-red-500"
                                             : monthlyPromptCount >= monthlyPromptLimit * 0.8
                                             ? "bg-amber-500"
-                                            : "bg-[#4A90E2]"
+                                            : ""
                                     }`}
-                                    style={{ width: `${Math.min((monthlyPromptCount / monthlyPromptLimit) * 100, 100)}%` }}
+                                    style={{
+                                        width: `${Math.min((monthlyPromptCount / monthlyPromptLimit) * 100, 100)}%`,
+                                        backgroundColor: monthlyPromptCount < monthlyPromptLimit * 0.8 ? accentColor.primary : undefined
+                                    }}
                                 />
                             </div>
                             {monthlyPromptCount >= monthlyPromptLimit ? (
                                 <p className="text-xs text-red-600 mt-2">
-                                    You've used all free prompts for this month. Resets in {daysUntilReset} day{daysUntilReset !== 1 ? "s" : ""}.
+                                    You&apos;ve used all free prompts for this month. Resets in {daysUntilReset} day{daysUntilReset !== 1 ? "s" : ""}.
                                 </p>
                             ) : monthlyPromptCount >= monthlyPromptLimit * 0.8 ? (
                                 <p className="text-xs text-amber-600 mt-2">
@@ -342,23 +267,6 @@ export default function PromptPage() {
                     )}
                 </div>
             </div>
-
-            {/* Loading Overlay */}
-            {submitting && (
-                <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
-                    <div className="bg-white rounded-2xl p-8 mx-6 max-w-sm w-full text-center shadow-xl animate-scale-up">
-                        <div className="w-16 h-16 bg-gradient-to-br from-[#4A90E2] to-[#357ABD] rounded-full flex items-center justify-center mx-auto mb-4">
-                            <Sparkles className="w-8 h-8 text-white animate-pulse" />
-                        </div>
-                        <p className="text-base text-gray-700 mb-4 h-6 transition-opacity duration-300">
-                            {loadingMessage}
-                        </p>
-                        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                            <div className="h-full w-1/3 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] rounded-full animate-bounce-bar" />
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }

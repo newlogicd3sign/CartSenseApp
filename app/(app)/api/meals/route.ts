@@ -1,7 +1,7 @@
 // app/api/meals/route.ts
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import { randomUUID } from "crypto";
+import { randomUUID, createHash } from "crypto";
 import { searchKrogerProduct } from "@/lib/kroger";
 import { adminDb } from "@/lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
@@ -351,9 +351,11 @@ async function enrichMealsWithKroger(meals: Meal[]): Promise<Meal[]> {
     return [...enrichedMeals, ...meals.slice(MAX_MEALS_WITH_PRODUCTS)];
 }
 
-// ---------- Image generation (hero images) ----------
+// ---------- Image generation (hero images) with Firestore caching ----------
 
 const MAX_MEALS_WITH_IMAGES = 3;
+const IMAGE_CACHE_COLLECTION = "mealImageCache";
+const IMAGE_CACHE_TTL_DAYS = 30; // Cache images for 30 days
 
 function buildMealImagePrompt(meal: Meal): string {
     const ingredientNames = meal.ingredients.map((i) => i.name).join(", ");
@@ -366,6 +368,70 @@ Key ingredients: ${ingredientNames || "typical grocery ingredients"}
 
 Style: bright natural lighting, top-down angle, realistic, appetizing, no text, no logos, simple background.
 `.trim();
+}
+
+// Generate a stable cache key based on meal name and top ingredients
+function getMealImageCacheKey(meal: Meal): string {
+    const topIngredients = meal.ingredients
+        .slice(0, 5)
+        .map((i) => i.name.toLowerCase().trim())
+        .sort()
+        .join(",");
+    const keySource = `${meal.name.toLowerCase().trim()}|${meal.mealType}|${topIngredients}`;
+    return createHash("sha256").update(keySource).digest("hex").slice(0, 32);
+}
+
+// Check Firestore cache for existing image
+async function getCachedImage(cacheKey: string): Promise<string | null> {
+    try {
+        const docRef = adminDb.collection(IMAGE_CACHE_COLLECTION).doc(cacheKey);
+        const snap = await docRef.get();
+
+        if (!snap.exists) {
+            return null;
+        }
+
+        const data = snap.data() as { imageUrl?: string; createdAt?: any } | undefined;
+        if (!data?.imageUrl) {
+            return null;
+        }
+
+        // Check if cache is expired
+        if (data.createdAt) {
+            const createdAt = typeof data.createdAt.toDate === "function"
+                ? data.createdAt.toDate()
+                : new Date(data.createdAt);
+            const ageMs = Date.now() - createdAt.getTime();
+            const maxAgeMs = IMAGE_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000;
+
+            if (ageMs > maxAgeMs) {
+                console.log(`[MEALS] Cache expired for key ${cacheKey}`);
+                return null;
+            }
+        }
+
+        console.log(`[MEALS] Cache HIT for image key ${cacheKey}`);
+        return data.imageUrl;
+    } catch (err) {
+        console.error("[MEALS] Error checking image cache:", err);
+        return null;
+    }
+}
+
+// Store generated image in Firestore cache
+async function cacheImage(cacheKey: string, imageUrl: string, mealName: string): Promise<void> {
+    try {
+        const docRef = adminDb.collection(IMAGE_CACHE_COLLECTION).doc(cacheKey);
+        await docRef.set({
+            imageUrl,
+            mealName,
+            createdAt: FieldValue.serverTimestamp(),
+        });
+        console.log(`[MEALS] Cached image for "${mealName}" with key ${cacheKey}`);
+    } catch (err) {
+        console.error("[MEALS] Error caching image:", err);
+        // Non-blocking, continue even if cache write fails
+    }
 }
 
 async function generateImageForMeal(meal: Meal): Promise<string | undefined> {
@@ -402,16 +468,40 @@ async function generateImageForMeal(meal: Meal): Promise<string | undefined> {
     }
 }
 
+// Get or generate image for a meal (with caching)
+async function getOrGenerateImage(meal: Meal): Promise<string | undefined> {
+    const cacheKey = getMealImageCacheKey(meal);
+
+    // Check cache first
+    const cachedUrl = await getCachedImage(cacheKey);
+    if (cachedUrl) {
+        return cachedUrl;
+    }
+
+    // Generate new image
+    const imageUrl = await generateImageForMeal(meal);
+
+    // Cache the result (non-blocking)
+    if (imageUrl) {
+        cacheImage(cacheKey, imageUrl, meal.name).catch(() => {
+            // Ignore cache write errors
+        });
+    }
+
+    return imageUrl;
+}
+
 async function attachImagesToMeals(meals: Meal[]): Promise<Meal[]> {
     if (meals.length === 0) return meals;
 
     const count = Math.min(MAX_MEALS_WITH_IMAGES, meals.length);
     console.log(
-        `[MEALS] Attaching hero images to first ${count} meal(s) (if possible)`,
+        `[MEALS] Attaching hero images to first ${count} meal(s) in PARALLEL with caching`,
     );
 
     const limitedMeals = meals.slice(0, count);
 
+    // Generate all images in parallel (with caching)
     const mealsWithImages = await Promise.all(
         limitedMeals.map(async (meal, index) => {
             if (meal.imageUrl) {
@@ -422,7 +512,7 @@ async function attachImagesToMeals(meals: Meal[]): Promise<Meal[]> {
                 return meal;
             }
 
-            let imageUrl = await generateImageForMeal(meal);
+            let imageUrl = await getOrGenerateImage(meal);
 
             if (!imageUrl) {
                 imageUrl = `https://placehold.co/256x256/cccccc/555555?text=${encodeURIComponent(

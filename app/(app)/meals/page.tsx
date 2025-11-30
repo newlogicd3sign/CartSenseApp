@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
+import { logUserEvent } from "@/lib/logUserEvent";
+import { ACCENT_COLORS, type AccentColor } from "@/lib/utils";
 import { ArrowLeft, Flame, Beef, Wheat, Droplet, Heart, ChevronRight, Sparkles } from "lucide-react";
 
 type Ingredient = {
@@ -45,18 +47,47 @@ type StoredMealsPayload =
 }
     | Meal[];
 
+type StreamEvent =
+    | { type: "status"; message: string }
+    | { type: "meal"; meal: Meal; index: number }
+    | { type: "meal_updated"; meal: Meal; index: number }
+    | { type: "meta"; meta: MealsMeta }
+    | { type: "done" }
+    | { type: "error"; error: string; message: string };
+
 export default function MealsPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const promptFromUrl = searchParams.get("prompt") || "";
+    const shouldStream = searchParams.get("stream") === "true";
 
     const [user, setUser] = useState<User | null>(null);
-    const [prefs, setPrefs] = useState<any>(null);
+    const [prefs, setPrefs] = useState<Record<string, unknown> | null>(null);
     const [loadingUser, setLoadingUser] = useState(true);
 
     const [meals, setMeals] = useState<Meal[]>([]);
     const [mealsMeta, setMealsMeta] = useState<MealsMeta | null>(null);
     const [loadingMeals, setLoadingMeals] = useState(true);
+    const [streamStatus, setStreamStatus] = useState<string>("");
+    const [streamError, setStreamError] = useState<string>("");
+    const [streamComplete, setStreamComplete] = useState(false);
+    const [statusColor, setStatusColor] = useState<AccentColor>(ACCENT_COLORS[0]);
+
+    const hasStartedStreaming = useRef(false);
+    const mealsMetaRef = useRef<MealsMeta | null>(null);
+    const colorIndexRef = useRef(0);
+
+    // Cycle through colors while streaming
+    useEffect(() => {
+        if (!streamStatus || streamComplete) return;
+
+        const interval = setInterval(() => {
+            colorIndexRef.current = (colorIndexRef.current + 1) % ACCENT_COLORS.length;
+            setStatusColor(ACCENT_COLORS[colorIndexRef.current]);
+        }, 1500);
+
+        return () => clearInterval(interval);
+    }, [streamStatus, streamComplete]);
 
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -79,9 +110,111 @@ export default function MealsPage() {
         return () => unsub();
     }, [router]);
 
+    // Stream meals from API
+    const streamMeals = useCallback(async (uid: string, userPrefs: Record<string, unknown>, prompt: string) => {
+        if (hasStartedStreaming.current) return;
+        hasStartedStreaming.current = true;
+
+        setLoadingMeals(true);
+        setStreamStatus("Connecting...");
+
+        try {
+            const res = await fetch("/api/meals/stream", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ prompt, prefs: userPrefs, uid }),
+            });
+
+            if (!res.ok || !res.body) {
+                const data = await res.json().catch(() => ({}));
+                setStreamError(data.message || "Failed to generate meals");
+                setLoadingMeals(false);
+                return;
+            }
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            const mealsArray: Meal[] = [];
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split("\n");
+
+                for (const line of lines) {
+                    if (!line.startsWith("data: ")) continue;
+
+                    try {
+                        const event = JSON.parse(line.slice(6)) as StreamEvent;
+
+                        switch (event.type) {
+                            case "status":
+                                setStreamStatus(event.message);
+                                break;
+
+                            case "meal":
+                                mealsArray[event.index] = event.meal;
+                                setMeals([...mealsArray]);
+                                // First meal arrived - stop showing loading
+                                if (mealsArray.filter(Boolean).length === 1) {
+                                    setLoadingMeals(false);
+                                }
+                                break;
+
+                            case "meal_updated":
+                                mealsArray[event.index] = event.meal;
+                                setMeals([...mealsArray]);
+                                break;
+
+                            case "meta":
+                                mealsMetaRef.current = event.meta;
+                                setMealsMeta(event.meta);
+                                break;
+
+                            case "error":
+                                setStreamError(event.message);
+                                setLoadingMeals(false);
+                                break;
+
+                            case "done":
+                                setStreamComplete(true);
+                                setStreamStatus("");
+                                // Save to sessionStorage for detail page (use ref for current meta)
+                                sessionStorage.setItem("generatedMeals", JSON.stringify({
+                                    meals: mealsArray.filter(Boolean),
+                                    meta: mealsMetaRef.current,
+                                }));
+                                // Log event
+                                logUserEvent(uid, { type: "prompt_submitted", prompt }).catch(() => {});
+                                break;
+                        }
+                    } catch {
+                        // Ignore parse errors
+                    }
+                }
+            }
+
+            setLoadingMeals(false);
+        } catch (err) {
+            console.error("Stream error:", err);
+            setStreamError("Connection error. Please try again.");
+            setLoadingMeals(false);
+        }
+    }, []);
+
+    // Load from sessionStorage OR start streaming
     useEffect(() => {
         if (!user || !prefs) return;
 
+        // If we should stream, start the stream
+        if (shouldStream && promptFromUrl) {
+            streamMeals(user.uid, prefs, decodeURIComponent(promptFromUrl));
+            return;
+        }
+
+        // Otherwise load from sessionStorage
         setLoadingMeals(true);
 
         try {
@@ -107,7 +240,7 @@ export default function MealsPage() {
         }
 
         setLoadingMeals(false);
-    }, [user, prefs]);
+    }, [user, prefs, shouldStream, promptFromUrl, streamMeals]);
 
     if (loadingUser) {
         return (
@@ -187,17 +320,28 @@ export default function MealsPage() {
                 </div>
             )}
 
+
+            {/* Stream Error */}
+            {streamError && (
+                <div className="px-6 pt-4">
+                    <div className="max-w-3xl mx-auto">
+                        <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
+                            <p className="text-sm text-red-700">{streamError}</p>
+                            <button
+                                onClick={() => router.push("/prompt")}
+                                className="mt-3 px-4 py-2 bg-red-100 text-red-700 rounded-xl text-sm hover:bg-red-200 transition-colors"
+                            >
+                                Try again
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Content */}
             <div className="px-6 py-6">
                 <div className="max-w-3xl mx-auto">
-                    {loadingMeals ? (
-                        <div className="flex flex-col items-center justify-center py-16">
-                            <div className="w-16 h-16 bg-gradient-to-br from-[#4A90E2] to-[#357ABD] rounded-full flex items-center justify-center mb-4">
-                                <Sparkles className="w-8 h-8 text-white animate-pulse" />
-                            </div>
-                            <p className="text-gray-500">Generating meals for you...</p>
-                        </div>
-                    ) : meals.length === 0 ? (
+                    {meals.length === 0 && !streamError && !loadingMeals && !streamStatus ? (
                         <div className="text-center py-16">
                             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                                 <Sparkles className="w-8 h-8 text-gray-400" />
@@ -213,9 +357,59 @@ export default function MealsPage() {
                                 Try again
                             </button>
                         </div>
+                    ) : meals.length === 0 && streamStatus ? (
+                        /* Skeleton placeholder cards while loading */
+                        <div className="flex flex-col gap-3">
+                            {[0, 1, 2].map((i) => (
+                                <div
+                                    key={i}
+                                    className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 flex p-4 gap-4 animate-pulse"
+                                    style={{ animationDelay: `${i * 150}ms` }}
+                                >
+                                    {/* Skeleton Thumbnail */}
+                                    <div className="w-20 h-20 flex-shrink-0 bg-gray-200 rounded-xl" />
+
+                                    {/* Skeleton Content */}
+                                    <div className="flex-1 flex flex-col gap-2">
+                                        {/* Meal type badge */}
+                                        <div className="w-16 h-5 bg-gray-200 rounded-md" />
+                                        {/* Title */}
+                                        <div className="w-3/4 h-5 bg-gray-200 rounded-md" />
+                                        {/* Description */}
+                                        <div className="w-full h-4 bg-gray-100 rounded-md" />
+                                        {/* Macros */}
+                                        <div className="flex gap-3 mt-1">
+                                            <div className="w-10 h-4 bg-gray-100 rounded" />
+                                            <div className="w-10 h-4 bg-gray-100 rounded" />
+                                            <div className="w-10 h-4 bg-gray-100 rounded" />
+                                            <div className="w-10 h-4 bg-gray-100 rounded" />
+                                        </div>
+                                        {/* Button */}
+                                        <div className="w-24 h-8 bg-gray-100 rounded-xl mt-1" />
+                                    </div>
+                                </div>
+                            ))}
+
+                            {/* Status indicator below skeletons */}
+                            <div className="flex items-center gap-2 py-3">
+                                <div
+                                    className="w-6 h-6 rounded-full flex items-center justify-center transition-colors duration-500"
+                                    style={{ backgroundColor: statusColor.primary }}
+                                >
+                                    <Sparkles className="w-3.5 h-3.5 text-white animate-pulse" />
+                                </div>
+                                <span
+                                    className="text-sm font-medium transition-colors duration-500"
+                                    style={{ color: statusColor.primary }}
+                                >
+                                    {streamStatus}
+                                </span>
+                            </div>
+                        </div>
                     ) : (
                         <div className="flex flex-col gap-3">
-                            {meals.map((meal) => {
+                            {/* Meal cards with staggered animation */}
+                            {meals.map((meal, index) => {
                                 const thumbSrc =
                                     meal.imageUrl ??
                                     "https://placehold.co/256x256/e5e7eb/9ca3af?text=Meal";
@@ -223,7 +417,11 @@ export default function MealsPage() {
                                 return (
                                     <div
                                         key={meal.id}
-                                        className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow border border-gray-100 flex p-4 gap-4"
+                                        className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all border border-gray-100 flex p-4 gap-4 animate-fade-slide-in"
+                                        style={{
+                                            animationDelay: `${index * 100}ms`,
+                                            animationFillMode: "backwards",
+                                        }}
                                     >
                                         {/* Thumbnail - Left */}
                                         <div className="w-20 h-20 flex-shrink-0 bg-gray-100 rounded-xl overflow-hidden">
@@ -231,7 +429,7 @@ export default function MealsPage() {
                                             <img
                                                 src={thumbSrc}
                                                 alt={meal.name}
-                                                className="w-full h-full object-cover"
+                                                className="w-full h-full object-cover transition-opacity duration-300"
                                             />
                                         </div>
 
@@ -283,6 +481,24 @@ export default function MealsPage() {
                                     </div>
                                 );
                             })}
+
+                            {/* Small left-aligned status indicator at the bottom */}
+                            {streamStatus && !streamComplete && (
+                                <div className="flex items-center gap-2 py-3">
+                                    <div
+                                        className="w-6 h-6 rounded-full flex items-center justify-center transition-colors duration-500"
+                                        style={{ backgroundColor: statusColor.primary }}
+                                    >
+                                        <Sparkles className="w-3.5 h-3.5 text-white animate-pulse" />
+                                    </div>
+                                    <span
+                                        className="text-sm font-medium transition-colors duration-500"
+                                        style={{ color: statusColor.primary }}
+                                    >
+                                        {streamStatus}
+                                    </span>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

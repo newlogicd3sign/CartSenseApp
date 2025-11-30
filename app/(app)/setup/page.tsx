@@ -5,15 +5,10 @@ import { useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
-import {
-    ShoppingCart,
-    User as UserIcon,
-    Heart,
-    AlertTriangle,
-    ArrowRight,
-    AlertCircle,
-    Sparkles,
-} from "lucide-react";
+import { ArrowRight, AlertCircle } from "lucide-react";
+import Image from "next/image";
+import CartSenseLogo from "@/app/CartSenseLogo.svg";
+import { getRandomAccentColor, type AccentColor } from "@/lib/utils";
 
 const ALLERGY_OPTIONS = [
     "Dairy",
@@ -59,6 +54,11 @@ export default function SetupPage() {
     const [selectedSensitivities, setSelectedSensitivities] = useState<string[]>([]);
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState<string | null>(null);
+    const [accentColor, setAccentColor] = useState<AccentColor>({ primary: "#3b82f6", dark: "#2563eb" });
+
+    useEffect(() => {
+        setAccentColor(getRandomAccentColor());
+    }, []);
 
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, (firebaseUser) => {
@@ -106,6 +106,7 @@ export default function SetupPage() {
                 { merge: true }
             );
 
+            sessionStorage.setItem("animateEntry", "true");
             router.push("/prompt");
         } catch (err: any) {
             setMessage(err.message || "Failed to save");
@@ -114,6 +115,7 @@ export default function SetupPage() {
     };
 
     const handleSkip = () => {
+        sessionStorage.setItem("animateEntry", "true");
         router.push("/prompt");
     };
 
@@ -127,63 +129,47 @@ export default function SetupPage() {
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                <div className="text-center">
-                    <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
-                    <p className="text-gray-500">Loading...</p>
-                </div>
+            <div className="min-h-screen bg-white flex items-center justify-center">
+                <div className="w-6 h-6 border-2 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen bg-[#f8fafb]">
-            {/* Header */}
-            <div className="bg-gradient-to-br from-[#4A90E2] to-[#357ABD] px-6 pt-10 pb-14">
+        <div className="min-h-screen bg-white">
+            <div className="px-6 pt-12 pb-8">
                 <div className="max-w-[428px] mx-auto">
-                    <div className="flex items-center gap-3 mb-6">
-                        <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
-                            <ShoppingCart className="w-6 h-6 text-white" />
-                        </div>
-                        <span className="text-2xl font-medium text-white">CartSense</span>
+                    {/* Header */}
+                    <div className="mb-8">
+                        <Image src={CartSenseLogo} alt="CartSense" className="h-8 w-auto mb-8" />
+                        <h1 className="text-2xl font-semibold text-gray-900 mb-2">
+                            Personalize your experience
+                        </h1>
+                        <p className="text-gray-500">
+                            Help us tailor meal suggestions to your preferences.
+                        </p>
                     </div>
-                    <h1 className="text-2xl font-medium text-white mb-2">
-                        Let's personalize your experience
-                    </h1>
-                    <p className="text-white/80">
-                        Help us tailor meal suggestions to your preferences.
-                    </p>
 
                     {/* Progress Steps */}
-                    <div className="flex items-center gap-2 mt-6">
+                    <div className="flex items-center gap-2 mb-8">
                         {[1, 2, 3].map((s) => (
                             <div
                                 key={s}
-                                className={`h-1.5 flex-1 rounded-full transition-colors ${
-                                    s <= step ? "bg-white" : "bg-white/30"
+                                className={`h-1 flex-1 rounded-full transition-colors ${
+                                    s <= step ? "bg-gray-900" : "bg-gray-200"
                                 }`}
                             />
                         ))}
                     </div>
-                </div>
-            </div>
 
-            {/* Form */}
-            <div className="px-6 -mt-6">
-                <div className="max-w-[428px] mx-auto">
                     <form onSubmit={handleSubmit}>
-                        <div className="bg-white rounded-2xl shadow-lg p-6 min-h-[340px]">
+                        <div className="min-h-[320px]">
                             {/* Step 1: Name & Diet */}
                             {step === 1 && (
-                                <div className="space-y-5">
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <div className="w-10 h-10 bg-[#4A90E2]/10 rounded-xl flex items-center justify-center">
-                                            <UserIcon className="w-5 h-5 text-[#4A90E2]" />
-                                        </div>
-                                        <div>
-                                            <h2 className="font-medium text-gray-900">About You</h2>
-                                            <p className="text-xs text-gray-500">Basic information</p>
-                                        </div>
+                                <div className="space-y-6">
+                                    <div>
+                                        <h2 className="font-medium text-gray-900 mb-1">About You</h2>
+                                        <p className="text-sm text-gray-500">Basic information</p>
                                     </div>
 
                                     <div>
@@ -195,7 +181,7 @@ export default function SetupPage() {
                                             value={name}
                                             onChange={(e) => setName(e.target.value)}
                                             placeholder="Enter your name"
-                                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#4A90E2] focus:outline-none transition-colors"
+                                            className="w-full px-4 py-3 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:border-gray-900 focus:ring-1 focus:ring-gray-900 focus:outline-none transition-colors"
                                         />
                                     </div>
 
@@ -206,7 +192,7 @@ export default function SetupPage() {
                                         <select
                                             value={dietType}
                                             onChange={(e) => setDietType(e.target.value)}
-                                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:border-[#4A90E2] focus:outline-none transition-colors"
+                                            className="w-full px-4 py-3 border border-gray-200 rounded-lg text-gray-900 focus:border-gray-900 focus:ring-1 focus:ring-gray-900 focus:outline-none transition-colors"
                                         >
                                             <option value="">Select your diet focus...</option>
                                             {DIET_OPTIONS.map((opt) => (
@@ -221,15 +207,10 @@ export default function SetupPage() {
 
                             {/* Step 2: Allergies */}
                             {step === 2 && (
-                                <div>
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <div className="w-10 h-10 bg-red-50 rounded-xl flex items-center justify-center">
-                                            <AlertTriangle className="w-5 h-5 text-red-500" />
-                                        </div>
-                                        <div>
-                                            <h2 className="font-medium text-gray-900">Allergies</h2>
-                                            <p className="text-xs text-gray-500">Select any that apply</p>
-                                        </div>
+                                <div className="space-y-6">
+                                    <div>
+                                        <h2 className="font-medium text-gray-900 mb-1">Allergies</h2>
+                                        <p className="text-sm text-gray-500">Select any that apply</p>
                                     </div>
 
                                     <div className="flex flex-wrap gap-2">
@@ -238,9 +219,9 @@ export default function SetupPage() {
                                                 key={item}
                                                 type="button"
                                                 onClick={() => toggleAllergy(item)}
-                                                className={`px-4 py-2 rounded-xl text-sm transition-all ${
+                                                className={`px-4 py-2.5 rounded-full text-sm font-medium transition-all ${
                                                     selectedAllergies.includes(item)
-                                                        ? "bg-red-500 text-white"
+                                                        ? "bg-gray-900 text-white"
                                                         : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                                                 }`}
                                             >
@@ -250,7 +231,7 @@ export default function SetupPage() {
                                     </div>
 
                                     {selectedAllergies.length === 0 && (
-                                        <p className="text-sm text-gray-400 mt-4">
+                                        <p className="text-sm text-gray-400">
                                             No allergies? Just tap Continue.
                                         </p>
                                     )}
@@ -259,15 +240,10 @@ export default function SetupPage() {
 
                             {/* Step 3: Sensitivities */}
                             {step === 3 && (
-                                <div>
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <div className="w-10 h-10 bg-orange-50 rounded-xl flex items-center justify-center">
-                                            <Heart className="w-5 h-5 text-orange-500" />
-                                        </div>
-                                        <div>
-                                            <h2 className="font-medium text-gray-900">Sensitivities</h2>
-                                            <p className="text-xs text-gray-500">Foods to avoid or limit</p>
-                                        </div>
+                                <div className="space-y-6">
+                                    <div>
+                                        <h2 className="font-medium text-gray-900 mb-1">Sensitivities</h2>
+                                        <p className="text-sm text-gray-500">Foods to avoid or limit</p>
                                     </div>
 
                                     <div className="flex flex-wrap gap-2">
@@ -276,9 +252,9 @@ export default function SetupPage() {
                                                 key={item}
                                                 type="button"
                                                 onClick={() => toggleSensitivity(item)}
-                                                className={`px-4 py-2 rounded-xl text-sm transition-all ${
+                                                className={`px-4 py-2.5 rounded-full text-sm font-medium transition-all ${
                                                     selectedSensitivities.includes(item)
-                                                        ? "bg-orange-500 text-white"
+                                                        ? "bg-gray-900 text-white"
                                                         : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                                                 }`}
                                             >
@@ -288,7 +264,7 @@ export default function SetupPage() {
                                     </div>
 
                                     {selectedSensitivities.length === 0 && (
-                                        <p className="text-sm text-gray-400 mt-4">
+                                        <p className="text-sm text-gray-400">
                                             No sensitivities? Just tap Finish Setup.
                                         </p>
                                     )}
@@ -298,39 +274,38 @@ export default function SetupPage() {
 
                         {/* Error Message */}
                         {message && (
-                            <div className="flex items-start gap-2 mt-4 p-3 bg-red-50 border border-red-100 rounded-xl">
-                                <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                            <div className="flex items-start gap-2 mt-6 p-3 bg-red-50 rounded-lg">
+                                <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
                                 <p className="text-sm text-red-600">{message}</p>
                             </div>
                         )}
 
                         {/* Navigation Buttons */}
-                        <div className="mt-4 space-y-3">
+                        <div className="mt-8 space-y-3">
                             {step < 3 ? (
                                 <button
                                     type="button"
                                     onClick={nextStep}
-                                    className="w-full py-4 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white rounded-2xl shadow-lg hover:shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                                    className="w-full py-3.5 text-white rounded-xl font-medium hover:opacity-90 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                                    style={{ background: `linear-gradient(to right, ${accentColor.primary}, ${accentColor.dark})` }}
                                 >
                                     <span>Continue</span>
-                                    <ArrowRight className="w-5 h-5" />
+                                    <ArrowRight className="w-4 h-4" />
                                 </button>
                             ) : (
                                 <button
                                     type="submit"
                                     disabled={saving}
-                                    className="w-full py-4 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white rounded-2xl shadow-lg hover:shadow-xl transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                    className="w-full py-3.5 text-white rounded-xl font-medium hover:opacity-90 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                    style={{ background: `linear-gradient(to right, ${accentColor.primary}, ${accentColor.dark})` }}
                                 >
                                     {saving ? (
                                         <>
-                                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                                             <span>Saving...</span>
                                         </>
                                     ) : (
-                                        <>
-                                            <Sparkles className="w-5 h-5" />
-                                            <span>Finish Setup</span>
-                                        </>
+                                        <span>Finish Setup</span>
                                     )}
                                 </button>
                             )}
@@ -340,7 +315,7 @@ export default function SetupPage() {
                                     <button
                                         type="button"
                                         onClick={prevStep}
-                                        className="flex-1 py-3 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors"
+                                        className="flex-1 py-3 text-gray-600 font-medium hover:text-gray-900 transition-colors"
                                     >
                                         Back
                                     </button>
@@ -348,7 +323,7 @@ export default function SetupPage() {
                                 <button
                                     type="button"
                                     onClick={handleSkip}
-                                    className={`${step > 1 ? "flex-1" : "w-full"} py-3 bg-white border border-gray-200 text-gray-500 rounded-xl hover:bg-gray-50 transition-colors`}
+                                    className={`${step > 1 ? "flex-1" : "w-full"} py-3 text-gray-400 font-medium hover:text-gray-600 transition-colors`}
                                 >
                                     Skip for now
                                 </button>
@@ -357,8 +332,8 @@ export default function SetupPage() {
                     </form>
 
                     {/* Info Text */}
-                    <p className="text-center text-sm text-gray-400 mt-6 px-4 pb-6">
-                        You can always update these preferences later in your account settings.
+                    <p className="text-center text-sm text-gray-400 mt-8">
+                        You can always update these preferences later in settings.
                     </p>
                 </div>
             </div>
