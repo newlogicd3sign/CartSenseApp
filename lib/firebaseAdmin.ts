@@ -5,7 +5,12 @@ import admin from "firebase-admin";
 if (!admin.apps.length) {
     const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
     const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n").replace(/\n/g, "\n");
+    // Handle various formats of the private key from different environments
+    let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+    if (privateKey) {
+        // Replace literal \n strings with actual newlines
+        privateKey = privateKey.split(String.raw`\n`).join('\n');
+    }
 
     if (clientEmail && privateKey && projectId) {
         // Use explicit service account credentials if provided
