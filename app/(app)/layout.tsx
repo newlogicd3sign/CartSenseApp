@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { auth } from "@/lib/firebaseClient";
-import { signOut } from "firebase/auth";
+import { signOut, onAuthStateChanged } from "firebase/auth";
 import { Search, List, BookmarkCheck, User, LogOut } from "lucide-react";
 import { getRandomAccentColor, type AccentColor } from "@/lib/utils";
 import Image from "next/image";
@@ -18,6 +18,28 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const [navVisible, setNavVisible] = useState(true);
     const [navAnimating, setNavAnimating] = useState(false);
     const previousPathRef = useRef<string | null>(null);
+    const [authChecked, setAuthChecked] = useState(false);
+
+    // Check for authentication and email verification
+    useEffect(() => {
+        const unsub = onAuthStateChanged(auth, (user) => {
+            if (!user) {
+                // Not logged in
+                router.push("/login");
+                return;
+            }
+
+            // Check email verification
+            if (!user.emailVerified) {
+                router.push("/verify-email");
+                return;
+            }
+
+            setAuthChecked(true);
+        });
+
+        return () => unsub();
+    }, [router]);
 
     const navItems = [
         { href: "/prompt", label: "Search", icon: Search },
@@ -72,6 +94,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         }
         return pathname.startsWith(href);
     };
+
+    // Show loading state while checking auth
+    if (!authChecked) {
+        return (
+            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
+                <div className="text-center">
+                    <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
+                    <p className="text-gray-500">Loading...</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className={`relative w-full min-h-screen ${isSetupPage ? "bg-white" : "bg-[#f8fafb]"}`}>

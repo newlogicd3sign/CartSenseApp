@@ -7,7 +7,7 @@ import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { logUserEvent } from "@/lib/logUserEvent";
 import { ACCENT_COLORS, type AccentColor } from "@/lib/utils";
-import { ArrowLeft, Flame, Beef, Wheat, Droplet, Heart, ChevronRight, Sparkles } from "lucide-react";
+import { ArrowLeft, Flame, Beef, Wheat, Droplet, Heart, ChevronRight, Sparkles, ShieldCheck } from "lucide-react";
 
 type Ingredient = {
     name: string;
@@ -270,6 +270,11 @@ function MealsPageContent() {
     const blockedIngredients = mealsMeta?.blockedIngredientsFromDoctor || [];
     const blockedGroups = mealsMeta?.blockedGroupsFromDoctor || [];
 
+    // Check if user has diet instructions from their profile
+    const userHasDietInstructions = Boolean(
+        (prefs as { doctorDietInstructions?: { hasActiveNote?: boolean } })?.doctorDietInstructions?.hasActiveNote
+    );
+
     return (
         <div className="min-h-screen bg-[#f8fafb]">
             {/* Header */}
@@ -360,7 +365,7 @@ function MealsPageContent() {
                     ) : meals.length === 0 && streamStatus ? (
                         /* Skeleton placeholder cards while loading */
                         <div className="flex flex-col gap-3">
-                            {[0, 1, 2].map((i) => (
+                            {[0, 1].map((i) => (
                                 <div
                                     key={i}
                                     className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 flex p-4 gap-4 animate-pulse"
@@ -435,9 +440,17 @@ function MealsPageContent() {
 
                                         {/* Content - Right */}
                                         <div className="flex-1 flex flex-col min-w-0">
-                                            <span className="inline-block self-start px-2 py-0.5 bg-gray-100 rounded-md text-xs font-medium text-gray-600 capitalize mb-1">
-                                                {meal.mealType}
-                                            </span>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <span className="inline-block px-2 py-0.5 bg-gray-100 rounded-md text-xs font-medium text-gray-600 capitalize">
+                                                    {meal.mealType}
+                                                </span>
+                                                {(doctorApplied || userHasDietInstructions) && (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-full text-xs font-medium text-emerald-700">
+                                                        <ShieldCheck className="w-3 h-3" />
+                                                        Diet Compliant
+                                                    </span>
+                                                )}
+                                            </div>
                                             <h2 className="text-base font-medium text-gray-900 mb-1 line-clamp-1">
                                                 {meal.name}
                                             </h2>

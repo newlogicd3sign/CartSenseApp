@@ -22,7 +22,14 @@ export default function LoginPage() {
         setLoading(true);
 
         try {
-            await signInWithEmailAndPassword(auth, email, password);
+            const cred = await signInWithEmailAndPassword(auth, email, password);
+
+            // Check if email is verified
+            if (!cred.user.emailVerified) {
+                router.push("/verify-email");
+                return;
+            }
+
             sessionStorage.setItem("animateEntry", "true");
             router.push("/prompt");
         } catch (error: any) {
@@ -69,9 +76,17 @@ export default function LoginPage() {
 
                             {/* Password Input */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Password
-                                </label>
+                                <div className="flex items-center justify-between mb-2">
+                                    <label className="block text-sm font-medium text-gray-700">
+                                        Password
+                                    </label>
+                                    <Link
+                                        href="/forgot-password"
+                                        className="text-sm text-[#4A90E2] hover:underline"
+                                    >
+                                        Forgot password?
+                                    </Link>
+                                </div>
                                 <div className="relative">
                                     <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                                     <input

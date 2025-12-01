@@ -34,8 +34,12 @@ import {
     ExternalLink,
     LogOut,
     Zap,
+    Lock,
+    Eye,
+    EyeOff,
 } from "lucide-react";
-import { signOut } from "firebase/auth";
+import { signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential, deleteUser } from "firebase/auth";
+import { deleteDoc } from "firebase/firestore";
 
 const ALLERGY_OPTIONS = [
     "Dairy",
@@ -59,6 +63,21 @@ const SENSITIVITY_OPTIONS = [
     "Red meat",
     "Corn syrup",
     "MSG",
+];
+
+const COMMON_DISLIKED_FOODS = [
+    "Cilantro",
+    "Mushrooms",
+    "Olives",
+    "Anchovies",
+    "Blue cheese",
+    "Liver",
+    "Brussels sprouts",
+    "Beets",
+    "Eggplant",
+    "Tofu",
+    "Coconut",
+    "Pickles",
 ];
 
 const DIET_OPTIONS = [
@@ -85,6 +104,7 @@ type UserPrefsDoc = {
         allergies?: string[];
         sensitivities?: string[];
     };
+    dislikedFoods?: string[];
     defaultKrogerLocationId?: string | null;
     krogerLinked?: boolean;
     doctorDietInstructions?: DoctorDietInstructions | null;
@@ -139,6 +159,8 @@ function AccountPageContent() {
     const [selectedDietType, setSelectedDietType] = useState("");
     const [selectedAllergies, setSelectedAllergies] = useState<string[]>([]);
     const [selectedSensitivities, setSelectedSensitivities] = useState<string[]>([]);
+    const [selectedDislikedFoods, setSelectedDislikedFoods] = useState<string[]>([]);
+    const [customDislikedFood, setCustomDislikedFood] = useState("");
     const [savingDietAllergies, setSavingDietAllergies] = useState(false);
     const [dietAllergiesMessage, setDietAllergiesMessage] = useState<string | null>(null);
 
@@ -147,6 +169,23 @@ function AccountPageContent() {
 
     const [krogerMessage, setKrogerMessage] = useState<string | null>(null);
     const [krogerMessageType, setKrogerMessageType] = useState<"success" | "error">("success");
+
+    // Password change state
+    const [editingPassword, setEditingPassword] = useState(false);
+    const [currentPassword, setCurrentPassword] = useState("");
+    const [newPassword, setNewPassword] = useState("");
+    const [confirmPassword, setConfirmPassword] = useState("");
+    const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+    const [showNewPassword, setShowNewPassword] = useState(false);
+    const [savingPassword, setSavingPassword] = useState(false);
+    const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
+    const [passwordMessageType, setPasswordMessageType] = useState<"success" | "error">("success");
+
+    // Delete account state
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [deletePassword, setDeletePassword] = useState("");
+    const [deletingAccount, setDeletingAccount] = useState(false);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
 
     const formatDoctorUpdatedAt = (value?: any) => {
         if (!value) return "";
@@ -399,10 +438,26 @@ function AccountPageContent() {
         );
     };
 
+    const toggleDislikedFood = (item: string) => {
+        setSelectedDislikedFoods((prev) =>
+            prev.includes(item) ? prev.filter((a) => a !== item) : [...prev, item]
+        );
+    };
+
+    const addCustomDislikedFood = () => {
+        const trimmed = customDislikedFood.trim();
+        if (trimmed && !selectedDislikedFoods.includes(trimmed)) {
+            setSelectedDislikedFoods((prev) => [...prev, trimmed]);
+            setCustomDislikedFood("");
+        }
+    };
+
     const handleEditDietAllergies = () => {
         setSelectedDietType(userDoc?.dietType ?? "");
         setSelectedAllergies(userDoc?.allergiesAndSensitivities?.allergies ?? []);
         setSelectedSensitivities(userDoc?.allergiesAndSensitivities?.sensitivities ?? []);
+        setSelectedDislikedFoods(userDoc?.dislikedFoods ?? []);
+        setCustomDislikedFood("");
         setDietAllergiesMessage(null);
         setEditingDietAllergies(true);
     };
@@ -428,6 +483,7 @@ function AccountPageContent() {
                         allergies: selectedAllergies,
                         sensitivities: selectedSensitivities,
                     },
+                    dislikedFoods: selectedDislikedFoods,
                 },
                 { merge: true }
             );
@@ -439,6 +495,7 @@ function AccountPageContent() {
                     allergies: selectedAllergies,
                     sensitivities: selectedSensitivities,
                 },
+                dislikedFoods: selectedDislikedFoods,
             }));
 
             setEditingDietAllergies(false);
@@ -479,6 +536,95 @@ function AccountPageContent() {
     const handleLogout = async () => {
         await signOut(auth);
         router.push("/login");
+    };
+
+    const handleChangePassword = async () => {
+        if (!user || !user.email) return;
+
+        // Validation
+        if (newPassword.length < 6) {
+            setPasswordMessage("New password must be at least 6 characters.");
+            setPasswordMessageType("error");
+            return;
+        }
+
+        if (newPassword !== confirmPassword) {
+            setPasswordMessage("New passwords do not match.");
+            setPasswordMessageType("error");
+            return;
+        }
+
+        try {
+            setSavingPassword(true);
+            setPasswordMessage(null);
+
+            // Re-authenticate the user first
+            const credential = EmailAuthProvider.credential(user.email, currentPassword);
+            await reauthenticateWithCredential(user, credential);
+
+            // Update the password
+            await updatePassword(user, newPassword);
+
+            setPasswordMessage("Password updated successfully.");
+            setPasswordMessageType("success");
+            setEditingPassword(false);
+            setCurrentPassword("");
+            setNewPassword("");
+            setConfirmPassword("");
+        } catch (error: any) {
+            if (error.code === "auth/wrong-password" || error.code === "auth/invalid-credential") {
+                setPasswordMessage("Current password is incorrect.");
+            } else if (error.code === "auth/weak-password") {
+                setPasswordMessage("New password is too weak. Please choose a stronger password.");
+            } else if (error.code === "auth/requires-recent-login") {
+                setPasswordMessage("Please log out and log back in before changing your password.");
+            } else {
+                setPasswordMessage(error.message || "Failed to change password.");
+            }
+            setPasswordMessageType("error");
+        } finally {
+            setSavingPassword(false);
+        }
+    };
+
+    const handleCancelEditPassword = () => {
+        setEditingPassword(false);
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+        setPasswordMessage(null);
+    };
+
+    const handleDeleteAccount = async () => {
+        if (!user || !user.email) return;
+
+        try {
+            setDeletingAccount(true);
+            setDeleteError(null);
+
+            // Re-authenticate the user first
+            const credential = EmailAuthProvider.credential(user.email, deletePassword);
+            await reauthenticateWithCredential(user, credential);
+
+            // Delete user document from Firestore
+            await deleteDoc(doc(db, "users", user.uid));
+
+            // Delete the Firebase Auth user
+            await deleteUser(user);
+
+            // Redirect to login
+            router.push("/login");
+        } catch (error: any) {
+            if (error.code === "auth/wrong-password" || error.code === "auth/invalid-credential") {
+                setDeleteError("Incorrect password. Please try again.");
+            } else if (error.code === "auth/requires-recent-login") {
+                setDeleteError("Please log out and log back in before deleting your account.");
+            } else {
+                setDeleteError(error.message || "Failed to delete account.");
+            }
+        } finally {
+            setDeletingAccount(false);
+        }
     };
 
     const getDietLabel = (value: string | undefined) => {
@@ -651,6 +797,14 @@ function AccountPageContent() {
                                                 : "None"}
                                         </p>
                                     </div>
+                                    <div>
+                                        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Food Dislikes</span>
+                                        <p className="text-sm text-gray-900 mt-0.5">
+                                            {userDoc?.dislikedFoods?.length
+                                                ? userDoc.dislikedFoods.join(", ")
+                                                : "None"}
+                                        </p>
+                                    </div>
                                     {dietAllergiesMessage && (
                                         <div className="flex items-center gap-2 p-2 bg-emerald-50 rounded-lg">
                                             <CheckCircle className="w-4 h-4 text-emerald-500" />
@@ -714,6 +868,70 @@ function AccountPageContent() {
                                                 </button>
                                             ))}
                                         </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-sm font-medium text-gray-700 mb-2 block">Food Dislikes</label>
+                                        <div className="flex flex-wrap gap-2">
+                                            {COMMON_DISLIKED_FOODS.map((item) => (
+                                                <button
+                                                    key={item}
+                                                    type="button"
+                                                    onClick={() => toggleDislikedFood(item)}
+                                                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                                                        selectedDislikedFoods.includes(item)
+                                                            ? "bg-[#4A90E2] text-white"
+                                                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                                    }`}
+                                                >
+                                                    {item}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        {/* Custom food input */}
+                                        <div className="flex gap-2 mt-3">
+                                            <input
+                                                type="text"
+                                                value={customDislikedFood}
+                                                onChange={(e) => setCustomDislikedFood(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === "Enter") {
+                                                        e.preventDefault();
+                                                        addCustomDislikedFood();
+                                                    }
+                                                }}
+                                                placeholder="Add custom food..."
+                                                className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:border-[#4A90E2] focus:outline-none"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={addCustomDislikedFood}
+                                                disabled={!customDislikedFood.trim()}
+                                                className="px-3 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                Add
+                                            </button>
+                                        </div>
+                                        {/* Show custom selections */}
+                                        {selectedDislikedFoods.filter(f => !COMMON_DISLIKED_FOODS.includes(f)).length > 0 && (
+                                            <div className="mt-3">
+                                                <p className="text-xs text-gray-500 mb-2">Your additions:</p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {selectedDislikedFoods
+                                                        .filter(f => !COMMON_DISLIKED_FOODS.includes(f))
+                                                        .map((item) => (
+                                                            <button
+                                                                key={item}
+                                                                type="button"
+                                                                onClick={() => toggleDislikedFood(item)}
+                                                                className="px-3 py-1.5 rounded-lg text-sm bg-[#4A90E2] text-white"
+                                                            >
+                                                                {item}
+                                                            </button>
+                                                        ))}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
 
                                     <div className="flex gap-3 pt-2">
@@ -987,6 +1205,257 @@ function AccountPageContent() {
                                 <div className="flex items-center gap-2 p-2 bg-emerald-50 rounded-lg">
                                     <CheckCircle className="w-4 h-4 text-emerald-500" />
                                     <span className="text-sm text-emerald-700">{locationMessage}</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Password & Security Card */}
+                    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center">
+                                    <Lock className="w-5 h-5 text-gray-500" />
+                                </div>
+                                <div>
+                                    <h2 className="font-medium text-gray-900">Password & Security</h2>
+                                    <p className="text-xs text-gray-500">Manage your account security</p>
+                                </div>
+                            </div>
+                            {!editingPassword && (
+                                <button
+                                    onClick={() => {
+                                        setEditingPassword(true);
+                                        setPasswordMessage(null);
+                                    }}
+                                    className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors"
+                                >
+                                    <Edit3 className="w-4 h-4 text-gray-400" />
+                                </button>
+                            )}
+                        </div>
+
+                        <div className="px-5 py-4">
+                            {!editingPassword ? (
+                                <div className="space-y-3">
+                                    <div>
+                                        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Password</span>
+                                        <p className="text-sm text-gray-900 mt-0.5">••••••••</p>
+                                    </div>
+                                    {passwordMessage && (
+                                        <div className={`flex items-center gap-2 p-2 rounded-lg ${
+                                            passwordMessageType === "success" ? "bg-emerald-50" : "bg-red-50"
+                                        }`}>
+                                            {passwordMessageType === "success" ? (
+                                                <CheckCircle className="w-4 h-4 text-emerald-500" />
+                                            ) : (
+                                                <AlertCircle className="w-4 h-4 text-red-500" />
+                                            )}
+                                            <span className={`text-sm ${
+                                                passwordMessageType === "success" ? "text-emerald-700" : "text-red-700"
+                                            }`}>{passwordMessage}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {/* Current Password */}
+                                    <div>
+                                        <label className="text-sm font-medium text-gray-700 mb-2 block">Current Password</label>
+                                        <div className="relative">
+                                            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                            <input
+                                                type={showCurrentPassword ? "text" : "password"}
+                                                value={currentPassword}
+                                                onChange={(e) => setCurrentPassword(e.target.value)}
+                                                placeholder="Enter current password"
+                                                className="w-full pl-11 pr-11 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#4A90E2] focus:outline-none focus:bg-white transition-colors"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                                                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                            >
+                                                {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* New Password */}
+                                    <div>
+                                        <label className="text-sm font-medium text-gray-700 mb-2 block">New Password</label>
+                                        <div className="relative">
+                                            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                            <input
+                                                type={showNewPassword ? "text" : "password"}
+                                                value={newPassword}
+                                                onChange={(e) => setNewPassword(e.target.value)}
+                                                placeholder="Enter new password"
+                                                className="w-full pl-11 pr-11 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#4A90E2] focus:outline-none focus:bg-white transition-colors"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowNewPassword(!showNewPassword)}
+                                                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                            >
+                                                {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                            </button>
+                                        </div>
+                                        <p className="text-xs text-gray-400 mt-1.5 ml-1">Must be at least 6 characters</p>
+                                    </div>
+
+                                    {/* Confirm New Password */}
+                                    <div>
+                                        <label className="text-sm font-medium text-gray-700 mb-2 block">Confirm New Password</label>
+                                        <div className="relative">
+                                            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                            <input
+                                                type={showNewPassword ? "text" : "password"}
+                                                value={confirmPassword}
+                                                onChange={(e) => setConfirmPassword(e.target.value)}
+                                                placeholder="Confirm new password"
+                                                className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#4A90E2] focus:outline-none focus:bg-white transition-colors"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Error/Success Message */}
+                                    {passwordMessage && (
+                                        <div className={`flex items-start gap-2 p-3 rounded-xl ${
+                                            passwordMessageType === "success"
+                                                ? "bg-emerald-50 border border-emerald-100"
+                                                : "bg-red-50 border border-red-100"
+                                        }`}>
+                                            {passwordMessageType === "success" ? (
+                                                <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                                            ) : (
+                                                <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                                            )}
+                                            <p className={`text-sm ${
+                                                passwordMessageType === "success" ? "text-emerald-600" : "text-red-600"
+                                            }`}>{passwordMessage}</p>
+                                        </div>
+                                    )}
+
+                                    {/* Buttons */}
+                                    <div className="flex gap-3 pt-2">
+                                        <button
+                                            onClick={() => void handleChangePassword()}
+                                            disabled={savingPassword || !currentPassword || !newPassword || !confirmPassword}
+                                            className="flex-1 py-3 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white rounded-xl font-medium disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                        >
+                                            {savingPassword ? (
+                                                <>
+                                                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                    <span>Updating...</span>
+                                                </>
+                                            ) : (
+                                                "Update Password"
+                                            )}
+                                        </button>
+                                        <button
+                                            onClick={handleCancelEditPassword}
+                                            className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Delete Account Card */}
+                    <div className="bg-white rounded-2xl border border-red-100 overflow-hidden">
+                        <div className="px-5 py-4 border-b border-red-100">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-red-50 rounded-xl flex items-center justify-center">
+                                    <AlertTriangle className="w-5 h-5 text-red-500" />
+                                </div>
+                                <div>
+                                    <h2 className="font-medium text-gray-900">Delete Account</h2>
+                                    <p className="text-xs text-gray-500">Permanently remove your account and data</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="px-5 py-4">
+                            {!showDeleteConfirm ? (
+                                <div>
+                                    <p className="text-sm text-gray-500 mb-4">
+                                        Once you delete your account, there is no going back. All your data will be permanently removed.
+                                    </p>
+                                    <button
+                                        onClick={() => {
+                                            setShowDeleteConfirm(true);
+                                            setDeletePassword("");
+                                            setDeleteError(null);
+                                        }}
+                                        className="px-4 py-2.5 bg-red-50 text-red-600 rounded-xl text-sm font-medium hover:bg-red-100 transition-colors"
+                                    >
+                                        Delete My Account
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    <div className="p-3 bg-red-50 border border-red-100 rounded-xl">
+                                        <p className="text-sm text-red-700 font-medium">
+                                            Are you sure? This action cannot be undone.
+                                        </p>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-sm font-medium text-gray-700 mb-2 block">
+                                            Enter your password to confirm
+                                        </label>
+                                        <div className="relative">
+                                            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                            <input
+                                                type="password"
+                                                value={deletePassword}
+                                                onChange={(e) => setDeletePassword(e.target.value)}
+                                                placeholder="Enter your password"
+                                                className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-red-400 focus:outline-none focus:bg-white transition-colors"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {deleteError && (
+                                        <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-100 rounded-xl">
+                                            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                                            <p className="text-sm text-red-600">{deleteError}</p>
+                                        </div>
+                                    )}
+
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={() => void handleDeleteAccount()}
+                                            disabled={deletingAccount || !deletePassword}
+                                            className="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 hover:bg-red-700 transition-colors"
+                                        >
+                                            {deletingAccount ? (
+                                                <>
+                                                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                    <span>Deleting...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Trash2 className="w-4 h-4" />
+                                                    <span>Delete Account</span>
+                                                </>
+                                            )}
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setShowDeleteConfirm(false);
+                                                setDeletePassword("");
+                                                setDeleteError(null);
+                                            }}
+                                            className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
                                 </div>
                             )}
                         </div>

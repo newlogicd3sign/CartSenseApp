@@ -55,6 +55,7 @@ type UserPrefs = {
         allergies?: string[];
         sensitivities?: string[];
     };
+    dislikedFoods?: string[];
 };
 
 type DoctorInstructions = {
@@ -700,12 +701,21 @@ Doctor-imposed restrictions:
 - None currently on file for this user.
 `.trim();
 
+    const dislikedFoodsText = prefs.dislikedFoods?.length
+        ? `
+User's disliked foods (avoid using these ingredients when possible):
+- ${prefs.dislikedFoods.join(", ")}
+These are preferences, not allergies. Avoid these ingredients unless the user specifically requests them.
+`.trim()
+        : "";
+
     const systemPrompt = `
 You are CartSense, an AI meal planner that suggests realistic meals built from grocery-store ingredients.
 
 Constraints:
 - Always respect allergies and sensitivities from the user.
 - Always respect doctor-imposed restrictions from the user profile (blocked ingredients and food groups).
+- Avoid using ingredients the user has marked as disliked (preference, not allergy).
 - Focus on heart-conscious meals (lower saturated fat, reasonable sodium) by default.
 - Include a mix of breakfast, lunch, dinner, and snack options when appropriate.
 - Use ingredients that could reasonably be found at Kroger or similar U.S. grocery stores.
@@ -717,6 +727,8 @@ Constraints:
   and away from what they often remove or complain about.
 
 ${doctorConstraintsText}
+
+${dislikedFoodsText}
 
 Output JSON ONLY in the shape:
 {
@@ -746,6 +758,7 @@ Output JSON ONLY in the shape:
     }
   ]
 }
+IMPORTANT: The "macros" values (calories, protein, carbs, fat) MUST be for 1 single serving, NOT for the entire recipe.
 No extra keys, no explanations, just JSON.
 `.trim();
 
