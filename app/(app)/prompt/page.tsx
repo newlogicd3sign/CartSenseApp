@@ -6,7 +6,7 @@ import { auth, db } from "@/lib/firebaseClient";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { getRandomAccentColor, getRandomAccentColorExcluding, type AccentColor } from "@/lib/utils";
-import { Sparkles, AlertCircle, UtensilsCrossed, ChefHat, Soup, Pizza, Salad, Sandwich, Croissant, Apple, Carrot, Beef, Fish, Citrus, Drumstick, Wheat, Ham, CookingPot, Hamburger } from "lucide-react";
+import { Sparkles, AlertCircle, UtensilsCrossed, ChefHat, Soup, Pizza, Salad, Sandwich, Croissant, Apple, Carrot, Beef, Fish, Citrus, Drumstick, Wheat, Ham, CookingPot, Hamburger, ShieldCheck, HeartPulse } from "lucide-react";
 
 const foodIcons = [
     UtensilsCrossed,
@@ -67,6 +67,11 @@ export default function PromptPage() {
     const [animateFromSetup, setAnimateFromSetup] = useState(false);
     const [FoodIcon, setFoodIcon] = useState<typeof UtensilsCrossed>(() => UtensilsCrossed);
 
+    // Doctor diet instructions state
+    const [hasDietInstructions, setHasDietInstructions] = useState(false);
+    const [blockedIngredients, setBlockedIngredients] = useState<string[]>([]);
+    const [blockedGroups, setBlockedGroups] = useState<string[]>([]);
+
     useEffect(() => {
         setGreeting(getRandomGreeting());
         setFoodIcon(() => getRandomFoodIcon());
@@ -121,6 +126,14 @@ export default function PromptPage() {
                     }
 
                     setMonthlyPromptCount(count);
+
+                    // Check for doctor diet instructions
+                    const dietInstructions = data.doctorDietInstructions;
+                    if (dietInstructions?.hasActiveNote) {
+                        setHasDietInstructions(true);
+                        setBlockedIngredients(dietInstructions.blockedIngredients || []);
+                        setBlockedGroups(dietInstructions.blockedGroups || []);
+                    }
                 }
             }
             setLoadingUser(false);
@@ -172,6 +185,21 @@ export default function PromptPage() {
                         </h1>
                     </div>
 
+                    {/* Diet Instructions Guardrails Card */}
+                    {hasDietInstructions && (
+                        <div className={`bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-4 mb-6 ${animateFromSetup ? "animate-content-after-greeting" : ""}`}>
+                            <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center">
+                                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                                </div>
+                                <div>
+                                    <h3 className="font-medium text-emerald-800 text-sm">Diet Guardrails Active</h3>
+                                    <p className="text-emerald-600" style={{ fontSize: '10px' }}>Meals will comply with your doctor&apos;s instructions</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Search Card */}
                     <div className={`bg-white rounded-2xl shadow-lg p-5 mb-6 ${animateFromSetup ? "animate-content-after-greeting" : ""}`}>
                         <textarea
@@ -201,11 +229,24 @@ export default function PromptPage() {
                             <span>Generate Meals</span>
                         </button>
 
-                        {/* AI Powered Label */}
-                        <div className="flex items-center justify-center gap-2 mt-4">
-                            <Sparkles className="w-4 h-4" style={{ color: badgeColor.primary }} />
-                            <span className="text-sm" style={{ color: badgeColor.primary }}>AI powered meal suggestions</span>
+                        {/* Labels Row */}
+                        <div className="flex items-center justify-center gap-3 mt-4 flex-wrap">
+                            <div className="flex items-center gap-1.5">
+                                <Sparkles className="w-4 h-4" style={{ color: badgeColor.primary }} />
+                                <span className="text-sm" style={{ color: badgeColor.primary }}>AI powered</span>
+                            </div>
+                            {hasDietInstructions && (
+                                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-200 rounded-full">
+                                    <HeartPulse className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span className="text-xs font-medium text-emerald-700">Diet Compliant</span>
+                                </div>
+                            )}
                         </div>
+
+                        {/* Disclaimer */}
+                        <p className="text-center text-gray-400 mt-3" style={{ fontSize: '10px' }}>
+                            CartSense can make mistakes. Check important info.
+                        </p>
                     </div>
 
                     {/* Tips Card */}

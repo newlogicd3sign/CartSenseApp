@@ -205,6 +205,23 @@ export default function ShoppingListPage() {
         }
     };
 
+    const handleRemoveAllFromDate = async (dateKey: string) => {
+        if (!user) return;
+
+        const itemsToRemove = grouped[dateKey];
+        if (!itemsToRemove || itemsToRemove.length === 0) return;
+
+        try {
+            await Promise.all(
+                itemsToRemove.map((item) =>
+                    deleteDoc(doc(db, "shoppingLists", user.uid, "items", item.id))
+                )
+            );
+        } catch (err) {
+            console.error("Error deleting items from date", err);
+        }
+    };
+
     const toDate = (ts: unknown): Date => {
         if (ts && typeof ts === "object" && "toDate" in ts && typeof (ts as { toDate: () => Date }).toDate === "function") {
             return (ts as { toDate: () => Date }).toDate();
@@ -365,14 +382,23 @@ export default function ShoppingListPage() {
                                     <div key={dateKey} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
                                         {/* Date Header */}
                                         <div className="px-5 py-4 bg-gray-50 border-b border-gray-100">
-                                            <div className="flex items-center gap-2">
-                                                <Clock className="w-4 h-4 text-gray-400" />
-                                                <span className="font-medium text-gray-900">
-                                                    {formatDate(firstTS)}
-                                                </span>
-                                                <span className="text-sm text-gray-500">
-                                                    ({sectionItems.length} item{sectionItems.length !== 1 ? "s" : ""})
-                                                </span>
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <Clock className="w-4 h-4 text-gray-400" />
+                                                    <span className="font-medium text-gray-900">
+                                                        {formatDate(firstTS)}
+                                                    </span>
+                                                    <span className="text-sm text-gray-500">
+                                                        ({sectionItems.length} item{sectionItems.length !== 1 ? "s" : ""})
+                                                    </span>
+                                                </div>
+                                                <button
+                                                    onClick={() => void handleRemoveAllFromDate(dateKey)}
+                                                    className="text-sm text-gray-500 hover:text-red-500 transition-colors flex items-center gap-1"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                    <span>Remove all</span>
+                                                </button>
                                             </div>
                                         </div>
 

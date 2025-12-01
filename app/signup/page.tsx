@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { auth, db } from "@/lib/firebaseClient";
-import { createUserWithEmailAndPassword } from "firebase/auth";
+import { createUserWithEmailAndPassword, sendEmailVerification } from "firebase/auth";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -28,6 +28,9 @@ export default function SignupPage() {
         try {
             const cred = await createUserWithEmailAndPassword(auth, email, password);
 
+            // Send email verification
+            await sendEmailVerification(cred.user);
+
             // Create a Firestore user doc
             await setDoc(doc(db, "users", cred.user.uid), {
                 email,
@@ -35,14 +38,15 @@ export default function SignupPage() {
                 monthlyPromptCount: 0,
                 promptPeriodStart: serverTimestamp(),
                 createdAt: serverTimestamp(),
+                emailVerified: false,
             });
 
-            setMessage("Account created successfully!");
+            setMessage("Account created! Check your email to verify.");
             setIsSuccess(true);
 
-            // Redirect to setup after short delay
+            // Redirect to verification page after short delay
             setTimeout(() => {
-                router.push("/setup");
+                router.push("/verify-email");
             }, 1000);
         } catch (error: any) {
             setMessage(error.message || "Something went wrong");

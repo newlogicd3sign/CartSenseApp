@@ -336,6 +336,7 @@ Output JSON ONLY in the shape:
     }
   ]
 }
+IMPORTANT: The "macros" values (calories, protein, carbs, fat) MUST be for 1 single serving, NOT for the entire recipe.
 No extra keys, no explanations, just JSON.`;
 }
 

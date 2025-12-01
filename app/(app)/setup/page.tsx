@@ -34,6 +34,21 @@ const SENSITIVITY_OPTIONS = [
     "MSG",
 ];
 
+const COMMON_DISLIKED_FOODS = [
+    "Cilantro",
+    "Mushrooms",
+    "Olives",
+    "Anchovies",
+    "Blue cheese",
+    "Liver",
+    "Brussels sprouts",
+    "Beets",
+    "Eggplant",
+    "Tofu",
+    "Coconut",
+    "Pickles",
+];
+
 const DIET_OPTIONS = [
     { value: "heart_healthy", label: "Heart healthy" },
     { value: "low_sodium", label: "Low sodium" },
@@ -52,6 +67,8 @@ export default function SetupPage() {
     const [dietType, setDietType] = useState("");
     const [selectedAllergies, setSelectedAllergies] = useState<string[]>([]);
     const [selectedSensitivities, setSelectedSensitivities] = useState<string[]>([]);
+    const [selectedDislikedFoods, setSelectedDislikedFoods] = useState<string[]>([]);
+    const [customDislikedFood, setCustomDislikedFood] = useState("");
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState<string | null>(null);
     const [accentColor, setAccentColor] = useState<AccentColor>({ primary: "#3b82f6", dark: "#2563eb" });
@@ -85,6 +102,20 @@ export default function SetupPage() {
         );
     };
 
+    const toggleDislikedFood = (item: string) => {
+        setSelectedDislikedFoods((prev) =>
+            prev.includes(item) ? prev.filter((a) => a !== item) : [...prev, item]
+        );
+    };
+
+    const addCustomDislikedFood = () => {
+        const trimmed = customDislikedFood.trim();
+        if (trimmed && !selectedDislikedFoods.includes(trimmed)) {
+            setSelectedDislikedFoods((prev) => [...prev, trimmed]);
+            setCustomDislikedFood("");
+        }
+    };
+
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
         if (!user) return;
@@ -102,6 +133,7 @@ export default function SetupPage() {
                         allergies: selectedAllergies,
                         sensitivities: selectedSensitivities,
                     },
+                    dislikedFoods: selectedDislikedFoods,
                 },
                 { merge: true }
             );
@@ -120,7 +152,7 @@ export default function SetupPage() {
     };
 
     const nextStep = () => {
-        if (step < 3) setStep(step + 1);
+        if (step < 4) setStep(step + 1);
     };
 
     const prevStep = () => {
@@ -152,7 +184,7 @@ export default function SetupPage() {
 
                     {/* Progress Steps */}
                     <div className="flex items-center gap-2 mb-8">
-                        {[1, 2, 3].map((s) => (
+                        {[1, 2, 3, 4].map((s) => (
                             <div
                                 key={s}
                                 className={`h-1 flex-1 rounded-full transition-colors ${
@@ -265,7 +297,91 @@ export default function SetupPage() {
 
                                     {selectedSensitivities.length === 0 && (
                                         <p className="text-sm text-gray-400">
-                                            No sensitivities? Just tap Finish Setup.
+                                            No sensitivities? Just tap Continue.
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Step 4: Food Dislikes */}
+                            {step === 4 && (
+                                <div className="space-y-6">
+                                    <div>
+                                        <h2 className="font-medium text-gray-900 mb-1">Food Dislikes</h2>
+                                        <p className="text-sm text-gray-500">Foods you'd rather not see in meals</p>
+                                    </div>
+
+                                    <div className="flex flex-wrap gap-2">
+                                        {COMMON_DISLIKED_FOODS.map((item) => (
+                                            <button
+                                                key={item}
+                                                type="button"
+                                                onClick={() => toggleDislikedFood(item)}
+                                                className={`px-4 py-2.5 rounded-full text-sm font-medium transition-all ${
+                                                    selectedDislikedFoods.includes(item)
+                                                        ? "bg-gray-900 text-white"
+                                                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                                }`}
+                                            >
+                                                {item}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {/* Custom food input */}
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Add your own
+                                        </label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                value={customDislikedFood}
+                                                onChange={(e) => setCustomDislikedFood(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === "Enter") {
+                                                        e.preventDefault();
+                                                        addCustomDislikedFood();
+                                                    }
+                                                }}
+                                                placeholder="e.g., Onions"
+                                                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:border-gray-900 focus:ring-1 focus:ring-gray-900 focus:outline-none transition-colors"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={addCustomDislikedFood}
+                                                disabled={!customDislikedFood.trim()}
+                                                className="px-4 py-2.5 bg-gray-900 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                Add
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Show custom selections */}
+                                    {selectedDislikedFoods.filter(f => !COMMON_DISLIKED_FOODS.includes(f)).length > 0 && (
+                                        <div>
+                                            <p className="text-xs text-gray-500 mb-2">Your additions:</p>
+                                            <div className="flex flex-wrap gap-2">
+                                                {selectedDislikedFoods
+                                                    .filter(f => !COMMON_DISLIKED_FOODS.includes(f))
+                                                    .map((item) => (
+                                                        <button
+                                                            key={item}
+                                                            type="button"
+                                                            onClick={() => toggleDislikedFood(item)}
+                                                            className="px-4 py-2.5 rounded-full text-sm font-medium bg-gray-900 text-white"
+                                                        >
+                                                            {item}
+                                                        </button>
+                                                    ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {selectedDislikedFoods.length === 0 && (
+                                        <p className="text-sm text-gray-400">
+                                            No dislikes? Just tap Finish Setup.
                                         </p>
                                     )}
                                 </div>
@@ -282,7 +398,7 @@ export default function SetupPage() {
 
                         {/* Navigation Buttons */}
                         <div className="mt-8 space-y-3">
-                            {step < 3 ? (
+                            {step < 4 ? (
                                 <button
                                     type="button"
                                     onClick={nextStep}
