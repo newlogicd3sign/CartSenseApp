@@ -5,19 +5,18 @@ import { auth, db } from "@/lib/firebaseClient";
 import { onAuthStateChanged, sendEmailVerification, signOut, type User } from "firebase/auth";
 import { doc, updateDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import Image from "next/image";
-import { Mail, RefreshCw, CheckCircle, AlertCircle, LogOut } from "lucide-react";
+import { Mail, RefreshCw, CheckCircle, LogOut } from "lucide-react";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
+import { useToast } from "@/components/Toast";
 
 export default function VerifyEmailPage() {
     const router = useRouter();
+    const { showToast } = useToast();
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
     const [resending, setResending] = useState(false);
     const [checking, setChecking] = useState(false);
-    const [message, setMessage] = useState<string | null>(null);
-    const [messageType, setMessageType] = useState<"success" | "error">("success");
 
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, (firebaseUser) => {
@@ -49,19 +48,16 @@ export default function VerifyEmailPage() {
         if (!user) return;
 
         setResending(true);
-        setMessage(null);
 
         try {
             await sendEmailVerification(user);
-            setMessage("Verification email sent! Check your inbox.");
-            setMessageType("success");
+            showToast("Verification email sent! Check your inbox.", "success");
         } catch (error: any) {
             if (error.code === "auth/too-many-requests") {
-                setMessage("Too many requests. Please wait a few minutes before trying again.");
+                showToast("Too many requests. Please wait a few minutes before trying again.", "error");
             } else {
-                setMessage(error.message || "Failed to send verification email.");
+                showToast(error.message || "Failed to send verification email.", "error");
             }
-            setMessageType("error");
         } finally {
             setResending(false);
         }
@@ -71,7 +67,6 @@ export default function VerifyEmailPage() {
         if (!user) return;
 
         setChecking(true);
-        setMessage(null);
 
         try {
             // Reload the user to get the latest emailVerified status
@@ -90,19 +85,16 @@ export default function VerifyEmailPage() {
                     emailVerified: true,
                 });
 
-                setMessage("Email verified! Redirecting...");
-                setMessageType("success");
+                showToast("Email verified! Redirecting...", "success");
 
                 setTimeout(() => {
                     router.push("/setup");
                 }, 1000);
             } else {
-                setMessage("Email not verified yet. Please check your inbox and click the verification link.");
-                setMessageType("error");
+                showToast("Email not verified yet. Please check your inbox and click the verification link.", "error");
             }
         } catch (error: any) {
-            setMessage(error.message || "Failed to check verification status.");
-            setMessageType("error");
+            showToast(error.message || "Failed to check verification status.", "error");
         } finally {
             setChecking(false);
         }
@@ -158,30 +150,6 @@ export default function VerifyEmailPage() {
                                 Once verified, click the button below to continue.
                             </p>
                         </div>
-
-                        {/* Message */}
-                        {message && (
-                            <div
-                                className={`flex items-start gap-2 p-3 rounded-xl mb-4 ${
-                                    messageType === "success"
-                                        ? "bg-green-50 border border-green-100"
-                                        : "bg-red-50 border border-red-100"
-                                }`}
-                            >
-                                {messageType === "success" ? (
-                                    <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                                ) : (
-                                    <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-                                )}
-                                <p
-                                    className={`text-sm ${
-                                        messageType === "success" ? "text-green-600" : "text-red-600"
-                                    }`}
-                                >
-                                    {message}
-                                </p>
-                            </div>
-                        )}
 
                         {/* Action Buttons */}
                         <div className="space-y-3">

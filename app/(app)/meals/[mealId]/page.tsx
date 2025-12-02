@@ -35,6 +35,7 @@ type Ingredient = {
     category?: string;
     aisle?: string;
     price?: number;
+    soldBy?: "WEIGHT" | "UNIT";
     krogerProductId?: string;
     productName?: string;
     productImageUrl?: string;
@@ -689,7 +690,7 @@ function MealDetailPageContent() {
                                             {ing.category && ` • ${ing.category}`}
                                             {krogerConnected && ing.productAisle && ` • ${ing.productAisle}`}
                                             {krogerConnected && typeof ing.price === "number" && (
-                                                <span className="text-[#4A90E2]"> • ${ing.price.toFixed(2)}</span>
+                                                <span className="text-[#4A90E2]"> • ${ing.price.toFixed(2)}{ing.soldBy === "WEIGHT" ? "/lb" : ""}</span>
                                             )}
                                         </div>
                                     </div>

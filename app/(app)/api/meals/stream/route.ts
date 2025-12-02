@@ -19,9 +19,12 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 type Ingredient = {
     name: string;
     quantity: string;
+    grocerySearchTerm?: string; // Clean search term for Kroger (e.g., "fresh bananas" instead of "sliced bananas")
+    preparation?: string; // How to prepare (e.g., "sliced", "diced", "minced")
     category?: string;
     aisle?: string;
     price?: number;
+    soldBy?: "WEIGHT" | "UNIT"; // WEIGHT = price per lb, UNIT = price per item
     krogerProductId?: string;
     productName?: string;
     productImageUrl?: string;
@@ -124,6 +127,88 @@ function normalizeString(value: unknown, fallback = ""): string {
     return String(value);
 }
 
+// Fallback mapping for common ingredient patterns when AI doesn't provide grocerySearchTerm
+function getGrocerySearchFallback(ingredientName: string): string | null {
+    const lower = ingredientName.toLowerCase().trim();
+
+    // Prep words to strip from the beginning
+    const prepWords = [
+        "sliced", "diced", "chopped", "minced", "grated", "shredded",
+        "cubed", "julienned", "thinly sliced", "finely chopped", "finely diced",
+        "freshly ground", "freshly grated", "freshly squeezed", "coarsely chopped",
+        "roughly chopped", "crushed", "mashed", "pureed", "peeled", "deveined",
+        "trimmed", "halved", "quartered", "whole", "fresh", "frozen", "thawed",
+        "cooked", "raw", "uncooked", "prepared", "rinsed", "drained",
+    ];
+
+    // Remove prep words from the start
+    let cleaned = lower;
+    for (const prep of prepWords) {
+        if (cleaned.startsWith(prep + " ")) {
+            cleaned = cleaned.slice(prep.length + 1).trim();
+        }
+    }
+
+    // Specific mappings for common problematic ingredients
+    const specificMappings: Record<string, string> = {
+        // Produce
+        "banana": "fresh bananas",
+        "bananas": "fresh bananas",
+        "apple": "fresh apples",
+        "apples": "fresh apples",
+        "onion": "yellow onion",
+        "onions": "yellow onions",
+        "garlic": "fresh garlic",
+        "garlic cloves": "fresh garlic",
+        "ginger": "fresh ginger",
+        "lemon": "fresh lemons",
+        "lemons": "fresh lemons",
+        "lime": "fresh limes",
+        "limes": "fresh limes",
+        "avocado": "fresh avocado",
+        "avocados": "fresh avocados",
+        "tomato": "fresh tomatoes",
+        "tomatoes": "fresh tomatoes",
+        "spinach": "fresh spinach",
+        "kale": "fresh kale",
+        "lettuce": "romaine lettuce",
+        "cilantro": "fresh cilantro",
+        "parsley": "fresh parsley",
+        "basil": "fresh basil",
+        "mint": "fresh mint",
+        // Dairy
+        "mozzarella": "mozzarella cheese",
+        "cheddar": "cheddar cheese",
+        "parmesan": "parmesan cheese",
+        "feta": "feta cheese",
+        "cream cheese": "cream cheese",
+        "sour cream": "sour cream",
+        // Proteins
+        "chicken breast": "boneless skinless chicken breast",
+        "chicken breasts": "boneless skinless chicken breast",
+        "chicken thighs": "boneless skinless chicken thighs",
+        "ground beef": "ground beef",
+        "ground turkey": "ground turkey",
+        "salmon": "fresh salmon",
+        "shrimp": "raw shrimp",
+        // Eggs
+        "egg": "large eggs",
+        "eggs": "large eggs",
+    };
+
+    // Check specific mappings first
+    if (specificMappings[cleaned]) {
+        return specificMappings[cleaned];
+    }
+
+    // If we cleaned something, return the cleaned version
+    if (cleaned !== lower) {
+        return cleaned;
+    }
+
+    return null;
+}
+
 function normalizeIngredient(raw: unknown): Ingredient {
     const r = raw as Record<string, unknown>;
     const priceValue = r.price != null && Number.isFinite(Number(r.price)) ? Number(r.price) : undefined;
@@ -131,6 +216,8 @@ function normalizeIngredient(raw: unknown): Ingredient {
     return {
         name: normalizeString(r.name, "Unknown ingredient"),
         quantity: normalizeString(r.quantity, ""),
+        grocerySearchTerm: typeof r.grocerySearchTerm === "string" ? r.grocerySearchTerm : undefined,
+        preparation: typeof r.preparation === "string" ? r.preparation : undefined,
         category: r.category ? String(r.category) : undefined,
         aisle: r.aisle ? String(r.aisle) : undefined,
         price: priceValue,
@@ -339,7 +426,12 @@ Output JSON ONLY in the shape:
       "description": "string",
       "servings": number,
       "macros": { "calories": number, "protein": number, "carbs": number, "fat": number },
-      "ingredients": [{ "name": "string", "quantity": "string" }],
+      "ingredients": [{
+        "name": "string (display name with preparation, e.g. 'sliced bananas')",
+        "quantity": "string",
+        "grocerySearchTerm": "string (clean grocery item to search for, e.g. 'fresh bananas')",
+        "preparation": "string (optional prep method: sliced, diced, minced, etc.)"
+      }],
       "steps": ["string"]
     }
   ]
@@ -348,6 +440,18 @@ IMPORTANT:
 - The "macros" values (calories, protein, carbs, fat) MUST be for 1 single serving, NOT for the entire recipe.
 - The "ingredients" list MUST include all seasonings and spices needed (salt, pepper, garlic powder, herbs, etc.)
 - The "steps" should be detailed, numbered instructions written in a warm, conversational food-blogger style
+
+CRITICAL INGREDIENT FORMATTING:
+- "name": What to display to the user (e.g., "sliced bananas", "diced onion", "minced garlic")
+- "grocerySearchTerm": The actual grocery store product to search for - NO prep words like sliced/diced/minced/chopped. Use the raw ingredient name.
+  Examples:
+    - If name is "sliced bananas" → grocerySearchTerm should be "fresh bananas"
+    - If name is "diced yellow onion" → grocerySearchTerm should be "yellow onion"
+    - If name is "minced garlic" → grocerySearchTerm should be "fresh garlic" or "garlic"
+    - If name is "shredded mozzarella" → grocerySearchTerm should be "mozzarella cheese"
+    - If name is "crushed tomatoes" → grocerySearchTerm should be "crushed tomatoes" (this IS the product)
+- "preparation": The prep method (sliced, diced, minced, chopped, etc.) - leave empty if none needed
+
 No extra keys, no explanations, just JSON.`;
 }
 
@@ -517,7 +621,11 @@ export async function POST(request: Request) {
                     const enrichedIngredients = await Promise.all(
                         meal.ingredients.slice(0, 6).map(async (ingredient) => {
                             try {
-                                const match = await searchKrogerProduct(ingredient.name, {
+                                // Use grocerySearchTerm if available, with fallback mapping, then fall back to name
+                                const searchTerm = ingredient.grocerySearchTerm
+                                    || getGrocerySearchFallback(ingredient.name)
+                                    || ingredient.name;
+                                const match = await searchKrogerProduct(searchTerm, {
                                     locationId: defaultKrogerLocationId || undefined,
                                 });
                                 if (!match) return ingredient;
@@ -529,6 +637,7 @@ export async function POST(request: Request) {
                                     productSize: match.size,
                                     productAisle: match.aisle,
                                     price: match.price, // Only use real Kroger prices, never estimated
+                                    soldBy: match.soldBy, // WEIGHT = per lb, UNIT = per item
                                     aisle: ingredient.aisle ?? match.aisle,
                                 };
                             } catch {

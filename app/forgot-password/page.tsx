@@ -5,37 +5,34 @@ import { auth } from "@/lib/firebaseClient";
 import { sendPasswordResetEmail } from "firebase/auth";
 import Link from "next/link";
 import Image from "next/image";
-import { Mail, ArrowRight, AlertCircle, CheckCircle, ArrowLeft } from "lucide-react";
+import { Mail, ArrowRight, CheckCircle, ArrowLeft } from "lucide-react";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
+import { useToast } from "@/components/Toast";
 
 export default function ForgotPasswordPage() {
+    const { showToast } = useToast();
     const [email, setEmail] = useState("");
-    const [message, setMessage] = useState<string | null>(null);
     const [isSuccess, setIsSuccess] = useState(false);
     const [loading, setLoading] = useState(false);
 
     const handleResetPassword = async (e: React.FormEvent) => {
         e.preventDefault();
-        setMessage(null);
-        setIsSuccess(false);
         setLoading(true);
 
         try {
             await sendPasswordResetEmail(auth, email);
-            setMessage("Check your email for a password reset link.");
             setIsSuccess(true);
         } catch (error: any) {
             // Handle specific Firebase errors
             if (error.code === "auth/user-not-found") {
-                setMessage("No account found with this email address.");
+                showToast("No account found with this email address.", "error");
             } else if (error.code === "auth/invalid-email") {
-                setMessage("Please enter a valid email address.");
+                showToast("Please enter a valid email address.", "error");
             } else if (error.code === "auth/too-many-requests") {
-                setMessage("Too many requests. Please try again later.");
+                showToast("Too many requests. Please try again later.", "error");
             } else {
-                setMessage(error.message || "Failed to send reset email.");
+                showToast(error.message || "Failed to send reset email.", "error");
             }
-            setIsSuccess(false);
         } finally {
             setLoading(false);
         }
@@ -77,14 +74,6 @@ export default function ForgotPasswordPage() {
                                     </div>
                                 </div>
 
-                                {/* Error Message */}
-                                {message && !isSuccess && (
-                                    <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-100 rounded-xl">
-                                        <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-                                        <p className="text-sm text-red-600">{message}</p>
-                                    </div>
-                                )}
-
                                 {/* Submit Button */}
                                 <button
                                     type="submit"
@@ -116,10 +105,7 @@ export default function ForgotPasswordPage() {
                                 <p className="text-gray-400 text-xs">
                                     Didn't receive the email? Check your spam folder or{" "}
                                     <button
-                                        onClick={() => {
-                                            setIsSuccess(false);
-                                            setMessage(null);
-                                        }}
+                                        onClick={() => setIsSuccess(false)}
                                         className="text-[#4A90E2] hover:underline"
                                     >
                                         try again
