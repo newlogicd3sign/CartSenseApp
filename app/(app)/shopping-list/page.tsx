@@ -11,7 +11,6 @@ import {
     doc,
     query,
     orderBy,
-    getDoc,
 } from "firebase/firestore";
 import {
     List,
@@ -24,6 +23,7 @@ import {
     Clock,
     ChefHat,
     MapPin,
+    Lightbulb,
 } from "lucide-react";
 import { getRandomAccentColor, type AccentColor } from "@/lib/utils";
 
@@ -44,7 +44,7 @@ type ShoppingItem = {
     soldBy?: "WEIGHT" | "UNIT";
 };
 
-type KrogerLinkStatus = "loading" | "linked" | "not_linked";
+type KrogerLinkStatus = "loading" | "linked" | "not_linked" | "no_store";
 
 type KrogerProduct = {
     krogerProductId: string;
@@ -87,6 +87,8 @@ export default function ShoppingListPage() {
     const [krogerResults, setKrogerResults] = useState<EnrichedItem[] | null>(null);
     const [showKrogerResults, setShowKrogerResults] = useState(false);
     const [accentColor, setAccentColor] = useState<AccentColor>({ primary: "#3b82f6", dark: "#2563eb" });
+    const [removeConfirmDateKey, setRemoveConfirmDateKey] = useState<string | null>(null);
+    const [showPantryTip, setShowPantryTip] = useState(true);
 
     useEffect(() => {
         setAccentColor(getRandomAccentColor());
@@ -111,12 +113,24 @@ export default function ShoppingListPage() {
 
         const checkKrogerStatus = async () => {
             try {
-                const userRef = doc(db, "users", user.uid);
-                const snap = await getDoc(userRef);
-                if (snap.exists() && snap.data()?.krogerLinked) {
+                // Use server-side API to check Kroger status (bypasses Firestore rules)
+                const res = await fetch(`/api/kroger/status?userId=${user.uid}`);
+                const data = await res.json();
+
+                console.log("Kroger status API response:", data);
+
+                if (!res.ok) {
+                    console.error("Kroger status check failed:", data);
+                    setKrogerLinkStatus("not_linked");
+                    return;
+                }
+
+                if (!data.linked) {
+                    setKrogerLinkStatus("not_linked");
+                } else if (data.hasStore) {
                     setKrogerLinkStatus("linked");
                 } else {
-                    setKrogerLinkStatus("not_linked");
+                    setKrogerLinkStatus("no_store");
                 }
             } catch (err) {
                 console.error("Error checking Kroger status", err);
@@ -155,15 +169,15 @@ export default function ShoppingListPage() {
         return () => unsub();
     }, [user]);
 
-    const handleAddToKrogerCart = async () => {
-        if (!user || items.length === 0) return;
+    const handleAddToKrogerCart = async (itemsToAdd: ShoppingItem[]) => {
+        if (!user || itemsToAdd.length === 0) return;
 
         setAddingToKroger(true);
         setKrogerMessage(null);
         setKrogerResults(null);
 
         try {
-            const cartItems = items.map((item) => ({
+            const cartItems = itemsToAdd.map((item) => ({
                 id: item.id,
                 name: item.name,
                 quantity: item.quantity,
@@ -181,6 +195,9 @@ export default function ShoppingListPage() {
                 if (data.error === "NOT_LINKED" || data.error === "TOKEN_EXPIRED") {
                     setKrogerLinkStatus("not_linked");
                     setKrogerMessage(data.message || "Please link your Kroger account first.");
+                } else if (data.error === "NO_STORE") {
+                    setKrogerLinkStatus("no_store");
+                    setKrogerMessage(data.message || "Please select a Kroger store first.");
                 } else {
                     setKrogerMessage(data.message || "Failed to add items to Kroger cart.");
                 }
@@ -298,26 +315,16 @@ export default function ShoppingListPage() {
                             </div>
                         </div>
 
-                        {/* Kroger Actions */}
-                        {items.length > 0 && (
+                        {/* Kroger Link Status - show link/store buttons in header when not fully set up */}
+                        {items.length > 0 && krogerLinkStatus !== "linked" && krogerLinkStatus !== "loading" && (
                             <div className="flex flex-col items-end gap-2">
-                                {krogerLinkStatus === "linked" ? (
+                                {krogerLinkStatus === "no_store" ? (
                                     <button
-                                        onClick={() => void handleAddToKrogerCart()}
-                                        disabled={addingToKroger}
-                                        className="px-4 py-2.5 bg-[#0056a3] text-white rounded-xl text-sm font-medium hover:bg-[#004080] transition-colors disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2"
+                                        onClick={() => router.push("/account")}
+                                        className="px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors flex items-center gap-2"
                                     >
-                                        {addingToKroger ? (
-                                            <>
-                                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                                <span>Adding...</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <ExternalLink className="w-4 h-4" />
-                                                <span>Add to Kroger Cart</span>
-                                            </>
-                                        )}
+                                        <MapPin className="w-4 h-4" />
+                                        <span>Select Store</span>
                                     </button>
                                 ) : krogerLinkStatus === "not_linked" ? (
                                     <button
@@ -382,6 +389,26 @@ export default function ShoppingListPage() {
                         </div>
                     ) : (
                         <div className="space-y-6">
+                            {/* Pantry Tip */}
+                            {showPantryTip && (
+                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+                                    <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                        <Lightbulb className="w-4 h-4 text-amber-600" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm text-amber-800">
+                                            <span className="font-medium">Tip:</span> Remove items you already have in your pantry to avoid buying duplicates.
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={() => setShowPantryTip(false)}
+                                        className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-amber-100 transition-colors flex-shrink-0"
+                                    >
+                                        <X className="w-4 h-4 text-amber-600" />
+                                    </button>
+                                </div>
+                            )}
+
                             {sortedDates.map((dateKey) => {
                                 const sectionItems = grouped[dateKey];
                                 const firstTS = sectionItems[0]?.createdAt;
@@ -389,24 +416,46 @@ export default function ShoppingListPage() {
                                 return (
                                     <div key={dateKey} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
                                         {/* Date Header */}
-                                        <div className="px-5 py-4 bg-gray-50 border-b border-gray-100">
-                                            <div className="flex items-center justify-between">
+                                        <div className="px-4 sm:px-5 py-3 sm:py-4 bg-gray-50 border-b border-gray-100">
+                                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                                                {/* Date and item count */}
                                                 <div className="flex items-center gap-2">
-                                                    <Clock className="w-4 h-4 text-gray-400" />
-                                                    <span className="font-medium text-gray-900">
+                                                    <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                                                    <span className="font-medium text-gray-900 text-sm sm:text-base">
                                                         {formatDate(firstTS)}
                                                     </span>
-                                                    <span className="text-sm text-gray-500">
+                                                    <span className="text-xs sm:text-sm text-gray-500">
                                                         ({sectionItems.length} item{sectionItems.length !== 1 ? "s" : ""})
                                                     </span>
                                                 </div>
-                                                <button
-                                                    onClick={() => void handleRemoveAllFromDate(dateKey)}
-                                                    className="text-sm text-gray-500 hover:text-red-500 transition-colors flex items-center gap-1"
-                                                >
-                                                    <Trash2 className="w-3.5 h-3.5" />
-                                                    <span>Remove all</span>
-                                                </button>
+                                                {/* Actions */}
+                                                <div className="flex items-center gap-2">
+                                                    {krogerLinkStatus === "linked" && (
+                                                        <button
+                                                            onClick={() => void handleAddToKrogerCart(sectionItems)}
+                                                            disabled={addingToKroger}
+                                                            className="px-3 py-1.5 h-8 bg-[#0056a3] text-white rounded-lg text-xs sm:text-sm font-medium hover:bg-[#004080] transition-colors disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-1.5"
+                                                        >
+                                                            {addingToKroger ? (
+                                                                <>
+                                                                    <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                                    <span>Adding...</span>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <ExternalLink className="w-3.5 h-3.5" />
+                                                                    <span>Add to Kroger</span>
+                                                                </>
+                                                            )}
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        onClick={() => setRemoveConfirmDateKey(dateKey)}
+                                                        className="w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded-lg flex items-center justify-center transition-colors flex-shrink-0"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
 
@@ -484,6 +533,46 @@ export default function ShoppingListPage() {
                     )}
                 </div>
             </div>
+
+            {/* Remove Confirmation Modal */}
+            {removeConfirmDateKey && grouped[removeConfirmDateKey] && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div
+                        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+                        onClick={() => setRemoveConfirmDateKey(null)}
+                    />
+                    <div className="relative w-full max-w-sm bg-white rounded-2xl p-6 animate-slide-up">
+                        <div className="text-center">
+                            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <Trash2 className="w-6 h-6 text-red-500" />
+                            </div>
+                            <h3 className="text-lg font-medium text-gray-900 mb-2">
+                                Remove {grouped[removeConfirmDateKey].length} item{grouped[removeConfirmDateKey].length !== 1 ? "s" : ""}?
+                            </h3>
+                            <p className="text-sm text-gray-500 mb-6">
+                                You&apos;re about to remove all items from {formatDate(grouped[removeConfirmDateKey][0]?.createdAt)}. This action cannot be undone.
+                            </p>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setRemoveConfirmDateKey(null)}
+                                    className="flex-1 py-2.5 px-4 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        void handleRemoveAllFromDate(removeConfirmDateKey);
+                                        setRemoveConfirmDateKey(null);
+                                    }}
+                                    className="flex-1 py-2.5 px-4 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 transition-colors"
+                                >
+                                    Remove
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Kroger Results Modal */}
             {showKrogerResults && krogerResults && (

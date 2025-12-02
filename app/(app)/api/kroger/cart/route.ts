@@ -126,6 +126,16 @@ export async function POST(request: Request) {
         // Get user's default location for better product search results
         const locationId = await getUserDefaultLocationId(userId);
 
+        if (!locationId) {
+            return NextResponse.json(
+                {
+                    error: "NO_STORE",
+                    message: "Please select a Kroger store first in your account settings.",
+                },
+                { status: 400 }
+            );
+        }
+
         // Search for each item and enrich with Kroger product data
         // If the best match is unavailable, search for an alternative
         const enrichedItems: (EnrichedItem & { itemId: string; usedAlternative?: boolean })[] = await Promise.all(

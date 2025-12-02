@@ -27,6 +27,9 @@ import {
     Users,
     CheckCircle,
     MessageCircle,
+    ExternalLink,
+    X,
+    AlertCircle,
 } from "lucide-react";
 
 type Ingredient = {
@@ -64,10 +67,36 @@ type UserPrefs = {
     name?: string;
     dietType?: string;
     krogerLinked?: boolean;
+    defaultKrogerLocationId?: string | null;
     allergiesAndSensitivities?: {
         allergies?: string[];
         sensitivities?: string[];
     };
+};
+
+type KrogerProduct = {
+    krogerProductId: string;
+    name: string;
+    imageUrl?: string;
+    price?: number;
+    size?: string;
+    aisle?: string;
+};
+
+type EnrichedItem = {
+    originalName: string;
+    quantity: string;
+    found: boolean;
+    product?: KrogerProduct;
+};
+
+type KrogerCartResponse = {
+    success: boolean;
+    message: string;
+    enrichedItems?: EnrichedItem[];
+    addedCount?: number;
+    notFoundCount?: number;
+    error?: string;
 };
 
 type MealThreadReply = {
@@ -129,6 +158,14 @@ function MealDetailPageContent() {
     const [hasLoggedView, setHasLoggedView] = useState(false);
     const [selectedIngredients, setSelectedIngredients] = useState<Set<number>>(new Set());
 
+    // Kroger cart state
+    const [krogerStoreSet, setKrogerStoreSet] = useState(false);
+    const [addingToKrogerCart, setAddingToKrogerCart] = useState(false);
+    const [krogerCartMessage, setKrogerCartMessage] = useState<string | null>(null);
+    const [krogerCartMessageType, setKrogerCartMessageType] = useState<"success" | "error">("success");
+    const [krogerResults, setKrogerResults] = useState<EnrichedItem[] | null>(null);
+    const [showKrogerResults, setShowKrogerResults] = useState(false);
+
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
             if (!firebaseUser) {
@@ -145,6 +182,7 @@ function MealDetailPageContent() {
                     const data = snap.data() as UserPrefs;
                     setPrefs(data);
                     setKrogerConnected(Boolean(data.krogerLinked));
+                    setKrogerStoreSet(Boolean(data.defaultKrogerLocationId));
                 }
             } catch (err) {
                 console.error("Error loading user prefs", err);
@@ -204,6 +242,13 @@ function MealDetailPageContent() {
 
         setHasLoggedView(true);
     }, [user, meal, hasLoggedView]);
+
+    // Scroll to top when the page loads to ensure proper slide-up effect on mobile
+    useEffect(() => {
+        if (!loadingMeal && meal) {
+            window.scrollTo(0, 0);
+        }
+    }, [loadingMeal, meal]);
 
     // Initialize all ingredients as selected when meal loads
     useEffect(() => {
@@ -360,6 +405,78 @@ function MealDetailPageContent() {
         }
     };
 
+    const handleAddToKrogerCart = async () => {
+        if (!user || !meal) return;
+        if (selectedIngredients.size === 0) {
+            setKrogerCartMessage("Please select at least one ingredient to add.");
+            setKrogerCartMessageType("error");
+            return;
+        }
+
+        setAddingToKrogerCart(true);
+        setKrogerCartMessage(null);
+        setKrogerResults(null);
+
+        try {
+            const ingredientsToAdd = meal.ingredients.filter((_, idx) => selectedIngredients.has(idx));
+            const cartItems = ingredientsToAdd.map((ing, idx) => ({
+                id: `${meal.id}-${idx}`,
+                name: ing.name,
+                quantity: ing.quantity,
+            }));
+
+            const res = await fetch("/api/kroger/cart", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ userId: user.uid, items: cartItems }),
+            });
+
+            const data = (await res.json()) as KrogerCartResponse;
+
+            if (!res.ok) {
+                if (data.error === "NOT_LINKED" || data.error === "TOKEN_EXPIRED") {
+                    setKrogerConnected(false);
+                    setKrogerCartMessage(data.message || "Please link your Kroger account first.");
+                } else if (data.error === "NO_STORE") {
+                    setKrogerStoreSet(false);
+                    setKrogerCartMessage(data.message || "Please select a Kroger store first.");
+                } else {
+                    setKrogerCartMessage(data.message || "Failed to add items to Kroger cart.");
+                }
+                setKrogerCartMessageType("error");
+            } else {
+                setKrogerCartMessage(data.message || "Items added to your Kroger cart!");
+                setKrogerCartMessageType("success");
+
+                // Also save the meal when adding to Kroger cart
+                const mealRef = doc(db, "savedMeals", user.uid, "meals", meal.id);
+                await setDoc(mealRef, {
+                    ...meal,
+                    prompt: displayedPrompt || null,
+                    savedAt: serverTimestamp(),
+                });
+
+                logUserEvent(user.uid, {
+                    type: "added_to_kroger_cart",
+                    mealId: meal.id,
+                }).catch((err) => {
+                    console.error("Failed to log added_to_kroger_cart event:", err);
+                });
+            }
+
+            if (data.enrichedItems && data.enrichedItems.length > 0) {
+                setKrogerResults(data.enrichedItems);
+                setShowKrogerResults(true);
+            }
+        } catch (err) {
+            console.error("Error adding to Kroger cart:", err);
+            setKrogerCartMessage("Something went wrong. Please try again.");
+            setKrogerCartMessageType("error");
+        } finally {
+            setAddingToKrogerCart(false);
+        }
+    };
+
     const handleSendThreadMessage = async () => {
         if (!meal || !threadInput.trim()) return;
 
@@ -388,6 +505,12 @@ function MealDetailPageContent() {
         }
 
         try {
+            // Build history from threadMessages (only text content, limited to last 10)
+            const historyForApi = threadMessages.slice(-10).map((msg) => ({
+                role: msg.role,
+                content: msg.content,
+            }));
+
             const res = await fetch("/api/meal-thread", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -395,6 +518,8 @@ function MealDetailPageContent() {
                     meal,
                     prefs: prefs || undefined,
                     message: messageText,
+                    history: historyForApi,
+                    originalPrompt: displayedPrompt || undefined,
                 }),
             });
 
@@ -748,6 +873,27 @@ function MealDetailPageContent() {
                             )}
                         </button>
 
+                        {/* Kroger Cart Button - only show if connected and store is set */}
+                        {krogerConnected && krogerStoreSet && (
+                            <button
+                                onClick={handleAddToKrogerCart}
+                                disabled={addingToKrogerCart || selectedIngredients.size === 0}
+                                className="w-full py-4 bg-gradient-to-r from-[#1952B3] to-[#0E3D8C] text-white rounded-2xl shadow-lg hover:shadow-xl transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            >
+                                {addingToKrogerCart ? (
+                                    <>
+                                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                        <span>Adding to Kroger...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <ExternalLink className="w-5 h-5" />
+                                        <span>Add to Kroger Cart</span>
+                                    </>
+                                )}
+                            </button>
+                        )}
+
                         <button
                             onClick={handleSaveMeal}
                             disabled={savingMeal}
@@ -766,6 +912,24 @@ function MealDetailPageContent() {
                             )}
                         </button>
                     </div>
+
+                    {/* Kroger Cart Message */}
+                    {krogerCartMessage && (
+                        <div className={`flex items-center gap-2 p-3 rounded-xl ${
+                            krogerCartMessageType === "success"
+                                ? "bg-emerald-50 border border-emerald-200"
+                                : "bg-red-50 border border-red-200"
+                        }`}>
+                            {krogerCartMessageType === "success" ? (
+                                <CheckCircle className="w-5 h-5 text-emerald-500" />
+                            ) : (
+                                <AlertCircle className="w-5 h-5 text-red-500" />
+                            )}
+                            <span className={`text-sm ${
+                                krogerCartMessageType === "success" ? "text-emerald-700" : "text-red-700"
+                            }`}>{krogerCartMessage}</span>
+                        </div>
+                    )}
 
                     {/* Success Messages */}
                     {(addMessage || saveMessage) && (
@@ -786,6 +950,74 @@ function MealDetailPageContent() {
                     )}
                 </div>
             </div>
+
+            {/* Kroger Results Modal */}
+            {showKrogerResults && krogerResults && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
+                    <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[80vh] flex flex-col">
+                        <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                            <h3 className="font-medium text-gray-900">Kroger Cart Results</h3>
+                            <button
+                                onClick={() => setShowKrogerResults(false)}
+                                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                            >
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                            {krogerResults.map((item, idx) => (
+                                <div
+                                    key={idx}
+                                    className={`flex items-center gap-3 p-3 rounded-xl ${
+                                        item.found ? "bg-emerald-50" : "bg-amber-50"
+                                    }`}
+                                >
+                                    {item.product?.imageUrl ? (
+                                        <div className="w-12 h-12 rounded-lg overflow-hidden bg-white flex-shrink-0">
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img
+                                                src={item.product.imageUrl}
+                                                alt={item.product.name}
+                                                className="w-full h-full object-cover"
+                                            />
+                                        </div>
+                                    ) : (
+                                        <div className="w-12 h-12 rounded-lg bg-gray-200 flex items-center justify-center flex-shrink-0">
+                                            <ShoppingCart className="w-5 h-5 text-gray-400" />
+                                        </div>
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="font-medium text-gray-900 text-sm truncate">
+                                            {item.product?.name || item.originalName}
+                                        </div>
+                                        <div className="text-xs text-gray-500">
+                                            {item.quantity}
+                                            {item.product?.price && (
+                                                <span className="text-[#4A90E2]"> • ${item.product.price.toFixed(2)}</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="flex-shrink-0">
+                                        {item.found ? (
+                                            <CheckCircle className="w-5 h-5 text-emerald-500" />
+                                        ) : (
+                                            <AlertCircle className="w-5 h-5 text-amber-500" />
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="p-4 border-t border-gray-100">
+                            <button
+                                onClick={() => setShowKrogerResults(false)}
+                                className="w-full py-3 bg-[#4A90E2] text-white rounded-xl font-medium"
+                            >
+                                Done
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -248,9 +248,9 @@ export default function PromptPage() {
                         <h3 className="font-medium text-gray-900 mb-3">Tips for better results</h3>
                         <ul className="space-y-2">
                             {[
-                                "Include specific dietary needs (low sodium, high protein)",
-                                "Mention cooking time preferences (quick, slow cooker)",
-                                "Add ingredient preferences or restrictions",
+                                "Your saved diet preferences are automatically applied",
+                                "Mention cooking time or effort (quick 20-min, slow cooker)",
+                                "Try a cuisine style (Italian, Mexican, Asian-inspired)",
                                 "Specify meal type (breakfast, lunch, dinner, snacks)",
                             ].map((tip, i) => (
                                 <li key={i} className="flex items-start gap-2 text-sm text-gray-500">
