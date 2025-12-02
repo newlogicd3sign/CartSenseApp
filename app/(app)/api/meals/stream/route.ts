@@ -321,6 +321,14 @@ Constraints:
 
 ${doctorConstraintsText}
 
+IMPORTANT RECIPE INSTRUCTIONS:
+- Write recipe steps like a friendly food blogger with clear, detailed instructions
+- ALWAYS include seasonings and spices with specific measurements (e.g., "1 tsp garlic powder", "1/2 tsp smoked paprika", "salt and pepper to taste")
+- Each step should explain the "why" when helpful (e.g., "Sear the chicken for 3-4 minutes until golden brown - this creates a flavorful crust")
+- Include prep tips like "dice the onions" or "mince the garlic" in the steps
+- For seasoning steps, be specific: "Season both sides of the chicken with 1/2 tsp salt, 1/4 tsp black pepper, and 1/2 tsp garlic powder"
+- Include all seasonings and spices in the ingredients list with their quantities
+
 Output JSON ONLY in the shape:
 {
   "meals": [
@@ -336,7 +344,10 @@ Output JSON ONLY in the shape:
     }
   ]
 }
-IMPORTANT: The "macros" values (calories, protein, carbs, fat) MUST be for 1 single serving, NOT for the entire recipe.
+IMPORTANT:
+- The "macros" values (calories, protein, carbs, fat) MUST be for 1 single serving, NOT for the entire recipe.
+- The "ingredients" list MUST include all seasonings and spices needed (salt, pepper, garlic powder, herbs, etc.)
+- The "steps" should be detailed, numbered instructions written in a warm, conversational food-blogger style
 No extra keys, no explanations, just JSON.`;
 }
 
@@ -390,10 +401,13 @@ export async function POST(request: Request) {
             let promptPeriodStart: Date | null = null;
             let needsReset = false;
 
+            let defaultKrogerLocationId: string | null = null;
+
             if (uid) {
                 const userSnap = await adminDb.collection("users").doc(uid).get();
                 if (userSnap.exists) {
-                    const userData = userSnap.data() as { monthlyPromptCount?: number; promptPeriodStart?: any; isPremium?: boolean } | undefined;
+                    const userData = userSnap.data() as { monthlyPromptCount?: number; promptPeriodStart?: any; isPremium?: boolean; defaultKrogerLocationId?: string } | undefined;
+                    defaultKrogerLocationId = userData?.defaultKrogerLocationId || null;
                     if (userData) {
                         const isPremium = userData.isPremium ?? false;
                         monthlyPromptCount = userData.monthlyPromptCount ?? 0;
@@ -503,7 +517,9 @@ export async function POST(request: Request) {
                     const enrichedIngredients = await Promise.all(
                         meal.ingredients.slice(0, 6).map(async (ingredient) => {
                             try {
-                                const match = await searchKrogerProduct(ingredient.name);
+                                const match = await searchKrogerProduct(ingredient.name, {
+                                    locationId: defaultKrogerLocationId || undefined,
+                                });
                                 if (!match) return ingredient;
                                 return {
                                     ...ingredient,
@@ -512,7 +528,7 @@ export async function POST(request: Request) {
                                     productImageUrl: match.imageUrl,
                                     productSize: match.size,
                                     productAisle: match.aisle,
-                                    price: ingredient.price ?? match.price ?? undefined,
+                                    price: match.price, // Only use real Kroger prices, never estimated
                                     aisle: ingredient.aisle ?? match.aisle,
                                 };
                             } catch {

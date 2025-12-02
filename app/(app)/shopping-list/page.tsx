@@ -23,6 +23,7 @@ import {
     Link,
     Clock,
     ChefHat,
+    MapPin,
 } from "lucide-react";
 import { getRandomAccentColor, type AccentColor } from "@/lib/utils";
 
@@ -34,6 +35,12 @@ type ShoppingItem = {
     mealName?: string;
     checked: boolean;
     createdAt?: unknown;
+    krogerProductId?: string;
+    productName?: string;
+    productImageUrl?: string;
+    productSize?: string;
+    productAisle?: string;
+    price?: number;
 };
 
 type KrogerLinkStatus = "loading" | "linked" | "not_linked";
@@ -404,39 +411,70 @@ export default function ShoppingListPage() {
 
                                         {/* Items */}
                                         <ul className="divide-y divide-gray-50">
-                                            {sectionItems.map((item) => (
-                                                <li
-                                                    key={item.id}
-                                                    className="px-5 py-4 flex items-center justify-between gap-4"
-                                                >
-                                                    <div className="flex items-start gap-3 min-w-0">
-                                                        <div className="w-10 h-10 bg-gray-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                                                            <ChefHat className="w-5 h-5 text-gray-300" />
-                                                        </div>
-                                                        <div className="min-w-0">
-                                                            <div className="font-medium text-gray-900 truncate">
-                                                                {item.name}
-                                                            </div>
-                                                            <div className="text-sm text-gray-500">
-                                                                {item.quantity}
-                                                                {item.mealName && (
-                                                                    <span className="text-[#4A90E2]">
-                                                                        {" "}
-                                                                        • {item.mealName}
-                                                                    </span>
+                                            {sectionItems.map((item) => {
+                                                const hasKrogerProduct = !!item.krogerProductId;
+                                                const hasProductImage = hasKrogerProduct && item.productImageUrl;
+                                                return (
+                                                    <li
+                                                        key={item.id}
+                                                        className="px-5 py-4 flex items-center justify-between gap-4"
+                                                    >
+                                                        <div className="flex items-start gap-3 min-w-0 flex-1">
+                                                            {/* Product Image or Icon */}
+                                                            {hasProductImage ? (
+                                                                <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
+                                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                                    <img
+                                                                        src={item.productImageUrl}
+                                                                        alt={item.productName || item.name}
+                                                                        className="w-full h-full object-cover"
+                                                                    />
+                                                                </div>
+                                                            ) : (
+                                                                <div className="w-12 h-12 bg-gray-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                                                                    <ChefHat className="w-6 h-6 text-gray-300" />
+                                                                </div>
+                                                            )}
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="font-medium text-gray-900 truncate">
+                                                                    {item.name}
+                                                                </div>
+                                                                <div className="text-sm text-gray-500">
+                                                                    {item.quantity}
+                                                                </div>
+                                                                {/* Kroger Product Details */}
+                                                                {hasKrogerProduct && (
+                                                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
+                                                                        {item.productAisle && (
+                                                                            <div className="flex items-center gap-1 text-xs text-gray-500">
+                                                                                <MapPin className="w-3 h-3" />
+                                                                                <span>{item.productAisle}</span>
+                                                                            </div>
+                                                                        )}
+                                                                        {typeof item.price === "number" && (
+                                                                            <span className="text-xs font-medium text-[#4A90E2]">
+                                                                                ${item.price.toFixed(2)}
+                                                                            </span>
+                                                                        )}
+                                                                        {item.productSize && (
+                                                                            <span className="text-xs text-gray-400">
+                                                                                {item.productSize}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
                                                                 )}
                                                             </div>
                                                         </div>
-                                                    </div>
 
-                                                    <button
-                                                        onClick={() => handleRemoveItem(item.id)}
-                                                        className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors flex-shrink-0"
-                                                    >
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </button>
-                                                </li>
-                                            ))}
+                                                        <button
+                                                            onClick={() => handleRemoveItem(item.id)}
+                                                            className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors flex-shrink-0"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </li>
+                                                );
+                                            })}
                                         </ul>
                                     </div>
                                 );
