@@ -7,22 +7,20 @@ import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { Mail, Lock, ArrowRight, AlertCircle, CheckCircle } from "lucide-react";
+import { Mail, Lock, ArrowRight, CheckCircle } from "lucide-react";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
+import { useToast } from "@/components/Toast";
 
 export default function SignupPage() {
     const router = useRouter();
+    const { showToast } = useToast();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [agreedToTerms, setAgreedToTerms] = useState(false);
-    const [message, setMessage] = useState<string | null>(null);
-    const [isSuccess, setIsSuccess] = useState(false);
     const [loading, setLoading] = useState(false);
 
     const handleSignup = async (e: React.FormEvent) => {
         e.preventDefault();
-        setMessage(null);
-        setIsSuccess(false);
         setLoading(true);
 
         try {
@@ -41,16 +39,14 @@ export default function SignupPage() {
                 emailVerified: false,
             });
 
-            setMessage("Account created! Check your email to verify.");
-            setIsSuccess(true);
+            showToast("Account created! Check your email to verify.", "success");
 
             // Redirect to verification page after short delay
             setTimeout(() => {
                 router.push("/verify-email");
             }, 1000);
         } catch (error: any) {
-            setMessage(error.message || "Something went wrong");
-            setIsSuccess(false);
+            showToast(error.message || "Something went wrong", "error");
         } finally {
             setLoading(false);
         }
@@ -133,30 +129,6 @@ export default function SignupPage() {
                                     </Link>
                                 </label>
                             </div>
-
-                            {/* Message */}
-                            {message && (
-                                <div
-                                    className={`flex items-start gap-2 p-3 rounded-xl ${
-                                        isSuccess
-                                            ? "bg-green-50 border border-green-100"
-                                            : "bg-red-50 border border-red-100"
-                                    }`}
-                                >
-                                    {isSuccess ? (
-                                        <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                                    ) : (
-                                        <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-                                    )}
-                                    <p
-                                        className={`text-sm ${
-                                            isSuccess ? "text-green-600" : "text-red-600"
-                                        }`}
-                                    >
-                                        {message}
-                                    </p>
-                                </div>
-                            )}
 
                             {/* Submit Button */}
                             <button

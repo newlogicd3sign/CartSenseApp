@@ -41,6 +41,7 @@ type ShoppingItem = {
     productSize?: string;
     productAisle?: string;
     price?: number;
+    soldBy?: "WEIGHT" | "UNIT";
 };
 
 type KrogerLinkStatus = "loading" | "linked" | "not_linked";
@@ -453,7 +454,7 @@ export default function ShoppingListPage() {
                                                                         )}
                                                                         {typeof item.price === "number" && (
                                                                             <span className="text-xs font-medium text-[#4A90E2]">
-                                                                                ${item.price.toFixed(2)}
+                                                                                ${item.price.toFixed(2)}{item.soldBy === "WEIGHT" ? "/lb" : ""}
                                                                             </span>
                                                                         )}
                                                                         {item.productSize && (

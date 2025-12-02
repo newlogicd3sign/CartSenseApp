@@ -6,7 +6,8 @@ import { auth, db } from "@/lib/firebaseClient";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { getRandomAccentColor, getRandomAccentColorExcluding, type AccentColor } from "@/lib/utils";
-import { Sparkles, AlertCircle, UtensilsCrossed, ChefHat, Soup, Pizza, Salad, Sandwich, Croissant, Apple, Carrot, Beef, Fish, Citrus, Drumstick, Wheat, Ham, CookingPot, Hamburger, ShieldCheck, HeartPulse } from "lucide-react";
+import { Sparkles, UtensilsCrossed, ChefHat, Soup, Pizza, Salad, Sandwich, Croissant, Apple, Carrot, Beef, Fish, Citrus, Drumstick, Wheat, Ham, CookingPot, Hamburger, ShieldCheck, HeartPulse } from "lucide-react";
+import { useToast } from "@/components/Toast";
 
 const foodIcons = [
     UtensilsCrossed,
@@ -49,6 +50,7 @@ function getRandomGreeting() {
 
 export default function PromptPage() {
     const router = useRouter();
+    const { showToast } = useToast();
 
     const [user, setUser] = useState<User | null>(null);
     const [loadingUser, setLoadingUser] = useState(true);
@@ -57,7 +59,6 @@ export default function PromptPage() {
     const [greeting, setGreeting] = useState("");
 
     const [prompt, setPrompt] = useState("");
-    const [message, setMessage] = useState("");
     const [monthlyPromptCount, setMonthlyPromptCount] = useState(0);
     const [monthlyPromptLimit] = useState(10);
     const [daysUntilReset, setDaysUntilReset] = useState(30);
@@ -73,6 +74,9 @@ export default function PromptPage() {
     const [blockedGroups, setBlockedGroups] = useState<string[]>([]);
 
     useEffect(() => {
+        // Scroll to top when page loads
+        window.scrollTo(0, 0);
+
         setGreeting(getRandomGreeting());
         setFoodIcon(() => getRandomFoodIcon());
         const primaryColor = getRandomAccentColor();
@@ -146,16 +150,14 @@ export default function PromptPage() {
         const trimmed = prompt.trim();
 
         if (!trimmed) {
-            setMessage("Please enter what kind of meals you want.");
+            showToast("Please enter what kind of meals you want.", "error");
             return;
         }
 
         if (!user) {
-            setMessage("Please log in again to generate meals.");
+            showToast("Please log in again to generate meals.", "error");
             return;
         }
-
-        setMessage("");
 
         // Navigate immediately to meals page with stream=true
         // The meals page will handle the streaming
@@ -209,14 +211,6 @@ export default function PromptPage() {
                             className="w-full h-28 lg:h-32 p-4 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:bg-white resize-none transition-colors"
                             style={{ borderColor: prompt ? accentColor.primary : undefined }}
                         />
-
-                        {/* Error Message */}
-                        {message && (
-                            <div className="flex items-start gap-2 mt-3 p-3 bg-red-50 border border-red-100 rounded-xl">
-                                <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-                                <p className="text-sm text-red-600 whitespace-pre-line">{message}</p>
-                            </div>
-                        )}
 
                         {/* Submit Button */}
                         <button

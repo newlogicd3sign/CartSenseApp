@@ -186,13 +186,92 @@ function scoreProductForIngredient(
         "mountain dew",
         "zero sugar",
         "diet",
+        "lemonade", // Penalize lemonade when searching for lemon/lemon juice
+        "drink",
+        "beverage",
+        "tea",
+        "cocktail",
+        "mixer",
     ];
     if (badWords.some((w) => desc.includes(w))) {
         score -= 10;
     }
 
+    // Penalize processed/prepared products when searching for fresh ingredients
+    // Note: Don't penalize "juice" because sometimes we're actually looking for juice
+    const processedIndicators = [
+        "chips",
+        "bread",
+        "muffin",
+        "cake",
+        "cookie",
+        "bar",
+        "smoothie",
+        "shake",
+        "dried",
+        "dehydrated",
+        "freeze-dried",
+        "trail mix",
+        "granola",
+        "cereal",
+        "jam",
+        "jelly",
+        "preserves",
+        "sauce",
+        "syrup",
+        "flavored",
+        "candy",
+        "pudding",
+        "yogurt",
+        "ice cream",
+    ];
+    if (processedIndicators.some((w) => desc.includes(w))) {
+        score -= 8;
+    }
+
+    // If searching for "juice", boost actual juice products and penalize drinks/lemonade
+    if (term.includes("juice")) {
+        // Boost if product description also contains "juice" (actual juice product)
+        if (desc.includes("juice") && !desc.includes("lemonade") && !desc.includes("drink")) {
+            score += 8;
+        }
+    }
+
+    // Boost fresh produce items
+    if (desc.includes("fresh") || desc.startsWith("fresh ")) {
+        score += 6;
+    }
+
+    // Boost items that are clearly the raw ingredient (bunch, single, each, lb)
+    const rawIndicators = ["bunch", "single", "each", "per lb", "- lb", "/lb"];
+    if (rawIndicators.some((w) => desc.includes(w))) {
+        score += 5;
+    }
+
     // Lightly reward short, clean ingredient-like descriptions
     if (desc.length < 40) score += 2;
+
+    // For common pantry staples, prefer smaller/cheaper sizes
+    // People often already have these at home or only need a small amount
+    const pantryStaples = [
+        "olive oil", "vegetable oil", "canola oil", "coconut oil", "sesame oil",
+        "soy sauce", "vinegar", "honey", "maple syrup", "worcestershire",
+        "mustard", "ketchup", "mayonnaise", "hot sauce", "sriracha",
+        "salt", "pepper", "sugar", "flour", "baking powder", "baking soda",
+    ];
+    const isPantryStaple = pantryStaples.some((staple) => term.includes(staple) || desc.includes(staple));
+
+    if (isPantryStaple) {
+        const item = product.items?.[0];
+        const price = typeof item?.price === "object" ? (item.price.promo ?? item.price.regular) : item?.price;
+
+        // Prefer cheaper options for pantry staples (likely smaller sizes)
+        if (typeof price === "number") {
+            if (price <= 4) score += 5;       // Great price for a pantry staple
+            else if (price <= 6) score += 2;   // Reasonable price
+            else if (price > 10) score -= 3;   // Too expensive, probably a large size
+        }
+    }
 
     return score;
 }
@@ -243,6 +322,7 @@ export type KrogerProductMatch = {
     name: string;
     imageUrl?: string;
     price?: number;
+    soldBy?: "WEIGHT" | "UNIT"; // WEIGHT means price is per lb, UNIT means per item
     size?: string;
     aisle?: string;
     available: boolean;
@@ -352,11 +432,15 @@ export async function searchKrogerProduct(
             }
         }
 
+        // Normalize soldBy to WEIGHT or UNIT
+        const soldBy = item?.soldBy?.toUpperCase() === "WEIGHT" ? "WEIGHT" as const : "UNIT" as const;
+
         return {
             krogerProductId: chosen.productId,
             name: chosen.description,
             imageUrl,
             price: typeof priceValue === "number" && Number.isFinite(priceValue) ? priceValue : undefined,
+            soldBy,
             size: item?.size,
             aisle: item?.aisleLocations?.[0]?.description,
             available,
@@ -477,11 +561,15 @@ export async function searchAlternativeProduct(
     console.log("✅ Alternative found:", chosen.description);
     console.log("\n");
 
+    // Normalize soldBy to WEIGHT or UNIT
+    const soldBy = item?.soldBy?.toUpperCase() === "WEIGHT" ? "WEIGHT" as const : "UNIT" as const;
+
     return {
         krogerProductId: chosen.productId,
         name: chosen.description,
         imageUrl,
         price: typeof priceValue === "number" && Number.isFinite(priceValue) ? priceValue : undefined,
+        soldBy,
         size: item?.size,
         aisle: item?.aisleLocations?.[0]?.description,
         available,
