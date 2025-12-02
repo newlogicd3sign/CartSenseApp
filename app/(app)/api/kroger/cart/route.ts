@@ -1,7 +1,7 @@
 // app/(app)/api/kroger/cart/route.ts
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
-import { searchKrogerProduct, type KrogerProductMatch } from "@/lib/kroger";
+import { searchKrogerProduct, searchAlternativeProduct, type KrogerProductMatch } from "@/lib/kroger";
 
 const TOKEN_URL = process.env.KROGER_TOKEN_URL ?? "https://api-ce.kroger.com/v1/connect/oauth2/token";
 const API_BASE_URL = process.env.KROGER_API_BASE_URL ?? "https://api-ce.kroger.com/v1";
@@ -127,24 +127,47 @@ export async function POST(request: Request) {
         const locationId = await getUserDefaultLocationId(userId);
 
         // Search for each item and enrich with Kroger product data
-        const enrichedItems: EnrichedItem[] = await Promise.all(
+        // If the best match is unavailable, search for an alternative
+        const enrichedItems: (EnrichedItem & { itemId: string; usedAlternative?: boolean })[] = await Promise.all(
             items.map(async (item) => {
-                const product = await searchKrogerProduct(item.name, {
+                let product = await searchKrogerProduct(item.name, {
                     locationId: locationId || undefined,
                 });
 
+                let usedAlternative = false;
+
+                // If product found but not available, try to find an alternative
+                if (product && !product.available) {
+                    console.log(`⚠️ Product "${product.name}" is unavailable, searching for alternative...`);
+                    const alternative = await searchAlternativeProduct(item.name, {
+                        locationId: locationId || undefined,
+                        excludeProductId: product.krogerProductId,
+                    });
+
+                    if (alternative && alternative.available) {
+                        console.log(`✅ Found alternative: "${alternative.name}"`);
+                        product = alternative;
+                        usedAlternative = true;
+                    } else {
+                        console.log(`❌ No available alternative found for "${item.name}"`);
+                    }
+                }
+
                 return {
+                    itemId: item.id,
                     originalName: item.name,
                     quantity: item.quantity,
-                    found: !!product,
+                    found: !!product && product.available,
                     product: product || undefined,
+                    usedAlternative,
                 };
             })
         );
 
-        // Filter items that were found
+        // Filter items that were found and available
         const foundItems = enrichedItems.filter((item) => item.found && item.product);
         const notFoundItems = enrichedItems.filter((item) => !item.found);
+        const unavailableItems = enrichedItems.filter((item) => item.product && !item.product.available);
 
         if (foundItems.length === 0) {
             return NextResponse.json({
@@ -205,16 +228,54 @@ export async function POST(request: Request) {
             );
         }
 
+        // Update shopping list items in Firestore with Kroger product details
+        const updatePromises = foundItems.map((item) => {
+            if (!item.product) return Promise.resolve();
+
+            const itemRef = adminDb
+                .collection("shoppingLists")
+                .doc(userId)
+                .collection("items")
+                .doc(item.itemId);
+
+            return itemRef.update({
+                krogerProductId: item.product.krogerProductId,
+                productName: item.product.name,
+                productImageUrl: item.product.imageUrl || null,
+                productSize: item.product.size || null,
+                productAisle: item.product.aisle || null,
+                price: item.product.price || null,
+            });
+        });
+
+        try {
+            await Promise.all(updatePromises);
+        } catch (updateErr) {
+            console.error("Error updating shopping list items with Kroger data:", updateErr);
+            // Don't fail the request - items were added to cart successfully
+        }
+
+        const alternativesUsed = foundItems.filter((item) => item.usedAlternative).length;
+
+        let message = `Added ${foundItems.length} item(s) to your Kroger cart.`;
+        if (alternativesUsed > 0) {
+            message += ` ${alternativesUsed} item(s) were substituted with available alternatives.`;
+        }
+        if (unavailableItems.length > 0) {
+            message += ` ${unavailableItems.length} item(s) were unavailable with no alternatives.`;
+        }
+        if (notFoundItems.length > 0) {
+            message += ` ${notFoundItems.length} item(s) could not be found.`;
+        }
+
         return NextResponse.json({
             success: true,
-            message: `Added ${foundItems.length} item(s) to your Kroger cart.${
-                notFoundItems.length > 0
-                    ? ` ${notFoundItems.length} item(s) could not be found.`
-                    : ""
-            }`,
+            message,
             enrichedItems,
             addedCount: foundItems.length,
             notFoundCount: notFoundItems.length,
+            unavailableCount: unavailableItems.length,
+            alternativesUsedCount: alternativesUsed,
         });
     } catch (err) {
         console.error("Error adding to Kroger cart:", err);

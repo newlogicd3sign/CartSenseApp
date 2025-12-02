@@ -27,7 +27,6 @@ import {
     Users,
     CheckCircle,
     MessageCircle,
-    ExternalLink,
 } from "lucide-react";
 
 type Ingredient = {
@@ -63,7 +62,7 @@ type Meal = {
 type UserPrefs = {
     name?: string;
     dietType?: string;
-    krogerConnected?: boolean;
+    krogerLinked?: boolean;
     allergiesAndSensitivities?: {
         allergies?: string[];
         sensitivities?: string[];
@@ -144,7 +143,7 @@ function MealDetailPageContent() {
                 if (snap.exists()) {
                     const data = snap.data() as UserPrefs;
                     setPrefs(data);
-                    setKrogerConnected(Boolean(data.krogerConnected));
+                    setKrogerConnected(Boolean(data.krogerLinked));
                 }
             } catch (err) {
                 console.error("Error loading user prefs", err);
@@ -297,13 +296,29 @@ function MealDetailPageContent() {
                 )
             );
 
-            setAddMessage(`Added ${ingredientsToAdd.length} item${ingredientsToAdd.length !== 1 ? "s" : ""} to your shopping list.`);
+            // Automatically save the meal when adding to shopping list
+            const mealRef = doc(db, "savedMeals", user.uid, "meals", meal.id);
+            await setDoc(mealRef, {
+                ...meal,
+                prompt: displayedPrompt || null,
+                savedAt: serverTimestamp(),
+            });
 
+            setAddMessage(`Added ${ingredientsToAdd.length} item${ingredientsToAdd.length !== 1 ? "s" : ""} to your shopping list and saved the meal.`);
+
+            // Log both events
             logUserEvent(user.uid, {
                 type: "added_to_shopping_list",
                 mealId: meal.id,
             }).catch((err) => {
                 console.error("Failed to log added_to_shopping_list event:", err);
+            });
+
+            logUserEvent(user.uid, {
+                type: "meal_saved",
+                mealId: meal.id,
+            }).catch((err) => {
+                console.error("Failed to log meal_saved event:", err);
             });
         } catch (err) {
             console.error("Error adding to shopping list", err);
@@ -677,18 +692,6 @@ function MealDetailPageContent() {
                                                 <span className="text-[#4A90E2]"> • ${ing.price.toFixed(2)}</span>
                                             )}
                                         </div>
-                                        {krogerConnected && ing.krogerProductId && (
-                                            <a
-                                                href={`https://www.kroger.com/p/${ing.krogerProductId}`}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                onClick={(e) => e.stopPropagation()}
-                                                className="inline-flex items-center gap-1 text-xs text-[#4A90E2] mt-1 hover:underline"
-                                            >
-                                                View at Kroger
-                                                <ExternalLink className="w-3 h-3" />
-                                            </a>
-                                        )}
                                     </div>
                                     <div className="flex-shrink-0">
                                         <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${

@@ -81,11 +81,20 @@ const COMMON_DISLIKED_FOODS = [
 ];
 
 const DIET_OPTIONS = [
-    { value: "heart_healthy", label: "Heart healthy" },
-    { value: "low_sodium", label: "Low sodium" },
-    { value: "high_protein", label: "High protein" },
-    { value: "low_saturated_fat", label: "Low saturated fat" },
     { value: "general_healthy", label: "General healthy eating" },
+    { value: "vegetarian", label: "Vegetarian" },
+    { value: "vegan", label: "Vegan" },
+    { value: "keto", label: "Keto / Low carb" },
+    { value: "paleo", label: "Paleo" },
+    { value: "mediterranean", label: "Mediterranean" },
+    { value: "pescatarian", label: "Pescatarian" },
+    { value: "high_protein", label: "High protein" },
+    { value: "low_sodium", label: "Low sodium" },
+    { value: "heart_healthy", label: "Heart healthy" },
+    { value: "diabetic_friendly", label: "Diabetic friendly" },
+    { value: "whole30", label: "Whole30" },
+    { value: "gluten_free", label: "Gluten free" },
+    { value: "dairy_free", label: "Dairy free" },
 ];
 
 type DoctorDietInstructions = {
@@ -170,6 +179,11 @@ function AccountPageContent() {
     const [krogerMessage, setKrogerMessage] = useState<string | null>(null);
     const [krogerMessageType, setKrogerMessageType] = useState<"success" | "error">("success");
 
+    // Kroger profile state
+    const [krogerProfile, setKrogerProfile] = useState<{ firstName?: string; lastName?: string } | null>(null);
+    const [loadingKrogerProfile, setLoadingKrogerProfile] = useState(false);
+    const [unlinkingKroger, setUnlinkingKroger] = useState(false);
+
     // Password change state
     const [editingPassword, setEditingPassword] = useState(false);
     const [currentPassword, setCurrentPassword] = useState("");
@@ -253,6 +267,38 @@ function AccountPageContent() {
         return () => unsub();
     }, [router]);
 
+    // Fetch Kroger profile when linked
+    useEffect(() => {
+        if (!user || !userDoc?.krogerLinked) {
+            setKrogerProfile(null);
+            return;
+        }
+
+        const fetchKrogerProfile = async () => {
+            setLoadingKrogerProfile(true);
+            try {
+                const res = await fetch(`/api/kroger/profile?userId=${user.uid}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setKrogerProfile(data);
+                } else {
+                    // If 401, the account was unlinked due to expired tokens
+                    if (res.status === 401) {
+                        setUserDoc((prev) => prev ? { ...prev, krogerLinked: false } : prev);
+                    }
+                    setKrogerProfile(null);
+                }
+            } catch (err) {
+                console.error("Error fetching Kroger profile:", err);
+                setKrogerProfile(null);
+            } finally {
+                setLoadingKrogerProfile(false);
+            }
+        };
+
+        void fetchKrogerProfile();
+    }, [user, userDoc?.krogerLinked]);
+
     useEffect(() => {
         if (!user) return;
 
@@ -324,6 +370,59 @@ function AccountPageContent() {
         } catch (err) {
             console.error("Error setting default location", err);
             setLocationMessage("Could not update default store.");
+        }
+    };
+
+    const handleRemoveStore = async (loc: UserLocation) => {
+        if (!user) return;
+
+        try {
+            setLocationMessage(null);
+
+            const locRef = doc(db, "krogerLocations", user.uid, "locations", loc.id);
+            await deleteDoc(locRef);
+
+            const remainingLocations = locations.filter((l) => l.id !== loc.id);
+
+            if (loc.isDefault && remainingLocations.length > 0) {
+                const newDefault = remainingLocations[0];
+                const userRef = doc(db, "users", user.uid);
+                await updateDoc(userRef, {
+                    defaultKrogerLocationId: newDefault.krogerLocationId,
+                });
+
+                const newDefaultRef = doc(db, "krogerLocations", user.uid, "locations", newDefault.id);
+                await updateDoc(newDefaultRef, { isDefault: true });
+
+                setLocations(
+                    remainingLocations.map((l, idx) => ({
+                        ...l,
+                        isDefault: idx === 0,
+                    }))
+                );
+                setUserDoc((prev) =>
+                    prev
+                        ? { ...prev, defaultKrogerLocationId: newDefault.krogerLocationId }
+                        : { defaultKrogerLocationId: newDefault.krogerLocationId }
+                );
+                setLocationMessage(`${loc.name} removed. ${newDefault.name} is now your default.`);
+            } else if (loc.isDefault) {
+                const userRef = doc(db, "users", user.uid);
+                await updateDoc(userRef, {
+                    defaultKrogerLocationId: null,
+                });
+                setLocations([]);
+                setUserDoc((prev) =>
+                    prev ? { ...prev, defaultKrogerLocationId: null } : { defaultKrogerLocationId: null }
+                );
+                setLocationMessage(`${loc.name} removed.`);
+            } else {
+                setLocations(remainingLocations);
+                setLocationMessage(`${loc.name} removed.`);
+            }
+        } catch (err) {
+            console.error("Error removing location", err);
+            setLocationMessage("Could not remove store.");
         }
     };
 
@@ -530,6 +629,37 @@ function AccountPageContent() {
             setDoctorNoteMessage("Could not remove diet instructions.");
         } finally {
             setRemovingDoctorNote(false);
+        }
+    };
+
+    const handleUnlinkKroger = async () => {
+        if (!user) return;
+
+        try {
+            setUnlinkingKroger(true);
+            setKrogerMessage(null);
+
+            const res = await fetch("/api/kroger/unlink", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ userId: user.uid }),
+            });
+
+            if (res.ok) {
+                setUserDoc((prev) => prev ? { ...prev, krogerLinked: false } : prev);
+                setKrogerProfile(null);
+                setKrogerMessage("Your Kroger account has been unlinked.");
+                setKrogerMessageType("success");
+            } else {
+                setKrogerMessage("Failed to unlink Kroger account. Please try again.");
+                setKrogerMessageType("error");
+            }
+        } catch (err) {
+            console.error("Error unlinking Kroger:", err);
+            setKrogerMessage("Something went wrong. Please try again.");
+            setKrogerMessageType("error");
+        } finally {
+            setUnlinkingKroger(false);
         }
     };
 
@@ -1052,9 +1182,24 @@ function AccountPageContent() {
 
                         <div className="px-5 py-4">
                             {userDoc?.krogerLinked ? (
-                                <div className="flex items-center gap-3 p-3 bg-emerald-50 rounded-xl">
-                                    <CheckCircle className="w-5 h-5 text-emerald-500" />
-                                    <span className="text-sm text-emerald-700">Your Kroger account is linked</span>
+                                <div className="space-y-4">
+                                    {/* Linked status */}
+                                    <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-xl">
+                                        <div className="flex items-center gap-3">
+                                            <CheckCircle className="w-5 h-5 text-emerald-500" />
+                                            <span className="text-sm text-emerald-700">Your Kroger account is linked</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Unlink button */}
+                                    <button
+                                        onClick={() => void handleUnlinkKroger()}
+                                        disabled={unlinkingKroger}
+                                        className="flex items-center gap-2 text-sm text-red-500 hover:text-red-600 transition-colors"
+                                    >
+                                        <X className="w-4 h-4" />
+                                        <span>{unlinkingKroger ? "Unlinking..." : "Unlink Kroger Account"}</span>
+                                    </button>
                                 </div>
                             ) : (
                                 <button
@@ -1137,14 +1282,23 @@ function AccountPageContent() {
                                                     {loc.city && loc.state && `${loc.city}, ${loc.state}`}
                                                 </p>
                                             </div>
-                                            {!loc.isDefault && (
+                                            <div className="flex items-center gap-2">
+                                                {!loc.isDefault && (
+                                                    <button
+                                                        onClick={() => void handleSetDefault(loc)}
+                                                        className="text-xs text-[#4A90E2] hover:underline"
+                                                    >
+                                                        Set default
+                                                    </button>
+                                                )}
                                                 <button
-                                                    onClick={() => void handleSetDefault(loc)}
-                                                    className="text-xs text-[#4A90E2] hover:underline"
+                                                    onClick={() => void handleRemoveStore(loc)}
+                                                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                    title="Remove store"
                                                 >
-                                                    Set default
+                                                    <Trash2 className="w-4 h-4" />
                                                 </button>
-                                            )}
+                                            </div>
                                         </div>
                                     ))}
                                 </div>

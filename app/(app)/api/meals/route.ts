@@ -323,10 +323,7 @@ async function enrichMealsWithKroger(meals: Meal[]): Promise<Meal[]> {
                             productImageUrl: match.imageUrl,
                             productSize: match.size,
                             productAisle: match.aisle,
-                            price:
-                                ingredient.price != null
-                                    ? ingredient.price
-                                    : match.price ?? undefined,
+                            price: match.price, // Only use real Kroger prices, never estimated
                             aisle: ingredient.aisle ?? match.aisle ?? ingredient.aisle,
                         };
 
@@ -748,10 +745,7 @@ Output JSON ONLY in the shape:
       "ingredients": [
         {
           "name": "string",
-          "quantity": "string",
-          "category": "string (optional)",
-          "aisle": "string (optional)",
-          "price": number (optional)
+          "quantity": "string"
         }
       ],
       "steps": ["string", "string"]
