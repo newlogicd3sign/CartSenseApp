@@ -82,6 +82,14 @@ Rules:
   - If they say "swap chicken for ground turkey", change the protein + macros accordingly, but keep the rest of the recipe if it still makes sense.
 - If the change is so large that it is basically a NEW recipe (e.g. "turn this into a vegetarian chili"), then consider this a NEW VARIANT.
 
+IMPORTANT RECIPE INSTRUCTIONS:
+- Write recipe steps like a friendly food blogger with clear, detailed instructions
+- ALWAYS include seasonings and spices with specific measurements (e.g., "1 tsp garlic powder", "1/2 tsp smoked paprika", "salt and pepper to taste")
+- Each step should explain the "why" when helpful (e.g., "Sear the chicken for 3-4 minutes until golden brown - this creates a flavorful crust")
+- Include prep tips like "dice the onions" or "mince the garlic" in the steps
+- For seasoning steps, be specific: "Season both sides of the chicken with 1/2 tsp salt, 1/4 tsp black pepper, and 1/2 tsp garlic powder"
+- Include all seasonings and spices in the ingredients list with their quantities
+
 You MUST respond with JSON ONLY in this exact shape:
 
 {
@@ -99,7 +107,7 @@ Where:
 - "updatedMeal", if present, must follow this TypeScript shape:
 
 type Meal = {
-  id: string;                            
+  id: string;
   mealType: "breakfast" | "lunch" | "dinner" | "snack";
   name: string;
   description: string;
@@ -123,8 +131,12 @@ type Meal = {
     productSize?: string;
     productAisle?: string;
   }[];
-  steps: string[];
+  steps: string[];  // Detailed, food-blogger style instructions with specific seasoning measurements
 }
+
+IMPORTANT:
+- The "ingredients" list MUST include all seasonings and spices needed (salt, pepper, garlic powder, herbs, etc.)
+- The "steps" should be detailed instructions written in a warm, conversational food-blogger style
 
 DO NOT include any extra text outside of this JSON. No markdown, no commentary, just JSON.
 `.trim();

@@ -39,19 +39,32 @@ export async function GET(request: Request) {
         );
     }
 
-    // Decode state to get userId
+    // Decode state to get userId and optional returnTo/step
     let userId: string;
+    let returnTo: string | undefined;
+    let step: string | undefined;
     try {
         const decoded = JSON.parse(
             Buffer.from(state, "base64url").toString("utf-8")
         );
         userId = decoded.userId;
+        returnTo = decoded.returnTo;
+        step = decoded.step;
     } catch (err) {
         console.error("Failed to decode state:", err);
         return NextResponse.redirect(
             new URL("/account?kroger_error=invalid_state", request.url)
         );
     }
+
+    // Helper to build redirect URL based on returnTo
+    const buildRedirectUrl = (params: string) => {
+        if (returnTo === "setup") {
+            const stepParam = step ? `&step=${step}` : "";
+            return new URL(`/setup?${params}${stepParam}`, request.url);
+        }
+        return new URL(`/account?${params}`, request.url);
+    };
 
     // Exchange code for tokens
     try {
@@ -75,7 +88,7 @@ export async function GET(request: Request) {
             const text = await res.text();
             console.error("Token exchange failed:", text);
             return NextResponse.redirect(
-                new URL("/account?kroger_error=token_exchange_failed", request.url)
+                buildRedirectUrl("kroger_error=token_exchange_failed")
             );
         }
 
@@ -102,12 +115,12 @@ export async function GET(request: Request) {
         cookieStore.delete("kroger_oauth_state");
 
         return NextResponse.redirect(
-            new URL("/account?kroger_linked=success", request.url)
+            buildRedirectUrl("kroger_linked=success")
         );
     } catch (err) {
         console.error("Error during token exchange:", err);
         return NextResponse.redirect(
-            new URL("/account?kroger_error=server_error", request.url)
+            buildRedirectUrl("kroger_error=server_error")
         );
     }
 }

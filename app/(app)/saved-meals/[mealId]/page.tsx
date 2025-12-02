@@ -22,7 +22,6 @@ import {
     Users,
     CheckCircle,
     Clock,
-    ExternalLink,
     Bookmark,
 } from "lucide-react";
 
@@ -89,7 +88,7 @@ export default function SavedMealDetailPage() {
                 const userSnap = await getDoc(userRef);
                 if (userSnap.exists()) {
                     const data = userSnap.data();
-                    setKrogerConnected(Boolean(data.krogerConnected));
+                    setKrogerConnected(Boolean(data.krogerLinked));
                 }
             } catch (err) {
                 console.error("Error loading user prefs", err);
@@ -396,18 +395,6 @@ export default function SavedMealDetailPage() {
                                                 <span className="text-[#4A90E2]"> • ${ing.price.toFixed(2)}</span>
                                             )}
                                         </div>
-                                        {krogerConnected && ing.krogerProductId && (
-                                            <a
-                                                href={`https://www.kroger.com/p/${ing.krogerProductId}`}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                onClick={(e) => e.stopPropagation()}
-                                                className="inline-flex items-center gap-1 text-xs text-[#4A90E2] mt-1 hover:underline"
-                                            >
-                                                View at Kroger
-                                                <ExternalLink className="w-3 h-3" />
-                                            </a>
-                                        )}
                                     </div>
                                     <div className="flex-shrink-0">
                                         <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${

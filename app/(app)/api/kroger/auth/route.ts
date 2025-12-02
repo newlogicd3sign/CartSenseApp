@@ -17,6 +17,8 @@ export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
         const userId = searchParams.get("userId");
+        const returnTo = searchParams.get("returnTo"); // Optional: "setup" or "account"
+        const step = searchParams.get("step"); // Optional: step number for setup wizard
 
         if (!userId) {
             return NextResponse.json(
@@ -43,11 +45,23 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // Build state payload
-        const statePayload = {
+        // Build state payload with optional returnTo and step
+        const statePayload: {
+            userId: string;
+            nonce: string;
+            returnTo?: string;
+            step?: string;
+        } = {
             userId,
             nonce: crypto.randomUUID(),
         };
+
+        if (returnTo) {
+            statePayload.returnTo = returnTo;
+        }
+        if (step) {
+            statePayload.step = step;
+        }
 
         const state = Buffer.from(
             JSON.stringify(statePayload),
