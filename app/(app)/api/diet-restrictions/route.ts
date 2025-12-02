@@ -1,4 +1,4 @@
-// app/api/doctor-note/route.ts
+// app/api/diet-restrictions/route.ts
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
@@ -143,7 +143,7 @@ Return ONLY JSON in the exact format specified in the system message.
 
         return NextResponse.json(parsed);
     } catch (error) {
-        console.error("Error in /api/doctor-note:", error);
+        console.error("Error in /api/diet-restrictions:", error);
         return NextResponse.json(
             { error: "Internal server error" },
             { status: 500 }

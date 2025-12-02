@@ -9,6 +9,7 @@ import { ArrowRight, AlertCircle, ShoppingCart, MapPin, CheckCircle, ExternalLin
 import Image from "next/image";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
 import { getRandomAccentColor, type AccentColor } from "@/lib/utils";
+import { useToast } from "@/components/Toast";
 
 const ALLERGY_OPTIONS = [
     "Dairy",
@@ -80,6 +81,7 @@ const TOTAL_STEPS = 6;
 function SetupPageContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
+    const { showToast } = useToast();
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
 
@@ -91,13 +93,10 @@ function SetupPageContent() {
     const [selectedDislikedFoods, setSelectedDislikedFoods] = useState<string[]>([]);
     const [customDislikedFood, setCustomDislikedFood] = useState("");
     const [saving, setSaving] = useState(false);
-    const [message, setMessage] = useState<string | null>(null);
     const [accentColor, setAccentColor] = useState<AccentColor>({ primary: "#3b82f6", dark: "#2563eb" });
 
     // Kroger state
     const [krogerLinked, setKrogerLinked] = useState(false);
-    const [krogerMessage, setKrogerMessage] = useState<string | null>(null);
-    const [krogerMessageType, setKrogerMessageType] = useState<"success" | "error">("success");
 
     // Store selection state
     const [zipSearch, setZipSearch] = useState("");
@@ -146,8 +145,7 @@ function SetupPageContent() {
 
         if (krogerLinkedParam === "success") {
             setKrogerLinked(true);
-            setKrogerMessage("Your Kroger account has been linked!");
-            setKrogerMessageType("success");
+            showToast("Your Kroger account has been linked!", "success");
             // Move to store selection step
             if (returnStep) {
                 setStep(parseInt(returnStep, 10));
@@ -164,14 +162,13 @@ function SetupPageContent() {
                 token_exchange_failed: "Failed to connect to Kroger. Please try again.",
                 server_error: "An unexpected error occurred. Please try again.",
             };
-            setKrogerMessage(errorMessages[krogerError] || "Failed to link Kroger account.");
-            setKrogerMessageType("error");
+            showToast(errorMessages[krogerError] || "Failed to link Kroger account.", "error");
             if (returnStep) {
                 setStep(parseInt(returnStep, 10));
             }
             router.replace("/setup");
         }
-    }, [searchParams, router]);
+    }, [searchParams, router, showToast]);
 
     const toggleAllergy = (item: string) => {
         setSelectedAllergies((prev) =>
@@ -204,7 +201,6 @@ function SetupPageContent() {
         if (!user) return;
 
         setSaving(true);
-        setMessage(null);
 
         try {
             await setDoc(
@@ -224,7 +220,7 @@ function SetupPageContent() {
             sessionStorage.setItem("animateEntry", "true");
             router.push("/prompt");
         } catch (err: any) {
-            setMessage(err.message || "Failed to save");
+            showToast(err.message || "Failed to save", "error");
             setSaving(false);
         }
     };
@@ -321,7 +317,6 @@ function SetupPageContent() {
         if (!user) return;
 
         setSaving(true);
-        setMessage(null);
 
         try {
             await setDoc(
@@ -341,7 +336,7 @@ function SetupPageContent() {
             sessionStorage.setItem("animateEntry", "true");
             router.push("/prompt");
         } catch (err: any) {
-            setMessage(err.message || "Failed to save");
+            showToast(err.message || "Failed to save", "error");
             setSaving(false);
         }
     };
@@ -582,21 +577,6 @@ function SetupPageContent() {
                                         <p className="text-sm text-gray-500">Link your Kroger account to add items directly to your cart</p>
                                     </div>
 
-                                    {krogerMessage && (
-                                        <div className={`flex items-start gap-2 p-3 rounded-lg ${
-                                            krogerMessageType === "success" ? "bg-green-50" : "bg-red-50"
-                                        }`}>
-                                            {krogerMessageType === "success" ? (
-                                                <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
-                                            ) : (
-                                                <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-                                            )}
-                                            <p className={`text-sm ${krogerMessageType === "success" ? "text-green-600" : "text-red-600"}`}>
-                                                {krogerMessage}
-                                            </p>
-                                        </div>
-                                    )}
-
                                     {krogerLinked ? (
                                         <div className="bg-green-50 border border-green-100 rounded-xl p-6 text-center">
                                             <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -777,14 +757,6 @@ function SetupPageContent() {
                                 </div>
                             )}
                         </div>
-
-                        {/* Error Message */}
-                        {message && (
-                            <div className="flex items-start gap-2 mt-6 p-3 bg-red-50 rounded-lg">
-                                <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-                                <p className="text-sm text-red-600">{message}</p>
-                            </div>
-                        )}
 
                         {/* Navigation Buttons */}
                         <div className="mt-8 space-y-3">

@@ -17,16 +17,13 @@ import {
 } from "firebase/firestore";
 import {
     User as UserIcon,
-    Mail,
     Heart,
     AlertTriangle,
     FileText,
     ShoppingCart,
     MapPin,
-    Search,
     CheckCircle,
     AlertCircle,
-    ChevronRight,
     Edit3,
     X,
     Trash2,
@@ -40,6 +37,7 @@ import {
 } from "lucide-react";
 import { signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential, deleteUser } from "firebase/auth";
 import { deleteDoc } from "firebase/firestore";
+import { useToast } from "@/components/Toast";
 
 const ALLERGY_OPTIONS = [
     "Dairy",
@@ -148,6 +146,7 @@ type KrogerLocationSearchResult = {
 function AccountPageContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
+    const { showToast } = useToast();
 
     const [user, setUser] = useState<User | null>(null);
     const [userDoc, setUserDoc] = useState<UserPrefsDoc | null>(null);
@@ -171,13 +170,8 @@ function AccountPageContent() {
     const [selectedDislikedFoods, setSelectedDislikedFoods] = useState<string[]>([]);
     const [customDislikedFood, setCustomDislikedFood] = useState("");
     const [savingDietAllergies, setSavingDietAllergies] = useState(false);
-    const [dietAllergiesMessage, setDietAllergiesMessage] = useState<string | null>(null);
 
     const [removingDoctorNote, setRemovingDoctorNote] = useState(false);
-    const [doctorNoteMessage, setDoctorNoteMessage] = useState<string | null>(null);
-
-    const [krogerMessage, setKrogerMessage] = useState<string | null>(null);
-    const [krogerMessageType, setKrogerMessageType] = useState<"success" | "error">("success");
 
     // Kroger profile state
     const [krogerProfile, setKrogerProfile] = useState<{ firstName?: string; lastName?: string } | null>(null);
@@ -220,8 +214,7 @@ function AccountPageContent() {
         const krogerError = searchParams.get("kroger_error");
 
         if (krogerLinked === "success") {
-            setKrogerMessage("Your Kroger account has been linked successfully!");
-            setKrogerMessageType("success");
+            showToast("Your Kroger account has been linked successfully!", "success");
             setUserDoc((prev) => (prev ? { ...prev, krogerLinked: true } : { krogerLinked: true }));
             router.replace("/account");
         } else if (krogerError) {
@@ -233,11 +226,10 @@ function AccountPageContent() {
                 token_exchange_failed: "Failed to connect to Kroger. Please try again.",
                 server_error: "An unexpected error occurred. Please try again.",
             };
-            setKrogerMessage(errorMessages[krogerError] || "Failed to link Kroger account.");
-            setKrogerMessageType("error");
+            showToast(errorMessages[krogerError] || "Failed to link Kroger account.", "error");
             router.replace("/account");
         }
-    }, [searchParams, router]);
+    }, [searchParams, router, showToast]);
 
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -557,13 +549,11 @@ function AccountPageContent() {
         setSelectedSensitivities(userDoc?.allergiesAndSensitivities?.sensitivities ?? []);
         setSelectedDislikedFoods(userDoc?.dislikedFoods ?? []);
         setCustomDislikedFood("");
-        setDietAllergiesMessage(null);
         setEditingDietAllergies(true);
     };
 
     const handleCancelEditDietAllergies = () => {
         setEditingDietAllergies(false);
-        setDietAllergiesMessage(null);
     };
 
     const handleSaveDietAllergies = async () => {
@@ -571,7 +561,6 @@ function AccountPageContent() {
 
         try {
             setSavingDietAllergies(true);
-            setDietAllergiesMessage(null);
 
             const userRef = doc(db, "users", user.uid);
             await setDoc(
@@ -598,10 +587,10 @@ function AccountPageContent() {
             }));
 
             setEditingDietAllergies(false);
-            setDietAllergiesMessage("Dietary preferences updated.");
+            showToast("Dietary preferences updated.", "success");
         } catch (err) {
             console.error("Error saving dietary preferences", err);
-            setDietAllergiesMessage("Could not save changes.");
+            showToast("Could not save changes.", "error");
         } finally {
             setSavingDietAllergies(false);
         }
@@ -612,7 +601,6 @@ function AccountPageContent() {
 
         try {
             setRemovingDoctorNote(true);
-            setDoctorNoteMessage(null);
 
             const userRef = doc(db, "users", user.uid);
             await updateDoc(userRef, {
@@ -623,10 +611,10 @@ function AccountPageContent() {
                 prev ? { ...prev, doctorDietInstructions: null } : prev
             );
 
-            setDoctorNoteMessage("Diet instructions removed.");
+            showToast("Diet instructions removed.", "success");
         } catch (err) {
             console.error("Error removing diet instructions", err);
-            setDoctorNoteMessage("Could not remove diet instructions.");
+            showToast("Could not remove diet instructions.", "error");
         } finally {
             setRemovingDoctorNote(false);
         }
@@ -637,7 +625,6 @@ function AccountPageContent() {
 
         try {
             setUnlinkingKroger(true);
-            setKrogerMessage(null);
 
             const res = await fetch("/api/kroger/unlink", {
                 method: "POST",
@@ -648,16 +635,13 @@ function AccountPageContent() {
             if (res.ok) {
                 setUserDoc((prev) => prev ? { ...prev, krogerLinked: false } : prev);
                 setKrogerProfile(null);
-                setKrogerMessage("Your Kroger account has been unlinked.");
-                setKrogerMessageType("success");
+                showToast("Your Kroger account has been unlinked.", "success");
             } else {
-                setKrogerMessage("Failed to unlink Kroger account. Please try again.");
-                setKrogerMessageType("error");
+                showToast("Failed to unlink Kroger account. Please try again.", "error");
             }
         } catch (err) {
             console.error("Error unlinking Kroger:", err);
-            setKrogerMessage("Something went wrong. Please try again.");
-            setKrogerMessageType("error");
+            showToast("Something went wrong. Please try again.", "error");
         } finally {
             setUnlinkingKroger(false);
         }
@@ -935,12 +919,6 @@ function AccountPageContent() {
                                                 : "None"}
                                         </p>
                                     </div>
-                                    {dietAllergiesMessage && (
-                                        <div className="flex items-center gap-2 p-2 bg-emerald-50 rounded-lg">
-                                            <CheckCircle className="w-4 h-4 text-emerald-500" />
-                                            <span className="text-sm text-emerald-700">{dietAllergiesMessage}</span>
-                                        </div>
-                                    )}
                                 </div>
                             ) : (
                                 <div className="space-y-4">
@@ -1098,7 +1076,7 @@ function AccountPageContent() {
                             </div>
                             {hasDoctorNote && (
                                 <button
-                                    onClick={() => router.push("/doctor-note")}
+                                    onClick={() => router.push("/diet-restrictions")}
                                     className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors"
                                 >
                                     <Edit3 className="w-4 h-4 text-gray-400" />
@@ -1113,7 +1091,7 @@ function AccountPageContent() {
                                         Upload your doctor's diet instructions to automatically filter meal suggestions.
                                     </p>
                                     <button
-                                        onClick={() => router.push("/doctor-note")}
+                                        onClick={() => router.push("/diet-restrictions")}
                                         className="flex items-center gap-2 px-4 py-2.5 bg-[#4A90E2]/10 text-[#4A90E2] rounded-xl text-sm font-medium hover:bg-[#4A90E2]/20 transition-colors"
                                     >
                                         <Plus className="w-4 h-4" />
@@ -1157,10 +1135,6 @@ function AccountPageContent() {
                                         <Trash2 className="w-4 h-4" />
                                         <span>{removingDoctorNote ? "Removing..." : "Remove"}</span>
                                     </button>
-
-                                    {doctorNoteMessage && (
-                                        <p className="text-sm text-gray-500">{doctorNoteMessage}</p>
-                                    )}
                                 </div>
                             )}
                         </div>
@@ -1213,31 +1187,6 @@ function AccountPageContent() {
                                     <ExternalLink className="w-4 h-4" />
                                     <span>Link Kroger Account</span>
                                 </button>
-                            )}
-
-                            {krogerMessage && (
-                                <div
-                                    className={`mt-3 flex items-center gap-2 p-3 rounded-xl ${
-                                        krogerMessageType === "success"
-                                            ? "bg-emerald-50"
-                                            : "bg-red-50"
-                                    }`}
-                                >
-                                    {krogerMessageType === "success" ? (
-                                        <CheckCircle className="w-5 h-5 text-emerald-500" />
-                                    ) : (
-                                        <AlertCircle className="w-5 h-5 text-red-500" />
-                                    )}
-                                    <span
-                                        className={`text-sm ${
-                                            krogerMessageType === "success"
-                                                ? "text-emerald-700"
-                                                : "text-red-700"
-                                        }`}
-                                    >
-                                        {krogerMessage}
-                                    </span>
-                                </div>
                             )}
                         </div>
                     </div>

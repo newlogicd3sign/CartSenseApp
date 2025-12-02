@@ -6,19 +6,19 @@ import { signInWithEmailAndPassword } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { Mail, Lock, ArrowRight, AlertCircle } from "lucide-react";
+import { Mail, Lock, ArrowRight } from "lucide-react";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
+import { useToast } from "@/components/Toast";
 
 export default function LoginPage() {
     const router = useRouter();
+    const { showToast } = useToast();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
-    const [message, setMessage] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
-        setMessage(null);
         setLoading(true);
 
         try {
@@ -33,7 +33,7 @@ export default function LoginPage() {
             sessionStorage.setItem("animateEntry", "true");
             router.push("/prompt");
         } catch (error: any) {
-            setMessage(error.message || "Login failed");
+            showToast(error.message || "Login failed", "error");
         } finally {
             setLoading(false);
         }
@@ -99,14 +99,6 @@ export default function LoginPage() {
                                     />
                                 </div>
                             </div>
-
-                            {/* Error Message */}
-                            {message && (
-                                <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-100 rounded-xl">
-                                    <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-                                    <p className="text-sm text-red-600">{message}</p>
-                                </div>
-                            )}
 
                             {/* Submit Button */}
                             <button
