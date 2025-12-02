@@ -238,8 +238,19 @@ export default function SavedMealsPage() {
                                 return (
                                     <div
                                         key={meal.id}
-                                        className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow border border-gray-100 flex p-4 gap-4"
+                                        className="relative bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow border border-gray-100 flex p-4 gap-4"
                                     >
+                                        {/* Delete button - Top Right */}
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setMealToDelete(meal);
+                                            }}
+                                            className="absolute top-2 right-2 inline-flex items-center justify-center w-6 h-6 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+
                                         {/* Thumbnail - Left */}
                                         <div
                                             onClick={() => handleViewMeal(meal.id)}
@@ -293,26 +304,14 @@ export default function SavedMealsPage() {
                                                 </div>
                                             </div>
 
-                                            {/* Actions */}
-                                            <div className="flex items-center gap-2">
-                                                <button
-                                                    onClick={() => handleViewMeal(meal.id)}
-                                                    className="flex items-center gap-1 px-4 py-2 bg-[#4A90E2]/10 text-[#4A90E2] text-sm font-medium rounded-xl hover:bg-[#4A90E2]/20 transition-colors"
-                                                >
-                                                    <span>View meal</span>
-                                                    <ChevronRight className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setMealToDelete(meal);
-                                                    }}
-                                                    className="flex items-center gap-1 px-3 py-2 text-red-500 text-sm hover:bg-red-50 rounded-xl transition-colors"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                    <span>Remove</span>
-                                                </button>
-                                            </div>
+                                            {/* View Button */}
+                                            <button
+                                                onClick={() => handleViewMeal(meal.id)}
+                                                className="inline-flex items-center gap-0.5 px-2 py-1 bg-[#4A90E2]/10 text-[#4A90E2] text-[10px] font-medium rounded-lg hover:bg-[#4A90E2]/20 transition-colors whitespace-nowrap w-fit"
+                                            >
+                                                <span>View meal</span>
+                                                <ChevronRight className="w-3 h-3" />
+                                            </button>
                                         </div>
                                     </div>
                                 );
