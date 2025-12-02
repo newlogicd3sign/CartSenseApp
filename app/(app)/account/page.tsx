@@ -316,6 +316,42 @@ function AccountPageContent() {
                 });
 
                 setLocations(locs);
+
+                // Detect stale defaultKrogerLocationId - if user has a defaultKrogerLocationId
+                // but no locations in the subcollection, clear it
+                if (userDoc?.defaultKrogerLocationId && locs.length === 0) {
+                    console.log("Detected stale defaultKrogerLocationId, clearing...");
+                    const userRef = doc(db, "users", user.uid);
+                    await updateDoc(userRef, {
+                        defaultKrogerLocationId: null,
+                    });
+                    setUserDoc((prev) =>
+                        prev ? { ...prev, defaultKrogerLocationId: null } : prev
+                    );
+                }
+                // Also check if defaultKrogerLocationId doesn't match any existing location
+                else if (userDoc?.defaultKrogerLocationId && locs.length > 0) {
+                    const matchingLoc = locs.find(
+                        (loc) => loc.krogerLocationId === userDoc.defaultKrogerLocationId
+                    );
+                    if (!matchingLoc) {
+                        console.log("defaultKrogerLocationId doesn't match any location, updating to first location...");
+                        const newDefault = locs[0];
+                        const userRef = doc(db, "users", user.uid);
+                        await updateDoc(userRef, {
+                            defaultKrogerLocationId: newDefault.krogerLocationId,
+                        });
+                        setUserDoc((prev) =>
+                            prev ? { ...prev, defaultKrogerLocationId: newDefault.krogerLocationId } : prev
+                        );
+                        // Also update the location's isDefault flag
+                        const locRef = doc(db, "krogerLocations", user.uid, "locations", newDefault.id);
+                        await updateDoc(locRef, { isDefault: true });
+                        setLocations((prev) =>
+                            prev.map((l) => ({ ...l, isDefault: l.id === newDefault.id }))
+                        );
+                    }
+                }
             } catch (err) {
                 console.error("Error loading locations", err);
                 setLocations([]);
@@ -325,7 +361,7 @@ function AccountPageContent() {
         };
 
         void loadLocations();
-    }, [user]);
+    }, [user, userDoc?.defaultKrogerLocationId]);
 
     const handleSetDefault = async (loc: UserLocation) => {
         if (!user) return;
@@ -376,7 +412,10 @@ function AccountPageContent() {
 
             const remainingLocations = locations.filter((l) => l.id !== loc.id);
 
-            if (loc.isDefault && remainingLocations.length > 0) {
+            // Check if the deleted store was the default (either by isDefault flag or by matching defaultKrogerLocationId)
+            const wasDefault = loc.isDefault || loc.krogerLocationId === userDoc?.defaultKrogerLocationId;
+
+            if (wasDefault && remainingLocations.length > 0) {
                 const newDefault = remainingLocations[0];
                 const userRef = doc(db, "users", user.uid);
                 await updateDoc(userRef, {
@@ -398,12 +437,13 @@ function AccountPageContent() {
                         : { defaultKrogerLocationId: newDefault.krogerLocationId }
                 );
                 setLocationMessage(`${loc.name} removed. ${newDefault.name} is now your default.`);
-            } else if (loc.isDefault) {
+            } else if (wasDefault || remainingLocations.length === 0) {
+                // Clear defaultKrogerLocationId if no stores remain or if default was deleted
                 const userRef = doc(db, "users", user.uid);
                 await updateDoc(userRef, {
                     defaultKrogerLocationId: null,
                 });
-                setLocations([]);
+                setLocations(remainingLocations);
                 setUserDoc((prev) =>
                     prev ? { ...prev, defaultKrogerLocationId: null } : { defaultKrogerLocationId: null }
                 );

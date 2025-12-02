@@ -204,6 +204,13 @@ function MealsPageContent() {
         }
     }, []);
 
+    // Scroll to top when the page loads to ensure proper slide-up effect on mobile
+    useEffect(() => {
+        if (!loadingUser && user && prefs) {
+            window.scrollTo(0, 0);
+        }
+    }, [loadingUser, user, prefs]);
+
     // Load from sessionStorage OR start streaming
     useEffect(() => {
         if (!user || !prefs) return;
@@ -485,10 +492,10 @@ function MealsPageContent() {
                                                         `/meals/${meal.id}?prompt=${encodeURIComponent(displayedPrompt)}`
                                                     )
                                                 }
-                                                className="self-start flex items-center gap-1 px-4 py-2 bg-[#4A90E2]/10 text-[#4A90E2] text-sm font-medium rounded-xl hover:bg-[#4A90E2]/20 transition-colors"
+                                                className="inline-flex items-center gap-0.5 px-2 py-1 bg-[#4A90E2]/10 text-[#4A90E2] text-[10px] font-medium rounded-lg hover:bg-[#4A90E2]/20 transition-colors w-fit whitespace-nowrap"
                                             >
-                                                <span>View meal</span>
-                                                <ChevronRight className="w-4 h-4" />
+                                                <span>View</span>
+                                                <ChevronRight className="w-3 h-3" />
                                             </button>
                                         </div>
                                     </div>
