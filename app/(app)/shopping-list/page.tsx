@@ -16,8 +16,6 @@ import {
     List,
     Trash2,
     ExternalLink,
-    CheckCircle,
-    AlertCircle,
     X,
     Link,
     Clock,
@@ -26,6 +24,7 @@ import {
     Lightbulb,
 } from "lucide-react";
 import { getRandomAccentColor, type AccentColor } from "@/lib/utils";
+import { useToast } from "@/components/Toast";
 
 type ShoppingItem = {
     id: string;
@@ -42,6 +41,7 @@ type ShoppingItem = {
     productAisle?: string;
     price?: number;
     soldBy?: "WEIGHT" | "UNIT";
+    stockLevel?: string; // HIGH, LOW, or TEMPORARILY_OUT_OF_STOCK
 };
 
 type KrogerLinkStatus = "loading" | "linked" | "not_linked" | "no_store";
@@ -73,6 +73,7 @@ type KrogerCartResponse = {
 
 export default function ShoppingListPage() {
     const router = useRouter();
+    const { showToast } = useToast();
 
     const [user, setUser] = useState<User | null>(null);
     const [loadingUser, setLoadingUser] = useState(true);
@@ -82,8 +83,6 @@ export default function ShoppingListPage() {
 
     const [krogerLinkStatus, setKrogerLinkStatus] = useState<KrogerLinkStatus>("loading");
     const [addingToKroger, setAddingToKroger] = useState(false);
-    const [krogerMessage, setKrogerMessage] = useState<string | null>(null);
-    const [krogerMessageType, setKrogerMessageType] = useState<"success" | "error">("success");
     const [krogerResults, setKrogerResults] = useState<EnrichedItem[] | null>(null);
     const [showKrogerResults, setShowKrogerResults] = useState(false);
     const [accentColor, setAccentColor] = useState<AccentColor>({ primary: "#3b82f6", dark: "#2563eb" });
@@ -173,7 +172,6 @@ export default function ShoppingListPage() {
         if (!user || itemsToAdd.length === 0) return;
 
         setAddingToKroger(true);
-        setKrogerMessage(null);
         setKrogerResults(null);
 
         try {
@@ -194,17 +192,15 @@ export default function ShoppingListPage() {
             if (!res.ok) {
                 if (data.error === "NOT_LINKED" || data.error === "TOKEN_EXPIRED") {
                     setKrogerLinkStatus("not_linked");
-                    setKrogerMessage(data.message || "Please link your Kroger account first.");
+                    showToast(data.message || "Please link your Kroger account first.", "error");
                 } else if (data.error === "NO_STORE") {
                     setKrogerLinkStatus("no_store");
-                    setKrogerMessage(data.message || "Please select a Kroger store first.");
+                    showToast(data.message || "Please select a Kroger store first.", "error");
                 } else {
-                    setKrogerMessage(data.message || "Failed to add items to Kroger cart.");
+                    showToast(data.message || "Failed to add items to Kroger cart.", "error");
                 }
-                setKrogerMessageType("error");
             } else {
-                setKrogerMessage(data.message || "Items added to your Kroger cart!");
-                setKrogerMessageType("success");
+                showToast(data.message || "Items added to your Kroger cart!", "success");
             }
 
             if (data.enrichedItems && data.enrichedItems.length > 0) {
@@ -213,8 +209,7 @@ export default function ShoppingListPage() {
             }
         } catch (err) {
             console.error("Error adding to Kroger cart:", err);
-            setKrogerMessage("Something went wrong. Please try again.");
-            setKrogerMessageType("error");
+            showToast("Something went wrong. Please try again.", "error");
         } finally {
             setAddingToKroger(false);
         }
@@ -338,30 +333,6 @@ export default function ShoppingListPage() {
                             </div>
                         )}
                     </div>
-
-                    {/* Kroger Message */}
-                    {krogerMessage && (
-                        <div
-                            className={`mt-4 flex items-center gap-2 p-3 rounded-xl ${
-                                krogerMessageType === "success"
-                                    ? "bg-emerald-50 border border-emerald-200"
-                                    : "bg-red-50 border border-red-200"
-                            }`}
-                        >
-                            {krogerMessageType === "success" ? (
-                                <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0" />
-                            ) : (
-                                <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
-                            )}
-                            <span
-                                className={`text-sm ${
-                                    krogerMessageType === "success" ? "text-emerald-700" : "text-red-700"
-                                }`}
-                            >
-                                {krogerMessage}
-                            </span>
-                        </div>
-                    )}
                 </div>
             </div>
 
@@ -486,8 +457,19 @@ export default function ShoppingListPage() {
                                                                 </div>
                                                             )}
                                                             <div className="min-w-0 flex-1">
-                                                                <div className="font-medium text-gray-900 truncate">
-                                                                    {item.name}
+                                                                <div>
+                                                                    <span className="font-medium text-gray-900">
+                                                                        {item.name}
+                                                                    </span>
+                                                                    {hasKrogerProduct && item.stockLevel && item.stockLevel !== "HIGH" && (
+                                                                        <span className={`inline-block ml-2 text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap align-middle ${
+                                                                            item.stockLevel === "LOW"
+                                                                                ? "bg-amber-100 text-amber-700"
+                                                                                : "bg-red-100 text-red-700"
+                                                                        }`}>
+                                                                            {item.stockLevel === "LOW" ? "Low Stock" : "Out of Stock"}
+                                                                        </span>
+                                                                    )}
                                                                 </div>
                                                                 <div className="text-sm text-gray-500">
                                                                     {item.quantity}
@@ -586,7 +568,9 @@ export default function ShoppingListPage() {
                         <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 shrink-0">
                             <div>
                                 <h2 className="text-lg font-medium text-gray-900">Kroger Cart Results</h2>
-                                <p className="text-sm text-gray-500 mt-0.5">{krogerMessage}</p>
+                                <p className="text-sm text-gray-500 mt-0.5">
+                                    {krogerResults.filter(i => i.found).length} of {krogerResults.length} items added
+                                </p>
                             </div>
                             <button
                                 onClick={() => setShowKrogerResults(false)}

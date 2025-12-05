@@ -3,7 +3,7 @@
 import OpenAI from "openai";
 import { randomUUID, createHash } from "crypto";
 import { searchKrogerProduct } from "@/lib/kroger";
-import { adminDb } from "@/lib/firebaseAdmin";
+import { adminDb, adminStorage } from "@/lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
 
 const openai = new OpenAI({
@@ -25,6 +25,8 @@ type Ingredient = {
     aisle?: string;
     price?: number;
     soldBy?: "WEIGHT" | "UNIT"; // WEIGHT = price per lb, UNIT = price per item
+    stockLevel?: string; // HIGH, LOW, or TEMPORARILY_OUT_OF_STOCK
+    available?: boolean; // Whether product is available in-store
     krogerProductId?: string;
     productName?: string;
     productImageUrl?: string;
@@ -103,11 +105,17 @@ const NON_FOOD_KEYWORDS = [
 
 function isFoodPrompt(prompt: string): boolean {
     const lower = prompt.toLowerCase();
+
+    // Block explicitly non-food requests
     for (const blocked of NON_FOOD_KEYWORDS) {
         if (lower.includes(blocked)) return false;
     }
-    const foodHints = ["meal", "meals", "dinner", "lunch", "breakfast", "snack", "recipe", "recipes"];
-    return foodHints.some((w) => lower.includes(w));
+
+    // Since users are in a meal planning app, assume food intent by default.
+    // Only reject if it's clearly a non-food request (handled above).
+    // This allows for any cuisine, ingredient, or dish name from any culture
+    // (e.g., "aloo gobi", "pad thai", "jollof rice", "bibimbap", etc.)
+    return true;
 }
 
 // ---------- Helpers ----------
@@ -262,7 +270,6 @@ function normalizeMeal(raw: unknown): Meal {
 // ---------- Image caching ----------
 
 const IMAGE_CACHE_COLLECTION = "mealImageCache";
-const IMAGE_CACHE_TTL_DAYS = 30;
 
 function getMealImageCacheKey(meal: Meal): string {
     const topIngredients = meal.ingredients
@@ -280,16 +287,8 @@ async function getCachedImage(cacheKey: string): Promise<string | null> {
         const snap = await docRef.get();
         if (!snap.exists) return null;
 
-        const data = snap.data() as { imageUrl?: string; createdAt?: any } | undefined;
+        const data = snap.data() as { imageUrl?: string } | undefined;
         if (!data?.imageUrl) return null;
-
-        if (data.createdAt) {
-            const createdAt = typeof data.createdAt.toDate === "function"
-                ? data.createdAt.toDate()
-                : new Date(data.createdAt);
-            const ageMs = Date.now() - createdAt.getTime();
-            if (ageMs > IMAGE_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000) return null;
-        }
 
         return data.imageUrl;
     } catch {
@@ -297,10 +296,33 @@ async function getCachedImage(cacheKey: string): Promise<string | null> {
     }
 }
 
-async function cacheImage(cacheKey: string, imageUrl: string, mealName: string): Promise<void> {
+async function uploadImageToStorage(cacheKey: string, imageBuffer: Buffer): Promise<string> {
+    const bucket = adminStorage.bucket();
+    const file = bucket.file(`meal-images/${cacheKey}.png`);
+
+    await file.save(imageBuffer, {
+        metadata: {
+            contentType: "image/png",
+            cacheControl: "public, max-age=31536000", // Cache for 1 year
+        },
+    });
+
+    await file.makePublic();
+
+    return `https://storage.googleapis.com/${bucket.name}/meal-images/${cacheKey}.png`;
+}
+
+async function downloadImage(url: string): Promise<Buffer> {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Failed to download image");
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+}
+
+async function cacheImage(cacheKey: string, permanentUrl: string, mealName: string): Promise<void> {
     try {
         await adminDb.collection(IMAGE_CACHE_COLLECTION).doc(cacheKey).set({
-            imageUrl,
+            imageUrl: permanentUrl,
             mealName,
             createdAt: FieldValue.serverTimestamp(),
         });
@@ -320,10 +342,13 @@ Style: bright natural lighting, top-down angle, realistic, appetizing, no text, 
 
 async function getOrGenerateImage(meal: Meal): Promise<string | undefined> {
     const cacheKey = getMealImageCacheKey(meal);
+
+    // Check cache first
     const cached = await getCachedImage(cacheKey);
     if (cached) return cached;
 
     try {
+        // Generate with DALL-E
         const result = await openai.images.generate({
             model: "dall-e-2",
             prompt: buildMealImagePrompt(meal),
@@ -331,13 +356,19 @@ async function getOrGenerateImage(meal: Meal): Promise<string | undefined> {
             size: "256x256",
         });
 
-        const url = result.data?.[0]?.url;
-        if (url) {
-            cacheImage(cacheKey, url, meal.name).catch(() => {});
-            return url;
+        const tempUrl = result.data?.[0]?.url;
+        if (tempUrl) {
+            // Download from DALL-E and upload to Firebase Storage for permanent URL
+            const imageBuffer = await downloadImage(tempUrl);
+            const permanentUrl = await uploadImageToStorage(cacheKey, imageBuffer);
+
+            // Cache the permanent URL in Firestore
+            cacheImage(cacheKey, permanentUrl, meal.name).catch(() => {});
+
+            return permanentUrl;
         }
-    } catch {
-        // Fall through to placeholder
+    } catch (err) {
+        console.error("Image generation/upload error:", err);
     }
 
     return `https://placehold.co/256x256/cccccc/555555?text=${encodeURIComponent(meal.name)}`;
@@ -619,7 +650,7 @@ export async function POST(request: Request) {
 
                 const enrichPromises = meals.slice(0, 3).map(async (meal, mealIndex) => {
                     const enrichedIngredients = await Promise.all(
-                        meal.ingredients.slice(0, 6).map(async (ingredient) => {
+                        meal.ingredients.map(async (ingredient) => {
                             try {
                                 // Use grocerySearchTerm if available, with fallback mapping, then fall back to name
                                 const searchTerm = ingredient.grocerySearchTerm
@@ -638,6 +669,8 @@ export async function POST(request: Request) {
                                     productAisle: match.aisle,
                                     price: match.price, // Only use real Kroger prices, never estimated
                                     soldBy: match.soldBy, // WEIGHT = per lb, UNIT = per item
+                                    stockLevel: match.stockLevel, // HIGH, LOW, or TEMPORARILY_OUT_OF_STOCK
+                                    available: match.available, // Whether product is available in-store
                                     aisle: ingredient.aisle ?? match.aisle,
                                 };
                             } catch {
@@ -646,7 +679,7 @@ export async function POST(request: Request) {
                         })
                     );
 
-                    const updatedMeal = { ...meals[mealIndex], ingredients: [...enrichedIngredients, ...meal.ingredients.slice(6)] };
+                    const updatedMeal = { ...meals[mealIndex], ingredients: enrichedIngredients };
                     meals[mealIndex] = updatedMeal;
                     await writer.write(sendEvent({ type: "meal_updated", meal: updatedMeal, index: mealIndex }));
                 });

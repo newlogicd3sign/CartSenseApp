@@ -7,6 +7,7 @@ import { onAuthStateChanged, type User } from "firebase/auth";
 import {
     doc,
     getDoc,
+    getDocs,
     collection,
     addDoc,
     serverTimestamp,
@@ -30,7 +31,14 @@ import {
     ExternalLink,
     X,
     AlertCircle,
+    Sparkles,
 } from "lucide-react";
+import { UpgradePrompt } from "@/components/UpgradePrompt";
+import { useToast } from "@/components/Toast";
+import {
+    isStapleItem,
+    isSameIngredient,
+} from "@/lib/utils";
 
 type Ingredient = {
     name: string;
@@ -39,6 +47,8 @@ type Ingredient = {
     aisle?: string;
     price?: number;
     soldBy?: "WEIGHT" | "UNIT";
+    stockLevel?: string; // HIGH, LOW, or TEMPORARILY_OUT_OF_STOCK
+    available?: boolean;
     krogerProductId?: string;
     productName?: string;
     productImageUrl?: string;
@@ -72,6 +82,7 @@ type UserPrefs = {
         allergies?: string[];
         sensitivities?: string[];
     };
+    isPremium?: boolean;
 };
 
 type KrogerProduct = {
@@ -129,6 +140,7 @@ function MealDetailPageContent() {
     const router = useRouter();
     const params = useParams();
     const searchParams = useSearchParams();
+    const { showToast } = useToast();
 
     const mealId = params.mealId as string;
     const promptParam = searchParams.get("prompt") || "";
@@ -142,10 +154,8 @@ function MealDetailPageContent() {
     const [loadingMeal, setLoadingMeal] = useState(true);
 
     const [addingToList, setAddingToList] = useState(false);
-    const [addMessage, setAddMessage] = useState<string | null>(null);
 
     const [savingMeal, setSavingMeal] = useState(false);
-    const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
     const [krogerConnected, setKrogerConnected] = useState(false);
     const [mealsMeta, setMealsMeta] = useState<MealsMeta | null>(null);
@@ -161,10 +171,13 @@ function MealDetailPageContent() {
     // Kroger cart state
     const [krogerStoreSet, setKrogerStoreSet] = useState(false);
     const [addingToKrogerCart, setAddingToKrogerCart] = useState(false);
-    const [krogerCartMessage, setKrogerCartMessage] = useState<string | null>(null);
-    const [krogerCartMessageType, setKrogerCartMessageType] = useState<"success" | "error">("success");
     const [krogerResults, setKrogerResults] = useState<EnrichedItem[] | null>(null);
     const [showKrogerResults, setShowKrogerResults] = useState(false);
+
+    // Chat limit state
+    const [chatMessageCount, setChatMessageCount] = useState(0);
+    const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
+    const FREE_CHAT_LIMIT = 3;
 
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -312,35 +325,67 @@ function MealDetailPageContent() {
     const handleAddToShoppingList = async () => {
         if (!user || !meal) return;
         if (selectedIngredients.size === 0) {
-            setAddMessage("Please select at least one ingredient to add.");
+            showToast("Please select at least one ingredient to add.", "error");
             return;
         }
 
         try {
             setAddingToList(true);
-            setAddMessage(null);
 
             const itemsCol = collection(db, "shoppingLists", user.uid, "items");
             const ingredientsToAdd = meal.ingredients.filter((_, idx) => selectedIngredients.has(idx));
 
-            await Promise.all(
-                ingredientsToAdd.map((ing) =>
-                    addDoc(itemsCol, {
-                        name: ing.name,
-                        quantity: ing.quantity,
-                        mealId: meal.id,
-                        mealName: meal.name,
-                        checked: false,
-                        createdAt: serverTimestamp(),
-                        krogerProductId: krogerConnected ? ing.krogerProductId ?? null : null,
-                        productName: krogerConnected ? ing.productName ?? null : null,
-                        productImageUrl: krogerConnected ? ing.productImageUrl ?? null : null,
-                        productSize: krogerConnected ? ing.productSize ?? null : null,
-                        productAisle: krogerConnected ? ing.productAisle ?? null : null,
-                        price: krogerConnected && typeof ing.price === "number" ? ing.price : null,
-                    })
-                )
-            );
+            // Fetch existing shopping list items to check for duplicates
+            const existingSnapshot = await getDocs(itemsCol);
+            const existingItems = existingSnapshot.docs.map((d) => ({
+                id: d.id,
+                name: d.data().name as string,
+            }));
+
+            // Filter out duplicates based on ingredient type
+            let skippedStaples = 0;
+            const itemsToActuallyAdd = ingredientsToAdd.filter((ing) => {
+                // Check if this ingredient already exists in the shopping list
+                const existingMatch = existingItems.find((existing) =>
+                    isSameIngredient(existing.name, ing.name)
+                );
+
+                if (existingMatch) {
+                    // If it's a staple item, skip it entirely (don't need multiple olive oils)
+                    if (isStapleItem(ing.name)) {
+                        skippedStaples++;
+                        return false;
+                    }
+                    // For countable items (bananas, eggs, etc.), still add them
+                    // User may actually need more of these
+                }
+
+                return true;
+            });
+
+            // Add the filtered items
+            if (itemsToActuallyAdd.length > 0) {
+                await Promise.all(
+                    itemsToActuallyAdd.map((ing) =>
+                        addDoc(itemsCol, {
+                            name: ing.name,
+                            quantity: ing.quantity,
+                            mealId: meal.id,
+                            mealName: meal.name,
+                            checked: false,
+                            createdAt: serverTimestamp(),
+                            krogerProductId: krogerConnected ? ing.krogerProductId ?? null : null,
+                            productName: krogerConnected ? ing.productName ?? null : null,
+                            productImageUrl: krogerConnected ? ing.productImageUrl ?? null : null,
+                            productSize: krogerConnected ? ing.productSize ?? null : null,
+                            productAisle: krogerConnected ? ing.productAisle ?? null : null,
+                            price: krogerConnected && typeof ing.price === "number" ? ing.price : null,
+                            soldBy: krogerConnected ? ing.soldBy ?? null : null,
+                            stockLevel: krogerConnected ? ing.stockLevel ?? null : null,
+                        })
+                    )
+                );
+            }
 
             // Automatically save the meal when adding to shopping list
             const mealRef = doc(db, "savedMeals", user.uid, "meals", meal.id);
@@ -350,7 +395,17 @@ function MealDetailPageContent() {
                 savedAt: serverTimestamp(),
             });
 
-            setAddMessage(`Added ${ingredientsToAdd.length} item${ingredientsToAdd.length !== 1 ? "s" : ""} to your shopping list and saved the meal.`);
+            // Build appropriate toast message
+            let toastMessage = "";
+            if (itemsToActuallyAdd.length > 0 && skippedStaples > 0) {
+                toastMessage = `Added ${itemsToActuallyAdd.length} item${itemsToActuallyAdd.length !== 1 ? "s" : ""}, skipped ${skippedStaples} already in list.`;
+            } else if (itemsToActuallyAdd.length > 0) {
+                toastMessage = `Added ${itemsToActuallyAdd.length} item${itemsToActuallyAdd.length !== 1 ? "s" : ""} to your shopping list.`;
+            } else if (skippedStaples > 0) {
+                toastMessage = `All items already in your shopping list.`;
+            }
+
+            showToast(toastMessage, "success");
 
             // Log both events
             logUserEvent(user.uid, {
@@ -368,7 +423,7 @@ function MealDetailPageContent() {
             });
         } catch (err) {
             console.error("Error adding to shopping list", err);
-            setAddMessage("Something went wrong adding items to your list.");
+            showToast("Something went wrong adding items to your list.", "error");
         } finally {
             setAddingToList(false);
         }
@@ -379,7 +434,6 @@ function MealDetailPageContent() {
 
         try {
             setSavingMeal(true);
-            setSaveMessage(null);
 
             const mealRef = doc(db, "savedMeals", user.uid, "meals", meal.id);
 
@@ -389,7 +443,7 @@ function MealDetailPageContent() {
                 savedAt: serverTimestamp(),
             });
 
-            setSaveMessage("Meal saved to your account.");
+            showToast("Meal saved to your account.", "success");
 
             logUserEvent(user.uid, {
                 type: "meal_saved",
@@ -399,7 +453,7 @@ function MealDetailPageContent() {
             });
         } catch (err) {
             console.error("Error saving meal", err);
-            setSaveMessage("Something went wrong saving this meal.");
+            showToast("Something went wrong saving this meal.", "error");
         } finally {
             setSavingMeal(false);
         }
@@ -408,13 +462,11 @@ function MealDetailPageContent() {
     const handleAddToKrogerCart = async () => {
         if (!user || !meal) return;
         if (selectedIngredients.size === 0) {
-            setKrogerCartMessage("Please select at least one ingredient to add.");
-            setKrogerCartMessageType("error");
+            showToast("Please select at least one ingredient to add.", "error");
             return;
         }
 
         setAddingToKrogerCart(true);
-        setKrogerCartMessage(null);
         setKrogerResults(null);
 
         try {
@@ -436,17 +488,15 @@ function MealDetailPageContent() {
             if (!res.ok) {
                 if (data.error === "NOT_LINKED" || data.error === "TOKEN_EXPIRED") {
                     setKrogerConnected(false);
-                    setKrogerCartMessage(data.message || "Please link your Kroger account first.");
+                    showToast(data.message || "Please link your Kroger account first.", "error");
                 } else if (data.error === "NO_STORE") {
                     setKrogerStoreSet(false);
-                    setKrogerCartMessage(data.message || "Please select a Kroger store first.");
+                    showToast(data.message || "Please select a Kroger store first.", "error");
                 } else {
-                    setKrogerCartMessage(data.message || "Failed to add items to Kroger cart.");
+                    showToast(data.message || "Failed to add items to Kroger cart.", "error");
                 }
-                setKrogerCartMessageType("error");
             } else {
-                setKrogerCartMessage(data.message || "Items added to your Kroger cart!");
-                setKrogerCartMessageType("success");
+                showToast(data.message || "Items added to your Kroger cart!", "success");
 
                 // Also save the meal when adding to Kroger cart
                 const mealRef = doc(db, "savedMeals", user.uid, "meals", meal.id);
@@ -470,8 +520,7 @@ function MealDetailPageContent() {
             }
         } catch (err) {
             console.error("Error adding to Kroger cart:", err);
-            setKrogerCartMessage("Something went wrong. Please try again.");
-            setKrogerCartMessageType("error");
+            showToast("Something went wrong. Please try again.", "error");
         } finally {
             setAddingToKrogerCart(false);
         }
@@ -480,9 +529,20 @@ function MealDetailPageContent() {
     const handleSendThreadMessage = async () => {
         if (!meal || !threadInput.trim()) return;
 
+        // Check chat limit for free users
+        if (!prefs?.isPremium && chatMessageCount >= FREE_CHAT_LIMIT) {
+            setShowUpgradePrompt(true);
+            return;
+        }
+
         const messageText = threadInput.trim();
         setThreadInput("");
         setThreadError(null);
+
+        // Increment chat count for free users
+        if (!prefs?.isPremium) {
+            setChatMessageCount((prev) => prev + 1);
+        }
 
         const newUserMsg: ThreadMessage = {
             id: `user-${Date.now()}`,
@@ -669,7 +729,7 @@ function MealDetailPageContent() {
                         <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-xl w-fit">
                             <Heart className="w-4 h-4 text-emerald-500" />
                             <span className="text-sm font-medium text-emerald-700">
-                                Generated with your doctor's instructions
+                                Generated with your diet instructions
                             </span>
                         </div>
                     )}
@@ -714,9 +774,21 @@ function MealDetailPageContent() {
 
                     {/* Ask AI Section */}
                     <div className="bg-white rounded-2xl border border-gray-100 p-5">
-                        <div className="flex items-center gap-2 mb-3">
-                            <MessageCircle className="w-5 h-5 text-[#4A90E2]" />
-                            <h3 className="font-medium text-gray-900">Ask CartSense about this meal</h3>
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                                <MessageCircle className="w-5 h-5 text-[#4A90E2]" />
+                                <h3 className="font-medium text-gray-900">Ask CartSense about this meal</h3>
+                            </div>
+                            {prefs?.isPremium ? (
+                                <div className="flex items-center gap-1 px-2 py-1 bg-violet-100 rounded-full">
+                                    <Sparkles className="w-3 h-3 text-violet-600" />
+                                    <span className="text-xs font-medium text-violet-700">Premium</span>
+                                </div>
+                            ) : (
+                                <span className="text-xs text-gray-400">
+                                    {FREE_CHAT_LIMIT - chatMessageCount} of {FREE_CHAT_LIMIT} left
+                                </span>
+                            )}
                         </div>
                         <p className="text-sm text-gray-500 mb-4">
                             Swap ingredients, make it dairy-free, lower sodium, change servings, or create a variant.
@@ -809,7 +881,18 @@ function MealDetailPageContent() {
                                         </div>
                                     ) : null}
                                     <div className="flex-1 min-w-0">
-                                        <div className={`font-medium ${selectedIngredients.has(idx) ? "text-gray-900" : "text-gray-500 line-through"}`}>{ing.name}</div>
+                                        <div>
+                                            <span className={`font-medium ${selectedIngredients.has(idx) ? "text-gray-900" : "text-gray-500 line-through"}`}>{ing.name}</span>
+                                            {krogerConnected && ing.stockLevel && ing.stockLevel !== "HIGH" && (
+                                                <span className={`inline-block ml-2 text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap align-middle ${
+                                                    ing.stockLevel === "LOW"
+                                                        ? "bg-amber-100 text-amber-700"
+                                                        : "bg-red-100 text-red-700"
+                                                }`}>
+                                                    {ing.stockLevel === "LOW" ? "Low Stock" : "Out of Stock"}
+                                                </span>
+                                            )}
+                                        </div>
                                         <div className="text-sm text-gray-500">
                                             {ing.quantity}
                                             {ing.category && ` • ${ing.category}`}
@@ -912,44 +995,16 @@ function MealDetailPageContent() {
                             )}
                         </button>
                     </div>
-
-                    {/* Kroger Cart Message */}
-                    {krogerCartMessage && (
-                        <div className={`flex items-center gap-2 p-3 rounded-xl ${
-                            krogerCartMessageType === "success"
-                                ? "bg-emerald-50 border border-emerald-200"
-                                : "bg-red-50 border border-red-200"
-                        }`}>
-                            {krogerCartMessageType === "success" ? (
-                                <CheckCircle className="w-5 h-5 text-emerald-500" />
-                            ) : (
-                                <AlertCircle className="w-5 h-5 text-red-500" />
-                            )}
-                            <span className={`text-sm ${
-                                krogerCartMessageType === "success" ? "text-emerald-700" : "text-red-700"
-                            }`}>{krogerCartMessage}</span>
-                        </div>
-                    )}
-
-                    {/* Success Messages */}
-                    {(addMessage || saveMessage) && (
-                        <div className="space-y-2">
-                            {addMessage && (
-                                <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
-                                    <CheckCircle className="w-5 h-5 text-emerald-500" />
-                                    <span className="text-sm text-emerald-700">{addMessage}</span>
-                                </div>
-                            )}
-                            {saveMessage && (
-                                <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
-                                    <CheckCircle className="w-5 h-5 text-emerald-500" />
-                                    <span className="text-sm text-emerald-700">{saveMessage}</span>
-                                </div>
-                            )}
-                        </div>
-                    )}
                 </div>
             </div>
+
+            {/* Upgrade Prompt Modal */}
+            {showUpgradePrompt && (
+                <UpgradePrompt
+                    feature="meal_chat"
+                    onClose={() => setShowUpgradePrompt(false)}
+                />
+            )}
 
             {/* Kroger Results Modal */}
             {showKrogerResults && krogerResults && (

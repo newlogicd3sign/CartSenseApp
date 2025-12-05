@@ -7,10 +7,16 @@ import { onAuthStateChanged, type User } from "firebase/auth";
 import {
     doc,
     getDoc,
+    getDocs,
     collection,
     addDoc,
     serverTimestamp,
+    setDoc,
 } from "firebase/firestore";
+import {
+    isStapleItem,
+    isSameIngredient,
+} from "@/lib/utils";
 import {
     ArrowLeft,
     Flame,
@@ -23,7 +29,12 @@ import {
     CheckCircle,
     Clock,
     Bookmark,
+    MessageCircle,
+    Send,
+    Sparkles,
+    Lock,
 } from "lucide-react";
+import { UpgradePrompt } from "@/components/UpgradePrompt";
 
 type Ingredient = {
     name: string;
@@ -32,6 +43,8 @@ type Ingredient = {
     aisle?: string;
     price?: number;
     soldBy?: "WEIGHT" | "UNIT";
+    stockLevel?: string; // HIGH, LOW, or TEMPORARILY_OUT_OF_STOCK
+    available?: boolean;
     krogerProductId?: string;
     productName?: string;
     productImageUrl?: string;
@@ -58,6 +71,30 @@ type SavedMeal = {
     imageUrl?: string;
 };
 
+type UserPrefs = {
+    name?: string;
+    dietType?: string;
+    krogerLinked?: boolean;
+    allergiesAndSensitivities?: {
+        allergies?: string[];
+        sensitivities?: string[];
+    };
+    isPremium?: boolean;
+};
+
+type ThreadMessage = {
+    id: string;
+    role: "user" | "assistant";
+    content: string;
+    createdAt: string;
+};
+
+type MealThreadReply = {
+    reply: string;
+    action: "no_change" | "update_meal" | "new_meal_variant";
+    updatedMeal?: SavedMeal;
+};
+
 export default function SavedMealDetailPage() {
     const router = useRouter();
     const params = useParams();
@@ -73,6 +110,14 @@ export default function SavedMealDetailPage() {
     const [addMessage, setAddMessage] = useState<string | null>(null);
     const [selectedIngredients, setSelectedIngredients] = useState<Set<number>>(new Set());
     const [krogerConnected, setKrogerConnected] = useState(false);
+    const [prefs, setPrefs] = useState<UserPrefs | null>(null);
+
+    // Meal chat state
+    const [threadMessages, setThreadMessages] = useState<ThreadMessage[]>([]);
+    const [threadInput, setThreadInput] = useState("");
+    const [sendingThread, setSendingThread] = useState(false);
+    const [threadError, setThreadError] = useState<string | null>(null);
+    const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
 
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -83,12 +128,13 @@ export default function SavedMealDetailPage() {
 
             setUser(firebaseUser);
 
-            // Fetch user prefs to check Kroger connection
+            // Fetch user prefs to check Kroger connection and premium status
             try {
                 const userRef = doc(db, "users", firebaseUser.uid);
                 const userSnap = await getDoc(userRef);
                 if (userSnap.exists()) {
-                    const data = userSnap.data();
+                    const data = userSnap.data() as UserPrefs;
+                    setPrefs(data);
                     setKrogerConnected(Boolean(data.krogerLinked));
                 }
             } catch (err) {
@@ -170,28 +216,66 @@ export default function SavedMealDetailPage() {
             const itemsCol = collection(db, "shoppingLists", user.uid, "items");
             const ingredientsToAdd = meal.ingredients.filter((_, idx) => selectedIngredients.has(idx));
 
-            const writes = ingredientsToAdd.map((ing) =>
-                addDoc(itemsCol, {
-                    name: ing.name,
-                    quantity: ing.quantity,
-                    mealId: meal.id,
-                    mealName: meal.name,
-                    checked: false,
-                    createdAt: serverTimestamp(),
-                    krogerProductId: ing.krogerProductId ?? null,
-                    productName: ing.productName ?? null,
-                    productImageUrl: ing.productImageUrl ?? null,
-                    productSize: ing.productSize ?? null,
-                    productAisle: ing.productAisle ?? null,
-                    price: typeof ing.price === "number" ? ing.price : null,
-                })
-            );
+            // Fetch existing shopping list items to check for duplicates
+            const existingSnapshot = await getDocs(itemsCol);
+            const existingItems = existingSnapshot.docs.map((d) => ({
+                id: d.id,
+                name: d.data().name as string,
+            }));
 
-            await Promise.all(writes);
+            // Filter out duplicates based on ingredient type
+            let skippedStaples = 0;
+            const itemsToActuallyAdd = ingredientsToAdd.filter((ing) => {
+                // Check if this ingredient already exists in the shopping list
+                const existingMatch = existingItems.find((existing) =>
+                    isSameIngredient(existing.name, ing.name)
+                );
 
-            setAddMessage(
-                `Added ${ingredientsToAdd.length} item${ingredientsToAdd.length !== 1 ? "s" : ""} to your shopping list.`
-            );
+                if (existingMatch) {
+                    // If it's a staple item, skip it entirely (don't need multiple olive oils)
+                    if (isStapleItem(ing.name)) {
+                        skippedStaples++;
+                        return false;
+                    }
+                    // For countable items (bananas, eggs, etc.), still add them
+                    // User may actually need more of these
+                }
+
+                return true;
+            });
+
+            // Add the filtered items
+            if (itemsToActuallyAdd.length > 0) {
+                const writes = itemsToActuallyAdd.map((ing) =>
+                    addDoc(itemsCol, {
+                        name: ing.name,
+                        quantity: ing.quantity,
+                        mealId: meal.id,
+                        mealName: meal.name,
+                        checked: false,
+                        createdAt: serverTimestamp(),
+                        krogerProductId: ing.krogerProductId ?? null,
+                        productName: ing.productName ?? null,
+                        productImageUrl: ing.productImageUrl ?? null,
+                        productSize: ing.productSize ?? null,
+                        productAisle: ing.productAisle ?? null,
+                        price: typeof ing.price === "number" ? ing.price : null,
+                        soldBy: ing.soldBy ?? null,
+                        stockLevel: ing.stockLevel ?? null,
+                    })
+                );
+
+                await Promise.all(writes);
+            }
+
+            // Build appropriate message
+            if (itemsToActuallyAdd.length > 0 && skippedStaples > 0) {
+                setAddMessage(`Added ${itemsToActuallyAdd.length} item${itemsToActuallyAdd.length !== 1 ? "s" : ""}, skipped ${skippedStaples} already in list.`);
+            } else if (itemsToActuallyAdd.length > 0) {
+                setAddMessage(`Added ${itemsToActuallyAdd.length} item${itemsToActuallyAdd.length !== 1 ? "s" : ""} to your shopping list.`);
+            } else if (skippedStaples > 0) {
+                setAddMessage(`All items already in your shopping list.`);
+            }
         } catch (err) {
             console.error("Error adding to shopping list", err);
             setAddMessage("Something went wrong adding items to your list.");
@@ -205,6 +289,117 @@ export default function SavedMealDetailPage() {
         const date = d.toLocaleDateString([], { month: "long", day: "numeric" });
         const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
         return `${date} at ${time}`;
+    };
+
+    const handleSendThreadMessage = async () => {
+        if (!meal || !threadInput.trim()) return;
+
+        // Premium-only feature
+        if (!prefs?.isPremium) {
+            setShowUpgradePrompt(true);
+            return;
+        }
+
+        const messageText = threadInput.trim();
+        setThreadInput("");
+        setThreadError(null);
+
+        const newUserMsg: ThreadMessage = {
+            id: `user-${Date.now()}`,
+            role: "user",
+            content: messageText,
+            createdAt: new Date().toISOString(),
+        };
+
+        setThreadMessages((prev) => [...prev, newUserMsg]);
+        setSendingThread(true);
+
+        try {
+            const historyForApi = threadMessages.slice(-10).map((msg) => ({
+                role: msg.role,
+                content: msg.content,
+            }));
+
+            const res = await fetch("/api/meal-thread", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    meal,
+                    prefs: prefs || undefined,
+                    message: messageText,
+                    history: historyForApi,
+                    originalPrompt: meal.prompt || undefined,
+                }),
+            });
+
+            if (!res.ok) {
+                throw new Error("Failed to update meal");
+            }
+
+            const data = (await res.json()) as MealThreadReply;
+            const fullReply = data.reply || "";
+            const assistantId = `assistant-${Date.now()}`;
+
+            const assistantMsg: ThreadMessage = {
+                id: assistantId,
+                role: "assistant",
+                content: "",
+                createdAt: new Date().toISOString(),
+            };
+
+            setThreadMessages((prev) => [...prev, assistantMsg]);
+
+            // Stream text animation
+            let index = 0;
+            const step = 3;
+            const delay = 20;
+
+            const intervalId = window.setInterval(() => {
+                index += step;
+                if (index >= fullReply.length) {
+                    index = fullReply.length;
+                }
+
+                const partial = fullReply.slice(0, index);
+                setThreadMessages((prev) =>
+                    prev.map((msg) =>
+                        msg.id === assistantId ? { ...msg, content: partial } : msg
+                    )
+                );
+
+                if (index >= fullReply.length) {
+                    window.clearInterval(intervalId);
+                }
+            }, delay);
+
+            // Update meal if changes were made
+            if (
+                data.action !== "no_change" &&
+                data.updatedMeal &&
+                typeof data.updatedMeal === "object"
+            ) {
+                const updatedMeal = data.updatedMeal;
+                setMeal(updatedMeal);
+
+                // Persist to Firestore
+                if (user) {
+                    const mealRef = doc(db, "savedMeals", user.uid, "meals", meal.id);
+                    await setDoc(mealRef, {
+                        ...updatedMeal,
+                        prompt: meal.prompt || null,
+                        savedAt: meal.savedAt || serverTimestamp(),
+                    });
+                }
+
+                // Re-select all ingredients after update
+                setSelectedIngredients(new Set(updatedMeal.ingredients.map((_, idx) => idx)));
+            }
+        } catch (err) {
+            console.error("Error in /api/meal-thread", err);
+            setThreadError("Something went wrong updating this meal.");
+        } finally {
+            setSendingThread(false);
+        }
     };
 
     if (loadingUser || loadingMeal) {
@@ -353,6 +548,87 @@ export default function SavedMealDetailPage() {
                         </div>
                     </div>
 
+                    {/* Ask AI Section - Premium Only */}
+                    <div className="bg-white rounded-2xl border border-gray-100 p-5">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                                <MessageCircle className="w-5 h-5 text-[#4A90E2]" />
+                                <h3 className="font-medium text-gray-900">Edit this meal with AI</h3>
+                            </div>
+                            <div className="flex items-center gap-1 px-2 py-1 bg-violet-100 rounded-full">
+                                <Sparkles className="w-3 h-3 text-violet-600" />
+                                <span className="text-xs font-medium text-violet-700">Premium</span>
+                            </div>
+                        </div>
+                        <p className="text-sm text-gray-500 mb-4">
+                            Swap ingredients, make it dairy-free, lower sodium, change servings, or create a variant.
+                        </p>
+
+                        {prefs?.isPremium ? (
+                            <>
+                                {threadMessages.length > 0 && (
+                                    <div className="max-h-60 overflow-y-auto mb-4 space-y-2 p-3 bg-gray-50 rounded-xl">
+                                        {threadMessages.map((msg) => (
+                                            <div
+                                                key={msg.id}
+                                                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                                            >
+                                                <div
+                                                    className={`max-w-[80%] px-4 py-2 rounded-2xl text-sm ${
+                                                        msg.role === "user"
+                                                            ? "bg-[#4A90E2] text-white"
+                                                            : "bg-white border border-gray-200 text-gray-700"
+                                                    }`}
+                                                >
+                                                    {msg.content}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={threadInput}
+                                        onChange={(e) => setThreadInput(e.target.value)}
+                                        placeholder="E.g. make this dairy-free..."
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter" && !e.shiftKey && !sendingThread) {
+                                                e.preventDefault();
+                                                handleSendThreadMessage();
+                                            }
+                                        }}
+                                        className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#4A90E2] focus:outline-none transition-colors"
+                                    />
+                                    <button
+                                        onClick={handleSendThreadMessage}
+                                        disabled={sendingThread || !threadInput.trim()}
+                                        className="px-4 py-3 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                    >
+                                        {sendingThread ? (
+                                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                        ) : (
+                                            <Send className="w-5 h-5" />
+                                        )}
+                                    </button>
+                                </div>
+
+                                {threadError && (
+                                    <p className="mt-2 text-sm text-red-500">{threadError}</p>
+                                )}
+                            </>
+                        ) : (
+                            <button
+                                onClick={() => setShowUpgradePrompt(true)}
+                                className="w-full py-3 bg-gradient-to-r from-violet-500 to-purple-600 text-white rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
+                            >
+                                <Lock className="w-4 h-4" />
+                                <span>Upgrade to edit saved meals</span>
+                            </button>
+                        )}
+                    </div>
+
                     {/* Ingredients */}
                     <div className="bg-white rounded-2xl border border-gray-100 p-5">
                         <div className="flex items-center justify-between mb-4">
@@ -387,7 +663,18 @@ export default function SavedMealDetailPage() {
                                         </div>
                                     ) : null}
                                     <div className="flex-1 min-w-0">
-                                        <div className={`font-medium ${selectedIngredients.has(idx) ? "text-gray-900" : "text-gray-500 line-through"}`}>{ing.name}</div>
+                                        <div>
+                                            <span className={`font-medium ${selectedIngredients.has(idx) ? "text-gray-900" : "text-gray-500 line-through"}`}>{ing.name}</span>
+                                            {krogerConnected && ing.stockLevel && ing.stockLevel !== "HIGH" && (
+                                                <span className={`inline-block ml-2 text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap align-middle ${
+                                                    ing.stockLevel === "LOW"
+                                                        ? "bg-amber-100 text-amber-700"
+                                                        : "bg-red-100 text-red-700"
+                                                }`}>
+                                                    {ing.stockLevel === "LOW" ? "Low Stock" : "Out of Stock"}
+                                                </span>
+                                            )}
+                                        </div>
                                         <div className="text-sm text-gray-500">
                                             {ing.quantity}
                                             {ing.category && ` • ${ing.category}`}
@@ -459,6 +746,14 @@ export default function SavedMealDetailPage() {
                     )}
                 </div>
             </div>
+
+            {/* Upgrade Prompt Modal */}
+            {showUpgradePrompt && (
+                <UpgradePrompt
+                    feature="meal_chat"
+                    onClose={() => setShowUpgradePrompt(false)}
+                />
+            )}
         </div>
     );
 }

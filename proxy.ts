@@ -31,9 +31,9 @@ export function proxy(request: NextRequest) {
   });
 }
 
-// Apply to everything except static assets / images / robots
+// Apply to everything except static assets / images / robots / stripe webhook
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|robots.txt).*)",
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|api/stripe/webhook).*)",
   ],
 };

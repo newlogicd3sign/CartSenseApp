@@ -196,7 +196,7 @@ export default function PromptPage() {
                                 </div>
                                 <div>
                                     <h3 className="font-medium text-emerald-800 text-sm">Diet Guardrails Active</h3>
-                                    <p className="text-emerald-600" style={{ fontSize: '10px' }}>Meals will comply with your doctor&apos;s instructions</p>
+                                    <p className="text-emerald-600" style={{ fontSize: '10px' }}>Meals will comply with your diet instructions</p>
                                 </div>
                             </div>
                         </div>
@@ -207,7 +207,7 @@ export default function PromptPage() {
                         <textarea
                             value={prompt}
                             onChange={(e) => setPrompt(e.target.value)}
-                            placeholder="Ex: Give me heart-healthy meals with chicken, low sodium, easy to cook..."
+                            placeholder="Ex: Meals with ground turkey, power bowl ideas, quick chicken dinner, healthy salmon recipes..."
                             className="w-full h-28 lg:h-32 p-4 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:bg-white resize-none transition-colors"
                             style={{ borderColor: prompt ? accentColor.primary : undefined }}
                         />
@@ -249,9 +249,9 @@ export default function PromptPage() {
                         <ul className="space-y-2">
                             {[
                                 "Your saved diet preferences are automatically applied",
+                                "Name ingredients you have (ground turkey, chicken breast)",
                                 "Mention cooking time or effort (quick 20-min, slow cooker)",
-                                "Try a cuisine style (Italian, Mexican, Asian-inspired)",
-                                "Specify meal type (breakfast, lunch, dinner, snacks)",
+                                "Try a cuisine style or dish type (power bowl, stir fry)",
                             ].map((tip, i) => (
                                 <li key={i} className="flex items-start gap-2 text-sm text-gray-500">
                                     <span style={{ color: accentColor.primary }} className="mt-0.5">•</span>
@@ -298,6 +298,16 @@ export default function PromptPage() {
                                     Resets in {daysUntilReset} day{daysUntilReset !== 1 ? "s" : ""}.
                                 </p>
                             )}
+
+                            {/* Upgrade CTA */}
+                            <button
+                                onClick={() => router.push("/upgrade")}
+                                className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-3 text-white rounded-xl text-sm font-medium transition-colors"
+                                style={{ background: `linear-gradient(to right, ${accentColor.primary}, ${accentColor.dark})` }}
+                            >
+                                <Sparkles className="w-4 h-4" />
+                                <span>Upgrade to Premium</span>
+                            </button>
                         </div>
                     )}
                 </div>

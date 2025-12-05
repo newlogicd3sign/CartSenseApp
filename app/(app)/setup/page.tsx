@@ -4,11 +4,11 @@ import { Suspense, useEffect, useState, FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { doc, setDoc, getDoc, collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, getDoc, collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
 import { ArrowRight, AlertCircle, ShoppingCart, MapPin, CheckCircle, ExternalLink, Search } from "lucide-react";
 import Image from "next/image";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
-import { getRandomAccentColor, type AccentColor } from "@/lib/utils";
+import { getRandomAccentColor, getStoreBrand, type AccentColor } from "@/lib/utils";
 import { useToast } from "@/components/Toast";
 
 const ALLERGY_OPTIONS = [
@@ -143,26 +143,31 @@ function SetupPageContent() {
         const krogerError = searchParams.get("kroger_error");
         const returnStep = searchParams.get("step");
 
+        // Get stored store name and clean up
+        const storeName = localStorage.getItem("pendingStoreLink") || "Kroger";
+
         if (krogerLinkedParam === "success") {
+            localStorage.removeItem("pendingStoreLink");
             setKrogerLinked(true);
-            showToast("Your Kroger account has been linked!", "success");
-            // Move to store selection step
+            showToast(`Your ${storeName} account has been linked!`, "success");
+            // Stay on Kroger linking step to show success state
             if (returnStep) {
                 setStep(parseInt(returnStep, 10));
             } else {
-                setStep(6); // Move to store selection
+                setStep(6); // Kroger linking step
             }
             router.replace("/setup");
         } else if (krogerError) {
+            localStorage.removeItem("pendingStoreLink");
             const errorMessages: Record<string, string> = {
-                oauth_denied: "You declined to link your Kroger account.",
-                missing_params: "Missing parameters from Kroger. Please try again.",
+                oauth_denied: `You declined to link your ${storeName} account.`,
+                missing_params: `Missing parameters from ${storeName}. Please try again.`,
                 state_mismatch: "Security verification failed. Please try again.",
                 invalid_state: "Invalid session. Please try again.",
-                token_exchange_failed: "Failed to connect to Kroger. Please try again.",
+                token_exchange_failed: `Failed to connect to ${storeName}. Please try again.`,
                 server_error: "An unexpected error occurred. Please try again.",
             };
-            showToast(errorMessages[krogerError] || "Failed to link Kroger account.", "error");
+            showToast(errorMessages[krogerError] || `Failed to link ${storeName} account.`, "error");
             if (returnStep) {
                 setStep(parseInt(returnStep, 10));
             }
@@ -240,6 +245,11 @@ function SetupPageContent() {
 
     const handleLinkKroger = () => {
         if (!user) return;
+        // Save store name to localStorage for use after OAuth redirect
+        if (selectedStore) {
+            const storeBrand = getStoreBrand(selectedStore.name);
+            localStorage.setItem("pendingStoreLink", storeBrand.displayName);
+        }
         // Redirect to Kroger OAuth with return URL to setup
         window.location.href = `/api/kroger/auth?userId=${user.uid}&returnTo=setup&step=6`;
     };
@@ -285,8 +295,18 @@ function SetupPageContent() {
         try {
             setSavingStore(true);
 
-            // Save to krogerLocations collection
+            // Check if this store already exists
             const locCol = collection(db, "krogerLocations", user.uid, "locations");
+            const existingQuery = query(locCol, where("krogerLocationId", "==", store.locationId));
+            const existingSnapshot = await getDocs(existingQuery);
+
+            if (!existingSnapshot.empty) {
+                showToast(`${store.name} is already in your saved stores.`, "error");
+                setSavingStore(false);
+                return;
+            }
+
+            // Save to krogerLocations collection
             await addDoc(locCol, {
                 krogerLocationId: store.locationId,
                 name: store.name,
@@ -314,7 +334,10 @@ function SetupPageContent() {
     };
 
     const handleFinishSetup = async () => {
-        if (!user) return;
+        if (!user) {
+            showToast("Not logged in. Please log in and try again.", "error");
+            return;
+        }
 
         setSaving(true);
 
@@ -333,6 +356,7 @@ function SetupPageContent() {
                 { merge: true }
             );
 
+            showToast("Your preferences have been saved!", "success");
             sessionStorage.setItem("animateEntry", "true");
             router.push("/prompt");
         } catch (err: any) {
@@ -569,93 +593,17 @@ function SetupPageContent() {
                                 </div>
                             )}
 
-                            {/* Step 5: Link Kroger Account */}
+                            {/* Step 5: Select Store (moved before Kroger linking) */}
                             {step === 5 && (
-                                <div className="space-y-6">
-                                    <div>
-                                        <h2 className="font-medium text-gray-900 mb-1">Connect Your Grocery Store</h2>
-                                        <p className="text-sm text-gray-500">Link your Kroger account to add items directly to your cart</p>
-                                    </div>
-
-                                    {krogerLinked ? (
-                                        <div className="bg-green-50 border border-green-100 rounded-xl p-6 text-center">
-                                            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                                <CheckCircle className="w-6 h-6 text-green-600" />
-                                            </div>
-                                            <h3 className="font-medium text-green-900 mb-1">Kroger Connected</h3>
-                                            <p className="text-sm text-green-700">Your account is linked and ready to use.</p>
-                                        </div>
-                                    ) : (
-                                        <div className="bg-gray-50 border border-gray-100 rounded-xl p-6">
-                                            <div className="flex items-center gap-4 mb-4">
-                                                <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                                                    <ShoppingCart className="w-6 h-6 text-blue-600" />
-                                                </div>
-                                                <div>
-                                                    <h3 className="font-medium text-gray-900">Kroger Family of Stores</h3>
-                                                    <p className="text-sm text-gray-500">Kroger, Ralphs, Fred Meyer, and more</p>
-                                                </div>
-                                            </div>
-                                            <ul className="space-y-2 mb-4 text-sm text-gray-600">
-                                                <li className="flex items-center gap-2">
-                                                    <CheckCircle className="w-4 h-4 text-green-500" />
-                                                    <span>See real product prices</span>
-                                                </li>
-                                                <li className="flex items-center gap-2">
-                                                    <CheckCircle className="w-4 h-4 text-green-500" />
-                                                    <span>Add items directly to your Kroger cart</span>
-                                                </li>
-                                                <li className="flex items-center gap-2">
-                                                    <CheckCircle className="w-4 h-4 text-green-500" />
-                                                    <span>Get product availability by location</span>
-                                                </li>
-                                            </ul>
-                                            <button
-                                                type="button"
-                                                onClick={handleLinkKroger}
-                                                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
-                                            >
-                                                <ExternalLink className="w-4 h-4" />
-                                                <span>Connect Kroger Account</span>
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    <p className="text-sm text-gray-400 text-center">
-                                        This step is optional. You can link your account later in settings.
-                                    </p>
-                                </div>
-                            )}
-
-                            {/* Step 6: Select Store */}
-                            {step === 6 && (
                                 <div className="space-y-6">
                                     <div>
                                         <h2 className="font-medium text-gray-900 mb-1">Choose Your Store</h2>
                                         <p className="text-sm text-gray-500">
-                                            {krogerLinked
-                                                ? "Select your preferred Kroger store for pricing and availability"
-                                                : "Link your Kroger account first to select a store"
-                                            }
+                                            Find your local store for pricing and availability
                                         </p>
                                     </div>
 
-                                    {!krogerLinked ? (
-                                        <div className="bg-yellow-50 border border-yellow-100 rounded-xl p-6 text-center">
-                                            <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                                <AlertCircle className="w-6 h-6 text-yellow-600" />
-                                            </div>
-                                            <h3 className="font-medium text-yellow-900 mb-1">Kroger Not Connected</h3>
-                                            <p className="text-sm text-yellow-700 mb-4">Connect your Kroger account to select a store.</p>
-                                            <button
-                                                type="button"
-                                                onClick={() => setStep(5)}
-                                                className="text-sm text-yellow-700 underline hover:text-yellow-800"
-                                            >
-                                                Go back to connect Kroger
-                                            </button>
-                                        </div>
-                                    ) : selectedStore ? (
+                                    {selectedStore ? (
                                         <div className="bg-green-50 border border-green-100 rounded-xl p-6">
                                             <div className="flex items-start gap-3">
                                                 <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
@@ -756,6 +704,84 @@ function SetupPageContent() {
                                     </p>
                                 </div>
                             )}
+
+                            {/* Step 6: Link Kroger Account (now shows store-specific branding) */}
+                            {step === 6 && (() => {
+                                const storeBrand = selectedStore ? getStoreBrand(selectedStore.name) : { displayName: "Kroger", tagline: "Kroger Family of Stores" };
+                                const isGenericKroger = !selectedStore;
+                                return (
+                                <div className="space-y-6">
+                                    <div>
+                                        <h2 className="font-medium text-gray-900 mb-1">
+                                            {isGenericKroger ? "Connect Your Store Account" : `Connect Your ${storeBrand.displayName} Account`}
+                                        </h2>
+                                        <p className="text-sm text-gray-500">Link your account to add items directly to your cart</p>
+                                    </div>
+
+                                    {krogerLinked ? (
+                                        <div className="bg-green-50 border border-green-100 rounded-xl p-6 text-center">
+                                            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                                <CheckCircle className="w-6 h-6 text-green-600" />
+                                            </div>
+                                            <h3 className="font-medium text-green-900 mb-1">{storeBrand.displayName} Connected</h3>
+                                            <p className="text-sm text-green-700">Your account is linked and ready to use.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="bg-gray-50 border border-gray-100 rounded-xl p-6">
+                                            <div className="flex items-center gap-4 mb-4">
+                                                <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                                                    <ShoppingCart className="w-6 h-6 text-blue-600" />
+                                                </div>
+                                                <div>
+                                                    <h3 className="font-medium text-gray-900">
+                                                        {isGenericKroger ? "Kroger Family of Stores" : storeBrand.displayName}
+                                                    </h3>
+                                                    <p className="text-sm text-gray-500">{storeBrand.tagline}</p>
+                                                </div>
+                                            </div>
+
+                                            {/* Show supported stores when no specific store selected */}
+                                            {isGenericKroger && (
+                                                <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                                                    <p className="text-xs font-medium text-blue-800 mb-2">Supported stores include:</p>
+                                                    <p className="text-xs text-blue-700 leading-relaxed">
+                                                        Kroger, Ralphs, Fred Meyer, King Soopers, Fry&apos;s, Smith&apos;s, Dillons, QFC, Harris Teeter, Pick &apos;n Save, Mariano&apos;s, Food 4 Less, City Market, Baker&apos;s, and more
+                                                    </p>
+                                                </div>
+                                            )}
+
+                                            <ul className="space-y-2 mb-4 text-sm text-gray-600">
+                                                <li className="flex items-center gap-2">
+                                                    <CheckCircle className="w-4 h-4 text-green-500" />
+                                                    <span>See real product prices</span>
+                                                </li>
+                                                <li className="flex items-center gap-2">
+                                                    <CheckCircle className="w-4 h-4 text-green-500" />
+                                                    <span>Add items directly to your {isGenericKroger ? "store" : storeBrand.displayName} cart</span>
+                                                </li>
+                                                <li className="flex items-center gap-2">
+                                                    <CheckCircle className="w-4 h-4 text-green-500" />
+                                                    <span>Get product availability at your store</span>
+                                                </li>
+                                            </ul>
+                                            <button
+                                                type="button"
+                                                onClick={handleLinkKroger}
+                                                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                                            >
+                                                <ExternalLink className="w-4 h-4" />
+                                                <span>Connect {isGenericKroger ? "Store" : storeBrand.displayName} Account</span>
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    <p className="text-sm text-gray-400 text-center">
+                                        This step is optional. You can link your account later in settings.
+                                    </p>
+                                </div>
+                                );
+                            })()}
+
                         </div>
 
                         {/* Navigation Buttons */}

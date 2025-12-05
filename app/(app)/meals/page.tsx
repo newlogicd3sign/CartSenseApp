@@ -73,7 +73,7 @@ function MealsPageContent() {
     const [streamComplete, setStreamComplete] = useState(false);
     const [statusColor, setStatusColor] = useState<AccentColor>(ACCENT_COLORS[0]);
 
-    const hasStartedStreaming = useRef(false);
+    const hasStartedStreaming = useRef<string | null>(null);
     const mealsMetaRef = useRef<MealsMeta | null>(null);
     const colorIndexRef = useRef(0);
 
@@ -112,8 +112,9 @@ function MealsPageContent() {
 
     // Stream meals from API
     const streamMeals = useCallback(async (uid: string, userPrefs: Record<string, unknown>, prompt: string) => {
-        if (hasStartedStreaming.current) return;
-        hasStartedStreaming.current = true;
+        // Prevent duplicate streams for the same prompt
+        if (hasStartedStreaming.current === prompt) return;
+        hasStartedStreaming.current = prompt;
 
         setLoadingMeals(true);
         setStreamStatus("Connecting...");
@@ -311,7 +312,7 @@ function MealsPageContent() {
                                     <Heart className="w-3.5 h-3.5 text-white" />
                                 </div>
                                 <span className="text-sm font-medium text-emerald-700">
-                                    Doctor's instructions applied
+                                    Diet instructions applied
                                 </span>
                             </div>
                             {(blockedIngredients.length > 0 || blockedGroups.length > 0) && (
