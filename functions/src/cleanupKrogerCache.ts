@@ -1,5 +1,6 @@
 // functions/src/cleanupKrogerCache.ts
-import * as functions from "firebase-functions";
+import { onSchedule, ScheduledEvent } from "firebase-functions/v2/scheduler";
+import { onRequest } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 
 const db = admin.firestore();
@@ -10,10 +11,9 @@ const BATCH_SIZE = 500;
  * Scheduled function to clean up expired Kroger product cache entries.
  * Runs every 24 hours to delete cache documents where expiresAt < now.
  */
-export const cleanupExpiredKrogerCache = functions.pubsub
-    .schedule("every 24 hours")
-    .timeZone("America/New_York")
-    .onRun(async () => {
+export const cleanupExpiredKrogerCache = onSchedule(
+    { schedule: "every 24 hours", timeZone: "America/New_York" },
+    async (_event: ScheduledEvent) => {
         const now = admin.firestore.Timestamp.now();
         let totalDeleted = 0;
         let hasMore = true;
@@ -51,18 +51,15 @@ export const cleanupExpiredKrogerCache = functions.pubsub
         } else {
             console.log("Cleanup complete: no expired cache docs to delete");
         }
-
-        return null;
     });
 
 /**
  * Scheduled function to clean up expired meal image cache entries.
  * Runs every 24 hours to delete cache documents older than 30 days.
  */
-export const cleanupExpiredMealImageCache = functions.pubsub
-    .schedule("every 24 hours")
-    .timeZone("America/New_York")
-    .onRun(async () => {
+export const cleanupExpiredMealImageCache = onSchedule(
+    { schedule: "every 24 hours", timeZone: "America/New_York" },
+    async (_event: ScheduledEvent) => {
         const now = admin.firestore.Timestamp.now();
         const thirtyDaysAgo = admin.firestore.Timestamp.fromMillis(
             now.toMillis() - 30 * 24 * 60 * 60 * 1000
@@ -102,15 +99,13 @@ export const cleanupExpiredMealImageCache = functions.pubsub
         } else {
             console.log("Cleanup complete: no expired meal image cache docs to delete");
         }
-
-        return null;
     });
 
 /**
  * HTTP-callable function to manually trigger cache cleanup.
  * Useful for testing or manual maintenance.
  */
-export const manualCacheCleanup = functions.https.onRequest(async (req, res) => {
+export const manualCacheCleanup = onRequest(async (req, res) => {
     // Simple auth check - require a secret header
     const authHeader = req.headers["x-cleanup-secret"];
     const expectedSecret = process.env.CLEANUP_SECRET || "your-secret-here";
