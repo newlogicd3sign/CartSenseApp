@@ -23,7 +23,7 @@ import {
     MapPin,
     Lightbulb,
 } from "lucide-react";
-import { getRandomAccentColor, type AccentColor } from "@/lib/utils";
+import { getRandomAccentColor, getStoreBrand, type AccentColor, type StoreBrandInfo } from "@/lib/utils";
 import { useToast } from "@/components/Toast";
 
 type ShoppingItem = {
@@ -82,6 +82,7 @@ export default function ShoppingListPage() {
     const [loadingItems, setLoadingItems] = useState(true);
 
     const [krogerLinkStatus, setKrogerLinkStatus] = useState<KrogerLinkStatus>("loading");
+    const [storeBrand, setStoreBrand] = useState<StoreBrandInfo>({ displayName: "Kroger", tagline: "Kroger Family of Stores", cartUrl: "https://www.kroger.com/cart" });
     const [addingToKroger, setAddingToKroger] = useState(false);
     const [krogerResults, setKrogerResults] = useState<EnrichedItem[] | null>(null);
     const [showKrogerResults, setShowKrogerResults] = useState(false);
@@ -128,6 +129,10 @@ export default function ShoppingListPage() {
                     setKrogerLinkStatus("not_linked");
                 } else if (data.hasStore) {
                     setKrogerLinkStatus("linked");
+                    // Set store brand based on store name from API
+                    if (data.storeName) {
+                        setStoreBrand(getStoreBrand(data.storeName));
+                    }
                 } else {
                     setKrogerLinkStatus("no_store");
                 }
@@ -654,13 +659,34 @@ export default function ShoppingListPage() {
                         </div>
 
                         {/* Footer */}
-                        <div className="px-6 py-4 border-t border-gray-100 bg-white shrink-0">
-                            <button
-                                onClick={() => setShowKrogerResults(false)}
-                                className="w-full py-3 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white rounded-xl font-medium"
-                            >
-                                Done
-                            </button>
+                        <div className="px-6 py-4 border-t border-gray-100 bg-white shrink-0 space-y-3">
+                            {/* Checkout reminder */}
+                            {krogerResults.some(i => i.found) && (
+                                <div className="bg-[#0056a3]/5 border border-[#0056a3]/20 rounded-xl p-3">
+                                    <p className="text-sm text-[#0056a3] text-center">
+                                        Items are in your {storeBrand.displayName} cart! Complete your purchase on the {storeBrand.displayName} app or website.
+                                    </p>
+                                </div>
+                            )}
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setShowKrogerResults(false)}
+                                    className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
+                                >
+                                    Close
+                                </button>
+                                {krogerResults.some(i => i.found) && (
+                                    <a
+                                        href={storeBrand.cartUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex-1 py-3 bg-[#0056a3] text-white rounded-xl font-medium text-center hover:bg-[#004080] transition-colors flex items-center justify-center gap-2"
+                                    >
+                                        <span>Go to {storeBrand.displayName}</span>
+                                        <ExternalLink className="w-4 h-4" />
+                                    </a>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>

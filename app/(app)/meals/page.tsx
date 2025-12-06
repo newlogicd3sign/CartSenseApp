@@ -158,6 +158,11 @@ function MealsPageContent() {
                             case "meal":
                                 mealsArray[event.index] = event.meal;
                                 setMeals([...mealsArray]);
+                                // Update sessionStorage immediately so detail page can access
+                                sessionStorage.setItem("generatedMeals", JSON.stringify({
+                                    meals: mealsArray.filter(Boolean),
+                                    meta: mealsMetaRef.current,
+                                }));
                                 // First meal arrived - stop showing loading
                                 if (mealsArray.filter(Boolean).length === 1) {
                                     setLoadingMeals(false);
@@ -167,11 +172,21 @@ function MealsPageContent() {
                             case "meal_updated":
                                 mealsArray[event.index] = event.meal;
                                 setMeals([...mealsArray]);
+                                // Update sessionStorage with updated meal (e.g., new image)
+                                sessionStorage.setItem("generatedMeals", JSON.stringify({
+                                    meals: mealsArray.filter(Boolean),
+                                    meta: mealsMetaRef.current,
+                                }));
                                 break;
 
                             case "meta":
                                 mealsMetaRef.current = event.meta;
                                 setMealsMeta(event.meta);
+                                // Update sessionStorage with meta
+                                sessionStorage.setItem("generatedMeals", JSON.stringify({
+                                    meals: mealsArray.filter(Boolean),
+                                    meta: event.meta,
+                                }));
                                 break;
 
                             case "error":
@@ -182,11 +197,6 @@ function MealsPageContent() {
                             case "done":
                                 setStreamComplete(true);
                                 setStreamStatus("");
-                                // Save to sessionStorage for detail page (use ref for current meta)
-                                sessionStorage.setItem("generatedMeals", JSON.stringify({
-                                    meals: mealsArray.filter(Boolean),
-                                    meta: mealsMetaRef.current,
-                                }));
                                 // Log event
                                 logUserEvent(uid, { type: "prompt_submitted", prompt }).catch(() => {});
                                 break;
@@ -459,10 +469,10 @@ function MealsPageContent() {
                                                     </span>
                                                 )}
                                             </div>
-                                            <h2 className="text-base font-medium text-gray-900 mb-1 line-clamp-1">
+                                            <h2 className="text-base font-medium text-gray-900 mb-1">
                                                 {meal.name}
                                             </h2>
-                                            <p className="text-sm text-gray-500 line-clamp-1 mb-2">
+                                            <p className="text-sm text-gray-500 mb-2">
                                                 {meal.description}
                                             </p>
 

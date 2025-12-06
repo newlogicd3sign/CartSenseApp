@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { FieldValue } from "firebase-admin/firestore";
+import { adminDb } from "@/lib/firebaseAdmin";
+
+const db = adminDb;
+
+const FREE_CHAT_MONTHLY_LIMIT = 6;
 
 // These types mirror what you're already using in /api/meals and MealDetailPage
 
@@ -54,6 +60,7 @@ type ThreadMessage = {
 };
 
 type ThreadRequestBody = {
+    userId: string;
     meal: Meal;
     prefs?: UserPrefs;
     message: string;
@@ -171,7 +178,14 @@ export async function POST(request: Request) {
     try {
         const body = (await request.json()) as ThreadRequestBody;
 
-        const { meal, prefs, message, history, originalPrompt } = body;
+        const { userId, meal, prefs, message, history, originalPrompt } = body;
+
+        if (!userId || typeof userId !== "string") {
+            return NextResponse.json(
+                { error: "INVALID_USER", message: "Missing or invalid 'userId'." },
+                { status: 400 },
+            );
+        }
 
         if (!meal || typeof meal !== "object") {
             return NextResponse.json(
@@ -187,6 +201,42 @@ export async function POST(request: Request) {
                     message: "Please describe what you want to change about this meal.",
                 },
                 { status: 400 },
+            );
+        }
+
+        // Check chat quota for free users
+        const userRef = db.collection("users").doc(userId);
+        const userSnap = await userRef.get();
+        const userData = userSnap.data() as {
+            isPremium?: boolean;
+            monthlyChatCount?: number;
+            chatPeriodStart?: FirebaseFirestore.Timestamp;
+        } | undefined;
+
+        const isPremium = userData?.isPremium ?? false;
+        let monthlyChatCount = userData?.monthlyChatCount ?? 0;
+        const chatPeriodStart = userData?.chatPeriodStart;
+
+        // Check if period has expired (30 days)
+        if (chatPeriodStart) {
+            const periodStartDate = chatPeriodStart.toDate();
+            const now = new Date();
+            const daysSinceStart = (now.getTime() - periodStartDate.getTime()) / (1000 * 60 * 60 * 24);
+            if (daysSinceStart >= 30) {
+                // Reset the period
+                monthlyChatCount = 0;
+            }
+        }
+
+        // Check limit for free users
+        if (!isPremium && monthlyChatCount >= FREE_CHAT_MONTHLY_LIMIT) {
+            return NextResponse.json(
+                {
+                    error: "CHAT_LIMIT_REACHED",
+                    message: "You've used all 6 free chat messages this month. Upgrade to Premium for unlimited chat.",
+                    monthlyChatCount,
+                },
+                { status: 403 },
             );
         }
 
@@ -288,7 +338,25 @@ export async function POST(request: Request) {
 
         // Optionally you could do some light validation on updatedMeal here
 
-        return NextResponse.json(parsed, { status: 200 });
+        // Increment chat count for free users after successful response
+        let newMonthlyChatCount = monthlyChatCount;
+        if (!isPremium) {
+            if (!chatPeriodStart || monthlyChatCount === 0) {
+                // Start a new period
+                await userRef.update({
+                    monthlyChatCount: 1,
+                    chatPeriodStart: FieldValue.serverTimestamp(),
+                });
+                newMonthlyChatCount = 1;
+            } else {
+                await userRef.update({
+                    monthlyChatCount: FieldValue.increment(1),
+                });
+                newMonthlyChatCount = monthlyChatCount + 1;
+            }
+        }
+
+        return NextResponse.json({ ...parsed, monthlyChatCount: newMonthlyChatCount }, { status: 200 });
     } catch (error) {
         console.error("Error in /api/meal-thread:", error);
         return NextResponse.json(

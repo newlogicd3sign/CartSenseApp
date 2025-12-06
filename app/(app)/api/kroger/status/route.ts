@@ -86,10 +86,22 @@ export async function GET(request: Request) {
             hasValidStore = true;
         }
 
+        // Get the default store name for the response
+        let defaultStoreName: string | null = null;
+        if (hasValidStore && userData.defaultKrogerLocationId) {
+            const defaultLoc = locations.find(
+                (loc) => loc.data().krogerLocationId === userData.defaultKrogerLocationId
+            );
+            if (defaultLoc) {
+                defaultStoreName = defaultLoc.data().name || null;
+            }
+        }
+
         return NextResponse.json({
             linked: true,
             hasStore: hasValidStore,
             locationCount: locations.length,
+            storeName: defaultStoreName,
         });
     } catch (err) {
         console.error("Error checking Kroger status:", err);

@@ -16,6 +16,7 @@ import {
 import {
     isStapleItem,
     isSameIngredient,
+    isExcludedIngredient,
 } from "@/lib/utils";
 import {
     ArrowLeft,
@@ -33,7 +34,10 @@ import {
     Send,
     Sparkles,
     Lock,
+    X,
+    RefreshCw,
 } from "lucide-react";
+import { logUserEvent } from "@/lib/logUserEvent";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 
 type Ingredient = {
@@ -75,6 +79,7 @@ type UserPrefs = {
     name?: string;
     dietType?: string;
     krogerLinked?: boolean;
+    defaultKrogerLocationId?: string | null;
     allergiesAndSensitivities?: {
         allergies?: string[];
         sensitivities?: string[];
@@ -110,7 +115,12 @@ export default function SavedMealDetailPage() {
     const [addMessage, setAddMessage] = useState<string | null>(null);
     const [selectedIngredients, setSelectedIngredients] = useState<Set<number>>(new Set());
     const [krogerConnected, setKrogerConnected] = useState(false);
+    const [krogerStoreSet, setKrogerStoreSet] = useState(false);
     const [prefs, setPrefs] = useState<UserPrefs | null>(null);
+
+    // Lazy loading Kroger enrichment state
+    const [enrichingKroger, setEnrichingKroger] = useState(false);
+    const [hasEnrichedKroger, setHasEnrichedKroger] = useState(false);
 
     // Meal chat state
     const [threadMessages, setThreadMessages] = useState<ThreadMessage[]>([]);
@@ -118,6 +128,20 @@ export default function SavedMealDetailPage() {
     const [sendingThread, setSendingThread] = useState(false);
     const [threadError, setThreadError] = useState<string | null>(null);
     const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
+
+    // Ingredient modal state for swap functionality
+    const [selectedIngredientIndex, setSelectedIngredientIndex] = useState<number | null>(null);
+    const [swapAlternatives, setSwapAlternatives] = useState<{
+        krogerProductId: string;
+        name: string;
+        imageUrl?: string;
+        price?: number;
+        size?: string;
+        aisle?: string;
+    }[] | null>(null);
+    const [loadingSwapSuggestions, setLoadingSwapSuggestions] = useState(false);
+    const [showSwapOptions, setShowSwapOptions] = useState(false);
+    const [swappingIngredient, setSwappingIngredient] = useState(false);
 
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -136,6 +160,7 @@ export default function SavedMealDetailPage() {
                     const data = userSnap.data() as UserPrefs;
                     setPrefs(data);
                     setKrogerConnected(Boolean(data.krogerLinked));
+                    setKrogerStoreSet(Boolean(data.defaultKrogerLocationId));
                 }
             } catch (err) {
                 console.error("Error loading user prefs", err);
@@ -180,6 +205,61 @@ export default function SavedMealDetailPage() {
             setSelectedIngredients(new Set(meal.ingredients.map((_, idx) => idx)));
         }
     }, [meal]);
+
+    // Lazy load Kroger enrichment when viewing saved meal (only if Kroger is connected)
+    useEffect(() => {
+        if (!user || !meal || !krogerConnected || !krogerStoreSet || hasEnrichedKroger) return;
+
+        // Check if any ingredient already has Kroger data (already enriched)
+        const alreadyEnriched = meal.ingredients.some(ing => ing.krogerProductId);
+        if (alreadyEnriched) {
+            setHasEnrichedKroger(true);
+            return;
+        }
+
+        const enrichIngredients = async () => {
+            setEnrichingKroger(true);
+            try {
+                const res = await fetch("/api/kroger/enrich", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        userId: user.uid,
+                        ingredients: meal.ingredients,
+                    }),
+                });
+
+                const data = await res.json();
+
+                if (data.success && data.ingredients) {
+                    // Update the meal with enriched ingredients
+                    const updatedMeal = {
+                        ...meal,
+                        ingredients: data.ingredients,
+                    };
+                    setMeal(updatedMeal);
+
+                    // Optionally persist the enriched data to Firestore
+                    try {
+                        const mealRef = doc(db, "savedMeals", user.uid, "meals", meal.id);
+                        await setDoc(mealRef, {
+                            ...updatedMeal,
+                            savedAt: meal.savedAt || serverTimestamp(),
+                        });
+                    } catch (persistErr) {
+                        console.error("Error persisting enriched meal:", persistErr);
+                    }
+                }
+            } catch (err) {
+                console.error("Error enriching ingredients with Kroger data:", err);
+            } finally {
+                setEnrichingKroger(false);
+                setHasEnrichedKroger(true);
+            }
+        };
+
+        enrichIngredients();
+    }, [user, meal, krogerConnected, krogerStoreSet, hasEnrichedKroger]);
 
     const toggleIngredient = (idx: number) => {
         setSelectedIngredients((prev) => {
@@ -226,6 +306,11 @@ export default function SavedMealDetailPage() {
             // Filter out duplicates based on ingredient type
             let skippedStaples = 0;
             const itemsToActuallyAdd = ingredientsToAdd.filter((ing) => {
+                // Skip excluded ingredients like water (you don't need to buy these)
+                if (isExcludedIngredient(ing.name)) {
+                    return false;
+                }
+
                 // Check if this ingredient already exists in the shopping list
                 const existingMatch = existingItems.find((existing) =>
                     isSameIngredient(existing.name, ing.name)
@@ -402,6 +487,122 @@ export default function SavedMealDetailPage() {
         }
     };
 
+    const handleShowSwapOptions = async () => {
+        if (!meal || !user || selectedIngredientIndex === null) return;
+
+        // Check if Kroger is connected
+        if (!krogerConnected || !krogerStoreSet) {
+            setAddMessage("Connect your Kroger account to swap products.");
+            return;
+        }
+
+        const ing = meal.ingredients[selectedIngredientIndex];
+        if (!ing) return;
+
+        setLoadingSwapSuggestions(true);
+        setSwapAlternatives(null);
+
+        try {
+            const res = await fetch("/api/swap-suggestions", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    userId: user.uid,
+                    ingredientName: ing.name,
+                    currentProductId: ing.krogerProductId,
+                    searchTerm: ing.name,
+                }),
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                if (data.error === "NOT_LINKED" || data.error === "NO_STORE") {
+                    setAddMessage(data.message);
+                    return;
+                }
+                throw new Error(data.message || "Failed to get swap suggestions");
+            }
+
+            if (data.alternatives && data.alternatives.length > 0) {
+                setSwapAlternatives(data.alternatives);
+                setShowSwapOptions(true);
+            } else {
+                setAddMessage("No alternative products found.");
+            }
+        } catch (err) {
+            console.error("Error getting swap suggestions:", err);
+            setAddMessage("Something went wrong getting swap options.");
+        } finally {
+            setLoadingSwapSuggestions(false);
+        }
+    };
+
+    const handleSelectSwap = async (product: {
+        krogerProductId: string;
+        name: string;
+        imageUrl?: string;
+        price?: number;
+        size?: string;
+        aisle?: string;
+    }) => {
+        if (!meal || !user || selectedIngredientIndex === null) return;
+
+        setSwappingIngredient(true);
+
+        // Create updated ingredients array with the swap
+        const updatedIngredients = [...meal.ingredients];
+        const oldIngredient = updatedIngredients[selectedIngredientIndex];
+
+        // Keep the original ingredient name but update the Kroger product
+        updatedIngredients[selectedIngredientIndex] = {
+            ...oldIngredient,
+            // Update Kroger product data
+            krogerProductId: product.krogerProductId,
+            productName: product.name,
+            productImageUrl: product.imageUrl,
+            productSize: product.size,
+            productAisle: product.aisle,
+            price: product.price,
+        };
+
+        const updatedMeal: SavedMeal = {
+            ...meal,
+            ingredients: updatedIngredients,
+        };
+
+        setMeal(updatedMeal);
+
+        // Persist to Firestore
+        try {
+            const mealRef = doc(db, "savedMeals", user.uid, "meals", meal.id);
+            await setDoc(mealRef, {
+                ...updatedMeal,
+                savedAt: meal.savedAt || serverTimestamp(),
+            });
+        } catch (err) {
+            console.error("Error persisting swapped meal:", err);
+        }
+
+        setAddMessage(`Swapped to ${product.name}!`);
+
+        // Log the swap event
+        logUserEvent(user.uid, {
+            type: "ingredient_swapped",
+            mealId: meal.id,
+            oldIngredient: oldIngredient.productName || oldIngredient.name,
+            newIngredient: product.name,
+        }).catch((err) => {
+            console.error("Failed to log ingredient_swapped event:", err);
+        });
+
+        // Close modals
+        setShowSwapOptions(false);
+        setSwapAlternatives(null);
+        setSelectedIngredientIndex(null);
+        setSwappingIngredient(false);
+    };
+
     if (loadingUser || loadingMeal) {
         return (
             <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
@@ -480,8 +681,8 @@ export default function SavedMealDetailPage() {
                                     <Bookmark className="w-2.5 h-2.5 text-white fill-white" />
                                 </div>
                             </div>
-                            <h1 className="text-lg sm:text-xl font-medium text-gray-900 mb-1 line-clamp-2">{meal.name}</h1>
-                            <p className="text-sm text-gray-500 line-clamp-2">{meal.description}</p>
+                            <h1 className="text-lg sm:text-xl font-medium text-gray-900 mb-1">{meal.name}</h1>
+                            <p className="text-sm text-gray-500">{meal.description}</p>
                         </div>
                     </div>
                 </div>
@@ -550,10 +751,10 @@ export default function SavedMealDetailPage() {
 
                     {/* Ask AI Section - Premium Only */}
                     <div className="bg-white rounded-2xl border border-gray-100 p-5">
-                        <div className="flex items-center justify-between mb-3">
+                        <div className="flex flex-wrap items-center gap-2 mb-3">
                             <div className="flex items-center gap-2">
                                 <MessageCircle className="w-5 h-5 text-[#4A90E2]" />
-                                <h3 className="font-medium text-gray-900">Edit this meal with AI</h3>
+                                <h3 className="font-medium text-gray-900">Ask AI</h3>
                             </div>
                             <div className="flex items-center gap-1 px-2 py-1 bg-violet-100 rounded-full">
                                 <Sparkles className="w-3 h-3 text-violet-600" />
@@ -632,9 +833,17 @@ export default function SavedMealDetailPage() {
                     {/* Ingredients */}
                     <div className="bg-white rounded-2xl border border-gray-100 p-5">
                         <div className="flex items-center justify-between mb-4">
-                            <h3 className="font-medium text-gray-900">
-                                Ingredients ({selectedIngredients.size} of {meal.ingredients.length} selected)
-                            </h3>
+                            <div className="flex items-center gap-2">
+                                <h3 className="font-medium text-gray-900">
+                                    Ingredients ({selectedIngredients.size} of {meal.ingredients.length} selected)
+                                </h3>
+                                {enrichingKroger && (
+                                    <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                                        <div className="w-3 h-3 border-2 border-gray-300 border-t-[#4A90E2] rounded-full animate-spin" />
+                                        <span>Loading prices...</span>
+                                    </div>
+                                )}
+                            </div>
                             <button
                                 onClick={toggleAllIngredients}
                                 className="text-sm text-[#4A90E2] hover:underline"
@@ -642,49 +851,61 @@ export default function SavedMealDetailPage() {
                                 {selectedIngredients.size === meal.ingredients.length ? "Deselect all" : "Select all"}
                             </button>
                         </div>
-                        <p className="text-xs text-gray-500 mb-4">Uncheck items you already have at home</p>
+                        <p className="text-xs text-gray-500 mb-4">Tap an ingredient to view details or swap it</p>
                         <ul className="space-y-3">
                             {meal.ingredients.map((ing, idx) => (
                                 <li
                                     key={idx}
-                                    onClick={() => toggleIngredient(idx)}
-                                    className={`flex items-center gap-3 pb-3 border-b border-gray-50 last:border-0 last:pb-0 cursor-pointer transition-opacity ${
+                                    className={`flex items-center gap-3 pb-3 border-b border-gray-50 last:border-0 last:pb-0 transition-opacity ${
                                         !selectedIngredients.has(idx) ? "opacity-50" : ""
                                     }`}
                                 >
-                                    {krogerConnected && ing.productImageUrl ? (
-                                        <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
-                                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                                            <img
-                                                src={ing.productImageUrl}
-                                                alt={ing.productName || ing.name}
-                                                className="w-full h-full object-cover"
-                                            />
-                                        </div>
-                                    ) : null}
-                                    <div className="flex-1 min-w-0">
-                                        <div>
-                                            <span className={`font-medium ${selectedIngredients.has(idx) ? "text-gray-900" : "text-gray-500 line-through"}`}>{ing.name}</span>
-                                            {krogerConnected && ing.stockLevel && ing.stockLevel !== "HIGH" && (
-                                                <span className={`inline-block ml-2 text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap align-middle ${
-                                                    ing.stockLevel === "LOW"
-                                                        ? "bg-amber-100 text-amber-700"
-                                                        : "bg-red-100 text-red-700"
-                                                }`}>
-                                                    {ing.stockLevel === "LOW" ? "Low Stock" : "Out of Stock"}
-                                                </span>
-                                            )}
-                                        </div>
-                                        <div className="text-sm text-gray-500">
-                                            {ing.quantity}
-                                            {ing.category && ` • ${ing.category}`}
-                                            {krogerConnected && ing.productAisle && ` • ${ing.productAisle}`}
-                                            {krogerConnected && typeof ing.price === "number" && (
-                                                <span className="text-[#4A90E2]"> • ${ing.price.toFixed(2)}{ing.soldBy === "WEIGHT" ? "/lb" : ""}</span>
-                                            )}
+                                    {/* Clickable area for opening modal */}
+                                    <div
+                                        onClick={() => setSelectedIngredientIndex(idx)}
+                                        className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+                                    >
+                                        {krogerConnected && ing.productImageUrl ? (
+                                            <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
+                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                <img
+                                                    src={ing.productImageUrl}
+                                                    alt={ing.productName || ing.name}
+                                                    className="w-full h-full object-cover"
+                                                />
+                                            </div>
+                                        ) : null}
+                                        <div className="flex-1 min-w-0">
+                                            <div>
+                                                <span className={`font-medium ${selectedIngredients.has(idx) ? "text-gray-900" : "text-gray-500 line-through"}`}>{ing.name}</span>
+                                                {krogerConnected && ing.stockLevel && ing.stockLevel !== "HIGH" && (
+                                                    <span className={`inline-block ml-2 text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap align-middle ${
+                                                        ing.stockLevel === "LOW"
+                                                            ? "bg-amber-100 text-amber-700"
+                                                            : "bg-red-100 text-red-700"
+                                                    }`}>
+                                                        {ing.stockLevel === "LOW" ? "Low Stock" : "Out of Stock"}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="text-sm text-gray-500">
+                                                {ing.quantity}
+                                                {ing.category && ` • ${ing.category}`}
+                                                {krogerConnected && ing.productAisle && ` • ${ing.productAisle}`}
+                                                {krogerConnected && typeof ing.price === "number" && (
+                                                    <span className="text-[#4A90E2]"> • ${ing.price.toFixed(2)}{ing.soldBy === "WEIGHT" ? "/lb" : ""}</span>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="flex-shrink-0">
+                                    {/* Checkbox for selection */}
+                                    <div
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleIngredient(idx);
+                                        }}
+                                        className="flex-shrink-0 cursor-pointer p-1"
+                                    >
                                         <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
                                             selectedIngredients.has(idx)
                                                 ? "bg-[#4A90E2] border-[#4A90E2]"
@@ -753,6 +974,224 @@ export default function SavedMealDetailPage() {
                     feature="meal_chat"
                     onClose={() => setShowUpgradePrompt(false)}
                 />
+            )}
+
+            {/* Ingredient Detail Modal */}
+            {selectedIngredientIndex !== null && meal.ingredients[selectedIngredientIndex] && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
+                    <div className="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl max-h-[80vh] flex flex-col">
+                        {/* Modal Header */}
+                        <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                            <h3 className="font-medium text-gray-900">Ingredient Details</h3>
+                            <button
+                                onClick={() => {
+                                    setSelectedIngredientIndex(null);
+                                    setShowSwapOptions(false);
+                                    setSwapAlternatives(null);
+                                }}
+                                disabled={loadingSwapSuggestions || swappingIngredient}
+                                className="p-2 hover:bg-gray-100 rounded-full transition-colors disabled:opacity-50"
+                            >
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+
+                        {/* Modal Content */}
+                        <div className="flex-1 overflow-y-auto p-4">
+                            {(() => {
+                                const ing = meal.ingredients[selectedIngredientIndex];
+                                return (
+                                    <div className="space-y-4">
+                                        {/* Product Image */}
+                                        {krogerConnected && ing.productImageUrl ? (
+                                            <div className="w-full aspect-square max-w-[200px] mx-auto rounded-xl overflow-hidden bg-gray-100">
+                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                <img
+                                                    src={ing.productImageUrl}
+                                                    alt={ing.productName || ing.name}
+                                                    className="w-full h-full object-cover"
+                                                />
+                                            </div>
+                                        ) : (
+                                            <div className="w-full aspect-square max-w-[200px] mx-auto rounded-xl bg-gray-100 flex items-center justify-center">
+                                                <ShoppingCart className="w-16 h-16 text-gray-300" />
+                                            </div>
+                                        )}
+
+                                        {/* Ingredient Name */}
+                                        <div className="text-center">
+                                            <h4 className="text-lg font-medium text-gray-900">{ing.name}</h4>
+                                            {krogerConnected && ing.productName && ing.productName !== ing.name && (
+                                                <p className="text-sm text-gray-500 mt-1">{ing.productName}</p>
+                                            )}
+                                        </div>
+
+                                        {/* Details Grid */}
+                                        <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+                                            <div className="flex justify-between">
+                                                <span className="text-sm text-gray-500">Quantity</span>
+                                                <span className="text-sm font-medium text-gray-900">{ing.quantity}</span>
+                                            </div>
+                                            {ing.category && (
+                                                <div className="flex justify-between">
+                                                    <span className="text-sm text-gray-500">Category</span>
+                                                    <span className="text-sm font-medium text-gray-900">{ing.category}</span>
+                                                </div>
+                                            )}
+                                            {krogerConnected && ing.productAisle && (
+                                                <div className="flex justify-between">
+                                                    <span className="text-sm text-gray-500">Aisle</span>
+                                                    <span className="text-sm font-medium text-gray-900">{ing.productAisle}</span>
+                                                </div>
+                                            )}
+                                            {krogerConnected && typeof ing.price === "number" && (
+                                                <div className="flex justify-between">
+                                                    <span className="text-sm text-gray-500">Price</span>
+                                                    <span className="text-sm font-medium text-[#4A90E2]">
+                                                        ${ing.price.toFixed(2)}{ing.soldBy === "WEIGHT" ? "/lb" : ""}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            {krogerConnected && ing.productSize && (
+                                                <div className="flex justify-between">
+                                                    <span className="text-sm text-gray-500">Size</span>
+                                                    <span className="text-sm font-medium text-gray-900">{ing.productSize}</span>
+                                                </div>
+                                            )}
+                                            {krogerConnected && ing.stockLevel && (
+                                                <div className="flex justify-between">
+                                                    <span className="text-sm text-gray-500">Stock</span>
+                                                    <span className={`text-sm font-medium ${
+                                                        ing.stockLevel === "HIGH"
+                                                            ? "text-emerald-600"
+                                                            : ing.stockLevel === "LOW"
+                                                                ? "text-amber-600"
+                                                                : "text-red-600"
+                                                    }`}>
+                                                        {ing.stockLevel === "HIGH"
+                                                            ? "In Stock"
+                                                            : ing.stockLevel === "LOW"
+                                                                ? "Low Stock"
+                                                                : "Out of Stock"}
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Selection Toggle */}
+                                        <div
+                                            onClick={() => toggleIngredient(selectedIngredientIndex)}
+                                            className="flex items-center justify-between p-3 bg-gray-50 rounded-xl cursor-pointer"
+                                        >
+                                            <span className="text-sm text-gray-700">Include in shopping list</span>
+                                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+                                                selectedIngredients.has(selectedIngredientIndex)
+                                                    ? "bg-[#4A90E2] border-[#4A90E2]"
+                                                    : "border-gray-300 bg-white"
+                                            }`}>
+                                                {selectedIngredients.has(selectedIngredientIndex) && (
+                                                    <CheckCircle className="w-4 h-4 text-white" />
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+                        </div>
+
+                        {/* Modal Footer with Swap Button */}
+                        <div className="p-4 border-t border-gray-100 space-y-3">
+                            {showSwapOptions && swapAlternatives ? (
+                                <>
+                                    <p className="text-sm text-gray-600 font-medium mb-2">Choose a different product:</p>
+                                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                                        {swapAlternatives.map((product) => (
+                                            <button
+                                                key={product.krogerProductId}
+                                                onClick={() => handleSelectSwap(product)}
+                                                disabled={swappingIngredient}
+                                                className="w-full p-3 bg-gray-50 hover:bg-[#4A90E2]/10 border border-gray-200 hover:border-[#4A90E2] rounded-xl text-left transition-colors disabled:opacity-50 flex items-center gap-3"
+                                            >
+                                                {product.imageUrl ? (
+                                                    <div className="w-14 h-14 rounded-lg overflow-hidden bg-white flex-shrink-0">
+                                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                        <img
+                                                            src={product.imageUrl}
+                                                            alt={product.name}
+                                                            className="w-full h-full object-cover"
+                                                        />
+                                                    </div>
+                                                ) : (
+                                                    <div className="w-14 h-14 rounded-lg bg-gray-200 flex items-center justify-center flex-shrink-0">
+                                                        <ShoppingCart className="w-6 h-6 text-gray-400" />
+                                                    </div>
+                                                )}
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="font-medium text-gray-900 text-sm line-clamp-2">{product.name}</div>
+                                                    <div className="text-xs text-gray-500 mt-0.5">
+                                                        {product.size && <span>{product.size}</span>}
+                                                        {product.aisle && <span> • {product.aisle}</span>}
+                                                    </div>
+                                                    {typeof product.price === "number" && (
+                                                        <div className="text-sm font-medium text-[#4A90E2] mt-0.5">
+                                                            ${product.price.toFixed(2)}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <button
+                                        onClick={() => {
+                                            setShowSwapOptions(false);
+                                            setSwapAlternatives(null);
+                                        }}
+                                        className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl font-medium"
+                                    >
+                                        Cancel
+                                    </button>
+                                </>
+                            ) : (
+                                <>
+                                    {krogerConnected && krogerStoreSet ? (
+                                        <button
+                                            onClick={handleShowSwapOptions}
+                                            disabled={loadingSwapSuggestions}
+                                            className="w-full py-3 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white rounded-xl font-medium flex items-center justify-center gap-2 disabled:opacity-70"
+                                        >
+                                            {loadingSwapSuggestions ? (
+                                                <>
+                                                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                    <span>Finding products...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <RefreshCw className="w-5 h-5" />
+                                                    <span>Swap Product</span>
+                                                </>
+                                            )}
+                                        </button>
+                                    ) : (
+                                        <p className="text-sm text-gray-500 text-center py-2">
+                                            Connect Kroger to swap products
+                                        </p>
+                                    )}
+                                    <button
+                                        onClick={() => {
+                                            setSelectedIngredientIndex(null);
+                                            setShowSwapOptions(false);
+                                            setSwapAlternatives(null);
+                                        }}
+                                        disabled={loadingSwapSuggestions}
+                                        className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl font-medium disabled:opacity-50"
+                                    >
+                                        Close
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

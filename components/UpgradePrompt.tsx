@@ -20,9 +20,9 @@ const featureConfig: Record<FeatureType, {
 }> = {
     meal_chat: {
         title: "Unlock Unlimited Meal Customization",
-        description: "You've used all 3 free chat messages for this meal.",
+        description: "You've used all 6 free chat messages this month.",
         icon: MessageSquare,
-        benefit: "Premium users get 1,000 AI chat messages per month",
+        benefit: "Premium users get unlimited AI chat messages",
     },
     diet_photo: {
         title: "Unlock Diet Instructions",

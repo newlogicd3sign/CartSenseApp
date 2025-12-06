@@ -48,6 +48,28 @@ function getRandomGreeting() {
     return foodGreetings[Math.floor(Math.random() * foodGreetings.length)];
 }
 
+const placeholderPrompts = [
+    "Ex: Meals with ground turkey, power bowl ideas, quick chicken dinner...",
+    "Ex: Easy weeknight dinners under 30 minutes...",
+    "Ex: High protein meals for meal prep...",
+    "Ex: Healthy salmon recipes, Mediterranean dishes...",
+    "Ex: Slow cooker comfort food, set it and forget it...",
+    "Ex: Kid-friendly meals the whole family will love...",
+    "Ex: Low carb dinner ideas, keto friendly options...",
+    "Ex: Budget-friendly meals using pantry staples...",
+    "Ex: One-pan dinners for easy cleanup...",
+    "Ex: Vegetarian recipes packed with protein...",
+    "Ex: Quick stir fry ideas, Asian-inspired dishes...",
+    "Ex: Grilled chicken variations, summer BBQ ideas...",
+    "Ex: Hearty soups and stews for cozy nights...",
+    "Ex: Sheet pan dinners with minimal prep...",
+    "Ex: Fresh and light salads as main courses...",
+];
+
+function getRandomPlaceholder() {
+    return placeholderPrompts[Math.floor(Math.random() * placeholderPrompts.length)];
+}
+
 export default function PromptPage() {
     const router = useRouter();
     const { showToast } = useToast();
@@ -67,6 +89,7 @@ export default function PromptPage() {
     const [badgeColor, setBadgeColor] = useState<AccentColor>({ primary: "#a855f7", dark: "#9333ea" });
     const [animateFromSetup, setAnimateFromSetup] = useState(false);
     const [FoodIcon, setFoodIcon] = useState<typeof UtensilsCrossed>(() => UtensilsCrossed);
+    const [placeholder, setPlaceholder] = useState("");
 
     // Doctor diet instructions state
     const [hasDietInstructions, setHasDietInstructions] = useState(false);
@@ -79,6 +102,7 @@ export default function PromptPage() {
 
         setGreeting(getRandomGreeting());
         setFoodIcon(() => getRandomFoodIcon());
+        setPlaceholder(getRandomPlaceholder());
         const primaryColor = getRandomAccentColor();
         setAccentColor(primaryColor);
         setBadgeColor(getRandomAccentColorExcluding(primaryColor));
@@ -207,7 +231,7 @@ export default function PromptPage() {
                         <textarea
                             value={prompt}
                             onChange={(e) => setPrompt(e.target.value)}
-                            placeholder="Ex: Meals with ground turkey, power bowl ideas, quick chicken dinner, healthy salmon recipes..."
+                            placeholder={placeholder || "What kind of meals would you like?"}
                             className="w-full h-28 lg:h-32 p-4 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:bg-white resize-none transition-colors"
                             style={{ borderColor: prompt ? accentColor.primary : undefined }}
                         />

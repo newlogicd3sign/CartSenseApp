@@ -113,6 +113,127 @@ type KrogerProduct = {
 // Product Availability & Scoring
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Pet food indicators - used to completely filter out pet products
+const PET_FOOD_BRANDS = [
+    "purina", "pedigree", "iams", "blue buffalo", "meow mix", "fancy feast",
+    "friskies", "alpo", "beneful", "cesar", "nutro", "rachael ray nutrish",
+    "wellness pet", "hill's science diet", "royal canin", "blue wilderness",
+    "taste of the wild", "orijen", "acana", "merrick", "canidae", "fromm",
+    "nutrisource", "diamond naturals", "earthborn", "zignature", "instinct",
+];
+
+const PET_FOOD_KEYWORDS = [
+    "dog food", "cat food", "pet food", "dog treat", "cat treat", "pet treat",
+    "kibble", "puppy food", "kitten food", "canine", "feline", "for dogs",
+    "for cats", "for pets", "dog biscuit", "cat litter",
+];
+
+// Non-food product indicators - household, health, beauty, etc.
+const NON_FOOD_KEYWORDS = [
+    // Oral care
+    "toothpaste", "toothbrush", "mouthwash", "dental floss", "denture",
+    // Personal care / beauty
+    "shampoo", "conditioner", "body wash", "soap bar", "hand soap", "lotion",
+    "deodorant", "antiperspirant", "razor", "shaving cream", "aftershave",
+    "makeup", "mascara", "lipstick", "foundation", "concealer", "nail polish",
+    "hair dye", "hair color", "styling gel", "hairspray", "mousse",
+    "face wash", "cleanser", "moisturizer", "sunscreen", "tanning",
+    "cotton balls", "cotton swabs", "q-tips",
+    // Health / medicine
+    "medicine", "aspirin", "ibuprofen", "acetaminophen", "tylenol", "advil",
+    "allergy relief", "cold medicine", "cough syrup", "antacid", "laxative",
+    "bandage", "band-aid", "first aid", "thermometer", "heating pad",
+    "vitamin supplement", "multivitamin", "fiber supplement",
+    // Baby (non-food)
+    "diaper", "baby wipe", "baby powder", "baby lotion", "baby shampoo",
+    // Cleaning products
+    "dish soap", "dishwasher detergent", "laundry detergent", "fabric softener",
+    "bleach", "all-purpose cleaner", "glass cleaner", "disinfectant", "lysol",
+    "toilet cleaner", "drain cleaner", "oven cleaner", "carpet cleaner",
+    "air freshener", "febreze", "sponge", "scrub brush", "mop", "broom",
+    "trash bag", "garbage bag", "aluminum foil", "plastic wrap", "parchment",
+    // Paper products
+    "paper towel", "toilet paper", "tissue", "napkin", "paper plate", "paper cup",
+    // Laundry
+    "stain remover", "dryer sheet", "laundry pod",
+    // Batteries / household
+    "battery", "light bulb", "candle",
+];
+
+const NON_FOOD_CATEGORIES = [
+    "pet", "dog", "cat", "health", "beauty", "personal care", "oral care",
+    "household", "cleaning", "laundry", "paper products", "baby care",
+    "pharmacy", "medicine", "first aid", "cosmetics", "hair care", "skin care",
+];
+
+/**
+ * Check if a product is pet food - these should never be displayed for human food searches.
+ */
+function isPetFood(product: KrogerProduct | CachedKrogerProduct): boolean {
+    const desc = ("description" in product ? product.description : "").toLowerCase();
+
+    // Check brand names
+    if (PET_FOOD_BRANDS.some((brand) => desc.includes(brand))) {
+        return true;
+    }
+
+    // Check keywords
+    if (PET_FOOD_KEYWORDS.some((keyword) => desc.includes(keyword))) {
+        return true;
+    }
+
+    // Check categories
+    const categories: string[] = [];
+    if ("categories" in product && Array.isArray(product.categories)) {
+        categories.push(...product.categories.map(c => c.toLowerCase()));
+    }
+    if ("category" in product && typeof product.category === "string") {
+        categories.push(product.category.toLowerCase());
+    }
+    if ("department" in product && typeof product.department === "string") {
+        categories.push(product.department.toLowerCase());
+    }
+
+    if (categories.some((c) => c.includes("pet") || c.includes("dog") || c.includes("cat"))) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Check if a product is a non-food item (household, health, beauty, etc.)
+ * These should never be displayed for grocery/ingredient searches.
+ */
+function isNonFoodProduct(product: KrogerProduct | CachedKrogerProduct): boolean {
+    const desc = ("description" in product ? product.description : "").toLowerCase();
+
+    // Check non-food keywords
+    if (NON_FOOD_KEYWORDS.some((keyword) => desc.includes(keyword))) {
+        return true;
+    }
+
+    // Check categories
+    const categories: string[] = [];
+    if ("categories" in product && Array.isArray(product.categories)) {
+        categories.push(...product.categories.map(c => c.toLowerCase()));
+    }
+    if ("category" in product && typeof product.category === "string") {
+        categories.push(product.category.toLowerCase());
+    }
+    if ("department" in product && typeof product.department === "string") {
+        categories.push(product.department.toLowerCase());
+    }
+
+    // Check if any category matches non-food categories
+    // But be careful not to exclude "grocery" items that might have "health" in a sub-category
+    if (categories.some((c) => NON_FOOD_CATEGORIES.some((nf) => c.includes(nf)))) {
+        return true;
+    }
+
+    return false;
+}
+
 /**
  * Check if a product is available in-store based on fulfillment and inventory data.
  */
@@ -214,6 +335,8 @@ function scoreProduct(
     if (badWords.some((w) => desc.includes(w))) {
         score -= 10;
     }
+
+    // Note: Pet food is filtered out entirely by isPetFood() before scoring
 
     // Penalize processed products
     const processedIndicators = [
@@ -428,8 +551,10 @@ export async function searchKrogerProduct(
                 return null;
             }
 
-            // Filter available products and score them
+            // Filter available products, excluding pet food and non-food items
             const availableProducts = cached.products.filter(p => {
+                if (isPetFood(p)) return false;
+                if (isNonFoodProduct(p)) return false;
                 const { available } = isProductAvailable(p);
                 return available;
             });
@@ -506,13 +631,15 @@ export async function searchKrogerProduct(
             return { products: [], match: null };
         }
 
-        // Filter available products
+        // Filter available products, excluding pet food and non-food items
         const availableProducts = products.filter((p) => {
+            if (isPetFood(p)) return false;
+            if (isNonFoodProduct(p)) return false;
             const { available } = isProductAvailable(p);
             return available;
         });
 
-        console.log(`Products after filtering out of stock: ${availableProducts.length}/${products.length}`);
+        console.log(`Products after filtering (food only): ${availableProducts.length}/${products.length}`);
 
         if (!availableProducts.length) {
             console.log("❌ All products are out of stock.\n");
@@ -630,11 +757,13 @@ export async function searchAlternativeProduct(
         const cached = await getCachedProducts(locationId, simplifiedTerm);
 
         if (cached && cached.products.length > 0) {
-            // Filter out excluded product and unavailable products
+            // Filter out excluded product, pet food, non-food items, and unavailable products
             const availableProducts = cached.products.filter(p => {
                 if (opts.excludeProductId && p.productId === opts.excludeProductId) {
                     return false;
                 }
+                if (isPetFood(p)) return false;
+                if (isNonFoodProduct(p)) return false;
                 const { available } = isProductAvailable(p);
                 return available;
             });
@@ -701,16 +830,18 @@ export async function searchAlternativeProduct(
         await writeProductsCache(locationId, simplifiedTerm, cachedProducts, cachedProducts.length);
     }
 
-    // Filter out excluded and unavailable products
+    // Filter out excluded, pet food, non-food items, and unavailable products
     const availableProducts = products.filter((p) => {
         if (opts.excludeProductId && p.productId === opts.excludeProductId) {
             return false;
         }
+        if (isPetFood(p)) return false;
+        if (isNonFoodProduct(p)) return false;
         const { available } = isProductAvailable(p);
         return available;
     });
 
-    console.log("Available alternatives:", availableProducts.length);
+    console.log("Available alternatives (food only):", availableProducts.length);
 
     if (availableProducts.length === 0) {
         console.log("❌ No available alternatives found.\n");
@@ -762,6 +893,160 @@ export async function searchAlternativeProduct(
         available,
         stockLevel,
     };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Search for Multiple Products (for swap suggestions)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Search for multiple Kroger products matching a search term.
+ * Returns up to `limit` products, excluding any specified product IDs.
+ */
+export async function searchKrogerProducts(
+    searchTerm: string,
+    opts: {
+        locationId?: string;
+        excludeProductIds?: string[];
+        limit?: number;
+    } = {},
+): Promise<KrogerProductMatch[]> {
+    const trimmed = searchTerm.trim();
+    if (!trimmed) return [];
+
+    const locationId = opts.locationId;
+    const excludeIds = new Set(opts.excludeProductIds ?? []);
+    const limit = opts.limit ?? 5;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Check cache first
+    // ─────────────────────────────────────────────────────────────────────────
+    if (locationId) {
+        const cached = await getCachedProducts(locationId, trimmed);
+
+        if (cached && cached.products.length > 0) {
+            // Filter available products, excluding specified IDs, pet food, and non-food items
+            const availableProducts = cached.products.filter(p => {
+                if (excludeIds.has(p.productId)) return false;
+                if (isPetFood(p)) return false; // Never show pet food
+                if (isNonFoodProduct(p)) return false; // Never show non-grocery items
+                const { available } = isProductAvailable(p);
+                return available;
+            });
+
+            if (availableProducts.length > 0) {
+                // Score and sort
+                const scored = availableProducts.map(p => ({
+                    product: p,
+                    score: scoreProduct(p, trimmed),
+                }));
+                scored.sort((a, b) => b.score - a.score);
+
+                return scored.slice(0, limit).map(s => cachedToProductMatch(s.product));
+            }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Call Kroger API
+    // ─────────────────────────────────────────────────────────────────────────
+    const token = await getKrogerToken();
+
+    if (!API_BASE_URL) {
+        console.error("Missing KROGER_API_BASE_URL env var.");
+        throw new Error("Missing Kroger API base URL");
+    }
+
+    const params = new URLSearchParams();
+    params.append("filter.term", trimmed);
+    params.append("filter.limit", "15"); // Fetch more to have options after filtering
+    if (locationId) {
+        params.append("filter.locationId", locationId);
+        params.append("filter.fulfillment", "ais");
+    }
+
+    const res = await fetch(`${API_BASE_URL}/products?${params.toString()}`, {
+        method: "GET",
+        headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+        },
+        next: { revalidate: 60 * 60 * 8 },
+    });
+
+    if (!res.ok) {
+        console.error("Kroger multi-product search error:", res.status);
+        return [];
+    }
+
+    const json = (await res.json()) as { data?: KrogerProduct[] };
+    const products = json.data ?? [];
+
+    console.log("\n🔎 Kroger Multi-Product Search (API CALL)");
+    console.log("Search Term:", trimmed);
+    console.log("Products Returned:", products.length);
+
+    // Cache results
+    if (locationId && products.length > 0) {
+        const cachedProducts = products.map(krogerProductToCached);
+        await writeProductsCache(locationId, trimmed, cachedProducts, cachedProducts.length);
+    }
+
+    // Filter available products, excluding specified IDs, pet food, and non-food items
+    const availableProducts = products.filter((p) => {
+        if (excludeIds.has(p.productId)) return false;
+        if (isPetFood(p)) return false; // Never show pet food
+        if (isNonFoodProduct(p)) return false; // Never show non-grocery items
+        const { available } = isProductAvailable(p);
+        return available;
+    });
+
+    console.log("Available after filtering (food only):", availableProducts.length);
+
+    if (availableProducts.length === 0) {
+        return [];
+    }
+
+    // Score and sort
+    const scored = availableProducts.map(p => ({
+        product: p,
+        score: scoreProduct(p, trimmed),
+    }));
+    scored.sort((a, b) => b.score - a.score);
+
+    // Convert to KrogerProductMatch format
+    return scored.slice(0, limit).map(({ product }) => {
+        const { available, stockLevel } = isProductAvailable(product);
+        const item = product.items?.[0];
+
+        const imageUrl =
+            product.images?.[0]?.sizes?.[0]?.url ??
+            (product.images?.[0]?.sizes && product.images[0].sizes[product.images[0].sizes.length - 1]?.url) ??
+            undefined;
+
+        let priceValue: number | undefined;
+        if (item?.price) {
+            if (typeof item.price === "number") {
+                priceValue = item.price;
+            } else if (typeof item.price === "object") {
+                priceValue = item.price.promo ?? item.price.regular;
+            }
+        }
+
+        const soldBy = item?.soldBy?.toUpperCase() === "WEIGHT" ? "WEIGHT" as const : "UNIT" as const;
+
+        return {
+            krogerProductId: product.productId,
+            name: product.description,
+            imageUrl,
+            price: typeof priceValue === "number" && Number.isFinite(priceValue) ? priceValue : undefined,
+            soldBy,
+            size: item?.size,
+            aisle: item?.aisleLocations?.[0]?.description,
+            available,
+            stockLevel,
+        };
+    });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
 import { onAuthStateChanged, type User } from "firebase/auth";
@@ -32,12 +32,14 @@ import {
     X,
     AlertCircle,
     Sparkles,
+    RefreshCw,
 } from "lucide-react";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { useToast } from "@/components/Toast";
 import {
     isStapleItem,
     isSameIngredient,
+    isExcludedIngredient,
 } from "@/lib/utils";
 
 type Ingredient = {
@@ -83,6 +85,8 @@ type UserPrefs = {
         sensitivities?: string[];
     };
     isPremium?: boolean;
+    monthlyChatCount?: number;
+    chatPeriodStart?: { toDate: () => Date } | null;
 };
 
 type KrogerProduct = {
@@ -114,6 +118,7 @@ type MealThreadReply = {
     reply: string;
     action: "no_change" | "update_meal" | "new_meal_variant";
     updatedMeal?: Meal;
+    monthlyChatCount?: number;
 };
 
 type ThreadMessage = {
@@ -156,6 +161,7 @@ function MealDetailPageContent() {
     const [addingToList, setAddingToList] = useState(false);
 
     const [savingMeal, setSavingMeal] = useState(false);
+    const [isMealAlreadySaved, setIsMealAlreadySaved] = useState(false);
 
     const [krogerConnected, setKrogerConnected] = useState(false);
     const [mealsMeta, setMealsMeta] = useState<MealsMeta | null>(null);
@@ -174,10 +180,32 @@ function MealDetailPageContent() {
     const [krogerResults, setKrogerResults] = useState<EnrichedItem[] | null>(null);
     const [showKrogerResults, setShowKrogerResults] = useState(false);
 
+    // Lazy loading Kroger enrichment state
+    const [enrichingKroger, setEnrichingKroger] = useState(false);
+    const [hasEnrichedKroger, setHasEnrichedKroger] = useState(false);
+    const [enrichedIngredients, setEnrichedIngredients] = useState<Ingredient[] | null>(null);
+
     // Chat limit state
-    const [chatMessageCount, setChatMessageCount] = useState(0);
+    const [monthlyChatCount, setMonthlyChatCount] = useState(0);
     const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
-    const FREE_CHAT_LIMIT = 3;
+    const FREE_CHAT_LIMIT = 6;
+
+    // Ref for chat messages container to control scrolling
+    const chatMessagesRef = useRef<HTMLDivElement>(null);
+
+    // Ingredient modal state
+    const [selectedIngredientIndex, setSelectedIngredientIndex] = useState<number | null>(null);
+    const [swappingIngredient, setSwappingIngredient] = useState(false);
+    const [swapAlternatives, setSwapAlternatives] = useState<{
+        krogerProductId: string;
+        name: string;
+        imageUrl?: string;
+        price?: number;
+        size?: string;
+        aisle?: string;
+    }[] | null>(null);
+    const [loadingSwapSuggestions, setLoadingSwapSuggestions] = useState(false);
+    const [showSwapOptions, setShowSwapOptions] = useState(false);
 
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -196,6 +224,17 @@ function MealDetailPageContent() {
                     setPrefs(data);
                     setKrogerConnected(Boolean(data.krogerLinked));
                     setKrogerStoreSet(Boolean(data.defaultKrogerLocationId));
+
+                    // Load chat count, resetting if period expired
+                    let chatCount = data.monthlyChatCount ?? 0;
+                    if (data.chatPeriodStart) {
+                        const periodStart = data.chatPeriodStart.toDate();
+                        const daysSinceStart = (Date.now() - periodStart.getTime()) / (1000 * 60 * 60 * 24);
+                        if (daysSinceStart >= 30) {
+                            chatCount = 0;
+                        }
+                    }
+                    setMonthlyChatCount(chatCount);
                 }
             } catch (err) {
                 console.error("Error loading user prefs", err);
@@ -263,12 +302,81 @@ function MealDetailPageContent() {
         }
     }, [loadingMeal, meal]);
 
+    // Check if meal is already saved
+    useEffect(() => {
+        if (!user || !meal) return;
+
+        const checkIfSaved = async () => {
+            try {
+                const mealRef = doc(db, "savedMeals", user.uid, "meals", meal.id);
+                const mealSnap = await getDoc(mealRef);
+                setIsMealAlreadySaved(mealSnap.exists());
+            } catch (err) {
+                console.error("Error checking if meal is saved:", err);
+            }
+        };
+
+        checkIfSaved();
+    }, [user, meal]);
+
     // Initialize all ingredients as selected when meal loads
     useEffect(() => {
         if (meal) {
             setSelectedIngredients(new Set(meal.ingredients.map((_, idx) => idx)));
         }
     }, [meal]);
+
+    // Scroll chat container to bottom when messages change (without affecting page scroll)
+    useEffect(() => {
+        if (chatMessagesRef.current && threadMessages.length > 0) {
+            chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
+        }
+    }, [threadMessages]);
+
+    // Lazy load Kroger enrichment when viewing meal (only if Kroger is connected)
+    useEffect(() => {
+        if (!user || !meal || !krogerConnected || !krogerStoreSet || hasEnrichedKroger) return;
+
+        // Check if any ingredient already has Kroger data (already enriched)
+        const alreadyEnriched = meal.ingredients.some(ing => ing.krogerProductId);
+        if (alreadyEnriched) {
+            setHasEnrichedKroger(true);
+            setEnrichedIngredients(meal.ingredients);
+            return;
+        }
+
+        const enrichIngredients = async () => {
+            setEnrichingKroger(true);
+            try {
+                const res = await fetch("/api/kroger/enrich", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        userId: user.uid,
+                        ingredients: meal.ingredients,
+                    }),
+                });
+
+                const data = await res.json();
+
+                if (data.success && data.ingredients) {
+                    // Store enriched ingredients separately - don't replace meal state
+                    // This prevents a jarring full re-render when scrolling
+                    setEnrichedIngredients(data.ingredients);
+                }
+            } catch (err) {
+                console.error("Error enriching ingredients with Kroger data:", err);
+            } finally {
+                setEnrichingKroger(false);
+                setHasEnrichedKroger(true);
+            }
+        };
+
+        enrichIngredients();
+    }, [user, meal, krogerConnected, krogerStoreSet, hasEnrichedKroger]);
+
+    // Use enriched ingredients if available, otherwise fall back to meal ingredients
+    const displayIngredients = enrichedIngredients ?? meal?.ingredients ?? [];
 
     const toggleIngredient = (idx: number) => {
         setSelectedIngredients((prev) => {
@@ -284,15 +392,20 @@ function MealDetailPageContent() {
 
     const toggleAllIngredients = () => {
         if (!meal) return;
-        if (selectedIngredients.size === meal.ingredients.length) {
+        if (selectedIngredients.size === displayIngredients.length) {
             setSelectedIngredients(new Set());
         } else {
-            setSelectedIngredients(new Set(meal.ingredients.map((_, idx) => idx)));
+            setSelectedIngredients(new Set(displayIngredients.map((_, idx) => idx)));
         }
     };
 
     const applyUpdatedMeal = (updatedMeal: Meal) => {
         setMeal(updatedMeal);
+
+        // Reset enriched ingredients so the new ingredients are displayed
+        // and can be re-enriched with Kroger data
+        setEnrichedIngredients(null);
+        setHasEnrichedKroger(false);
 
         try {
             const stored = sessionStorage.getItem("generatedMeals");
@@ -333,7 +446,7 @@ function MealDetailPageContent() {
             setAddingToList(true);
 
             const itemsCol = collection(db, "shoppingLists", user.uid, "items");
-            const ingredientsToAdd = meal.ingredients.filter((_, idx) => selectedIngredients.has(idx));
+            const ingredientsToAdd = displayIngredients.filter((_, idx) => selectedIngredients.has(idx));
 
             // Fetch existing shopping list items to check for duplicates
             const existingSnapshot = await getDocs(itemsCol);
@@ -345,6 +458,11 @@ function MealDetailPageContent() {
             // Filter out duplicates based on ingredient type
             let skippedStaples = 0;
             const itemsToActuallyAdd = ingredientsToAdd.filter((ing) => {
+                // Skip excluded ingredients like water (you don't need to buy these)
+                if (isExcludedIngredient(ing.name)) {
+                    return false;
+                }
+
                 // Check if this ingredient already exists in the shopping list
                 const existingMatch = existingItems.find((existing) =>
                     isSameIngredient(existing.name, ing.name)
@@ -388,12 +506,15 @@ function MealDetailPageContent() {
             }
 
             // Automatically save the meal when adding to shopping list
-            const mealRef = doc(db, "savedMeals", user.uid, "meals", meal.id);
-            await setDoc(mealRef, {
-                ...meal,
-                prompt: displayedPrompt || null,
-                savedAt: serverTimestamp(),
-            });
+            if (!isMealAlreadySaved) {
+                const mealRef = doc(db, "savedMeals", user.uid, "meals", meal.id);
+                await setDoc(mealRef, {
+                    ...meal,
+                    prompt: displayedPrompt || null,
+                    savedAt: serverTimestamp(),
+                });
+                setIsMealAlreadySaved(true);
+            }
 
             // Build appropriate toast message
             let toastMessage = "";
@@ -432,6 +553,12 @@ function MealDetailPageContent() {
     const handleSaveMeal = async () => {
         if (!user || !meal) return;
 
+        // Prevent saving if already saved
+        if (isMealAlreadySaved) {
+            showToast("This meal is already saved.", "info");
+            return;
+        }
+
         try {
             setSavingMeal(true);
 
@@ -443,6 +570,7 @@ function MealDetailPageContent() {
                 savedAt: serverTimestamp(),
             });
 
+            setIsMealAlreadySaved(true);
             showToast("Meal saved to your account.", "success");
 
             logUserEvent(user.uid, {
@@ -470,7 +598,7 @@ function MealDetailPageContent() {
         setKrogerResults(null);
 
         try {
-            const ingredientsToAdd = meal.ingredients.filter((_, idx) => selectedIngredients.has(idx));
+            const ingredientsToAdd = displayIngredients.filter((_, idx) => selectedIngredients.has(idx));
             const cartItems = ingredientsToAdd.map((ing, idx) => ({
                 id: `${meal.id}-${idx}`,
                 name: ing.name,
@@ -499,12 +627,15 @@ function MealDetailPageContent() {
                 showToast(data.message || "Items added to your Kroger cart!", "success");
 
                 // Also save the meal when adding to Kroger cart
-                const mealRef = doc(db, "savedMeals", user.uid, "meals", meal.id);
-                await setDoc(mealRef, {
-                    ...meal,
-                    prompt: displayedPrompt || null,
-                    savedAt: serverTimestamp(),
-                });
+                if (!isMealAlreadySaved) {
+                    const mealRef = doc(db, "savedMeals", user.uid, "meals", meal.id);
+                    await setDoc(mealRef, {
+                        ...meal,
+                        prompt: displayedPrompt || null,
+                        savedAt: serverTimestamp(),
+                    });
+                    setIsMealAlreadySaved(true);
+                }
 
                 logUserEvent(user.uid, {
                     type: "added_to_kroger_cart",
@@ -526,11 +657,160 @@ function MealDetailPageContent() {
         }
     };
 
+    const handleShowSwapOptions = async () => {
+        if (!meal || !user || selectedIngredientIndex === null) return;
+
+        // Check if Kroger is connected
+        if (!krogerConnected || !krogerStoreSet) {
+            showToast("Connect your Kroger account to swap products.", "error");
+            return;
+        }
+
+        const ing = displayIngredients[selectedIngredientIndex];
+        if (!ing) return;
+
+        setLoadingSwapSuggestions(true);
+        setSwapAlternatives(null);
+
+        try {
+            const res = await fetch("/api/swap-suggestions", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    userId: user.uid,
+                    ingredientName: ing.name,
+                    currentProductId: ing.krogerProductId,
+                    searchTerm: ing.name, // Use ingredient name for search
+                }),
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                if (data.error === "NOT_LINKED" || data.error === "NO_STORE") {
+                    showToast(data.message, "error");
+                    return;
+                }
+                throw new Error(data.message || "Failed to get swap suggestions");
+            }
+
+            if (data.alternatives && data.alternatives.length > 0) {
+                setSwapAlternatives(data.alternatives);
+                setShowSwapOptions(true);
+            } else {
+                showToast("No alternative products found.", "info");
+            }
+        } catch (err) {
+            console.error("Error getting swap suggestions:", err);
+            showToast("Something went wrong getting swap options.", "error");
+        } finally {
+            setLoadingSwapSuggestions(false);
+        }
+    };
+
+    const handleSelectSwap = (product: {
+        krogerProductId: string;
+        name: string;
+        imageUrl?: string;
+        price?: number;
+        size?: string;
+        aisle?: string;
+    }) => {
+        if (!meal || selectedIngredientIndex === null) return;
+
+        setSwappingIngredient(true);
+
+        // Use displayIngredients as source to preserve all existing Kroger data
+        const currentIngredients = enrichedIngredients ?? meal.ingredients;
+        const oldIngredient = currentIngredients[selectedIngredientIndex];
+
+        // Create the swapped ingredient with updated Kroger product
+        const swappedIngredient: Ingredient = {
+            ...oldIngredient,
+            krogerProductId: product.krogerProductId,
+            productName: product.name,
+            productImageUrl: product.imageUrl,
+            productSize: product.size,
+            productAisle: product.aisle,
+            price: product.price,
+        };
+
+        // Update enrichedIngredients to show the new product immediately
+        // This preserves all other ingredients' Kroger data
+        const updatedEnriched = [...currentIngredients];
+        updatedEnriched[selectedIngredientIndex] = swappedIngredient;
+        setEnrichedIngredients(updatedEnriched);
+
+        // Also update the meal state (for sessionStorage persistence)
+        const updatedMealIngredients = [...meal.ingredients];
+        updatedMealIngredients[selectedIngredientIndex] = {
+            ...meal.ingredients[selectedIngredientIndex],
+            krogerProductId: product.krogerProductId,
+            productName: product.name,
+            productImageUrl: product.imageUrl,
+            productSize: product.size,
+            productAisle: product.aisle,
+            price: product.price,
+        };
+
+        const updatedMeal: Meal = {
+            ...meal,
+            ingredients: updatedMealIngredients,
+        };
+
+        // Update meal state and sessionStorage WITHOUT triggering re-enrichment
+        setMeal(updatedMeal);
+        try {
+            const stored = sessionStorage.getItem("generatedMeals");
+            if (stored) {
+                const parsed: StoredMealsPayload = JSON.parse(stored);
+                if (Array.isArray(parsed)) {
+                    const list = [...parsed];
+                    const idx = list.findIndex((m) => m.id === updatedMeal.id);
+                    if (idx >= 0) {
+                        list[idx] = updatedMeal;
+                        sessionStorage.setItem("generatedMeals", JSON.stringify(list));
+                    }
+                } else {
+                    const list = Array.isArray(parsed.meals) ? [...parsed.meals] : [];
+                    const idx = list.findIndex((m) => m.id === updatedMeal.id);
+                    if (idx >= 0) {
+                        list[idx] = updatedMeal;
+                        const newPayload = { ...parsed, meals: list };
+                        sessionStorage.setItem("generatedMeals", JSON.stringify(newPayload));
+                    }
+                }
+            }
+        } catch (err) {
+            console.error("Error updating generatedMeals in sessionStorage", err);
+        }
+
+        showToast(`Swapped to ${product.name}!`, "success");
+
+        // Log the swap event
+        if (user) {
+            logUserEvent(user.uid, {
+                type: "ingredient_swapped",
+                mealId: meal.id,
+                oldIngredient: oldIngredient.productName || oldIngredient.name,
+                newIngredient: product.name,
+            }).catch((err) => {
+                console.error("Failed to log ingredient_swapped event:", err);
+            });
+        }
+
+        // Close modals
+        setShowSwapOptions(false);
+        setSwapAlternatives(null);
+        setSelectedIngredientIndex(null);
+        setSwappingIngredient(false);
+    };
+
     const handleSendThreadMessage = async () => {
-        if (!meal || !threadInput.trim()) return;
+        if (!meal || !threadInput.trim() || !user) return;
 
         // Check chat limit for free users
-        if (!prefs?.isPremium && chatMessageCount >= FREE_CHAT_LIMIT) {
+        if (!prefs?.isPremium && monthlyChatCount >= FREE_CHAT_LIMIT) {
             setShowUpgradePrompt(true);
             return;
         }
@@ -538,11 +818,6 @@ function MealDetailPageContent() {
         const messageText = threadInput.trim();
         setThreadInput("");
         setThreadError(null);
-
-        // Increment chat count for free users
-        if (!prefs?.isPremium) {
-            setChatMessageCount((prev) => prev + 1);
-        }
 
         const newUserMsg: ThreadMessage = {
             id: `user-${Date.now()}`,
@@ -554,15 +829,13 @@ function MealDetailPageContent() {
         setThreadMessages((prev) => [...prev, newUserMsg]);
         setSendingThread(true);
 
-        if (user) {
-            logUserEvent(user.uid, {
-                type: "thread_message",
-                mealId: meal.id,
-                message: messageText,
-            }).catch((err) => {
-                console.error("Failed to log thread_message event:", err);
-            });
-        }
+        logUserEvent(user.uid, {
+            type: "thread_message",
+            mealId: meal.id,
+            message: messageText,
+        }).catch((err) => {
+            console.error("Failed to log thread_message event:", err);
+        });
 
         try {
             // Build history from threadMessages (only text content, limited to last 10)
@@ -575,6 +848,7 @@ function MealDetailPageContent() {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
+                    userId: user.uid,
                     meal,
                     prefs: prefs || undefined,
                     message: messageText,
@@ -583,11 +857,22 @@ function MealDetailPageContent() {
                 }),
             });
 
+            const data = (await res.json()) as MealThreadReply & { error?: string; message?: string };
+
             if (!res.ok) {
-                throw new Error("Failed to update meal");
+                if (data.error === "CHAT_LIMIT_REACHED") {
+                    setShowUpgradePrompt(true);
+                    // Remove the optimistically added user message
+                    setThreadMessages((prev) => prev.filter((msg) => msg.id !== newUserMsg.id));
+                    return;
+                }
+                throw new Error(data.message || "Failed to update meal");
             }
 
-            const data = (await res.json()) as MealThreadReply;
+            // Update chat count from server response
+            if (typeof data.monthlyChatCount === "number") {
+                setMonthlyChatCount(data.monthlyChatCount);
+            }
 
             const fullReply = data.reply || "";
             const assistantId = `assistant-${Date.now()}`;
@@ -714,8 +999,8 @@ function MealDetailPageContent() {
                             <span className="inline-block self-start px-2 py-0.5 bg-gray-100 rounded-md text-xs font-medium text-gray-600 capitalize mb-2">
                                 {meal.mealType}
                             </span>
-                            <h1 className="text-lg sm:text-xl font-medium text-gray-900 mb-1 line-clamp-2">{meal.name}</h1>
-                            <p className="text-sm text-gray-500 line-clamp-2">{meal.description}</p>
+                            <h1 className="text-lg sm:text-xl font-medium text-gray-900 mb-1">{meal.name}</h1>
+                            <p className="text-sm text-gray-500">{meal.description}</p>
                         </div>
                     </div>
                 </div>
@@ -777,7 +1062,7 @@ function MealDetailPageContent() {
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-2">
                                 <MessageCircle className="w-5 h-5 text-[#4A90E2]" />
-                                <h3 className="font-medium text-gray-900">Ask CartSense about this meal</h3>
+                                <h3 className="font-medium text-gray-900">Ask AI</h3>
                             </div>
                             {prefs?.isPremium ? (
                                 <div className="flex items-center gap-1 px-2 py-1 bg-violet-100 rounded-full">
@@ -785,9 +1070,30 @@ function MealDetailPageContent() {
                                     <span className="text-xs font-medium text-violet-700">Premium</span>
                                 </div>
                             ) : (
-                                <span className="text-xs text-gray-400">
-                                    {FREE_CHAT_LIMIT - chatMessageCount} of {FREE_CHAT_LIMIT} left
-                                </span>
+                                <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full ${
+                                    FREE_CHAT_LIMIT - monthlyChatCount === 0
+                                        ? "bg-red-100"
+                                        : FREE_CHAT_LIMIT - monthlyChatCount === 1
+                                            ? "bg-amber-100"
+                                            : "bg-blue-100"
+                                }`}>
+                                    <MessageCircle className={`w-3 h-3 ${
+                                        FREE_CHAT_LIMIT - monthlyChatCount === 0
+                                            ? "text-red-500"
+                                            : FREE_CHAT_LIMIT - monthlyChatCount === 1
+                                                ? "text-amber-500"
+                                                : "text-blue-500"
+                                    }`} />
+                                    <span className={`text-xs font-medium whitespace-nowrap ${
+                                        FREE_CHAT_LIMIT - monthlyChatCount === 0
+                                            ? "text-red-700"
+                                            : FREE_CHAT_LIMIT - monthlyChatCount === 1
+                                                ? "text-amber-700"
+                                                : "text-blue-700"
+                                    }`}>
+                                        {FREE_CHAT_LIMIT - monthlyChatCount}/{FREE_CHAT_LIMIT} free
+                                    </span>
+                                </div>
                             )}
                         </div>
                         <p className="text-sm text-gray-500 mb-4">
@@ -795,7 +1101,7 @@ function MealDetailPageContent() {
                         </p>
 
                         {threadMessages.length > 0 && (
-                            <div className="max-h-60 overflow-y-auto mb-4 space-y-2 p-3 bg-gray-50 rounded-xl">
+                            <div ref={chatMessagesRef} className="max-h-60 overflow-y-auto mb-4 space-y-2 p-3 bg-gray-50 rounded-xl">
                                 {threadMessages.map((msg) => (
                                     <div
                                         key={msg.id}
@@ -850,59 +1156,84 @@ function MealDetailPageContent() {
                     {/* Ingredients */}
                     <div className="bg-white rounded-2xl border border-gray-100 p-5">
                         <div className="flex items-center justify-between mb-4">
-                            <h3 className="font-medium text-gray-900">
-                                Ingredients ({selectedIngredients.size} of {meal.ingredients.length} selected)
-                            </h3>
+                            <div className="flex items-center gap-2">
+                                <h3 className="font-medium text-gray-900">
+                                    Ingredients ({selectedIngredients.size} of {displayIngredients.length} selected)
+                                </h3>
+                                {enrichingKroger && (
+                                    <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                                        <div className="w-3 h-3 border-2 border-gray-300 border-t-[#4A90E2] rounded-full animate-spin" />
+                                        <span>Loading prices...</span>
+                                    </div>
+                                )}
+                            </div>
                             <button
                                 onClick={toggleAllIngredients}
                                 className="text-sm text-[#4A90E2] hover:underline"
                             >
-                                {selectedIngredients.size === meal.ingredients.length ? "Deselect all" : "Select all"}
+                                {selectedIngredients.size === displayIngredients.length ? "Deselect all" : "Select all"}
                             </button>
                         </div>
-                        <p className="text-xs text-gray-500 mb-4">Uncheck items you already have at home</p>
+                        <p className="text-xs text-gray-500 mb-4">Tap an ingredient to view details or swap it</p>
                         <ul className="space-y-3">
-                            {meal.ingredients.map((ing, idx) => (
+                            {displayIngredients.map((ing, idx) => (
                                 <li
                                     key={idx}
-                                    onClick={() => toggleIngredient(idx)}
-                                    className={`flex items-center gap-3 pb-3 border-b border-gray-50 last:border-0 last:pb-0 cursor-pointer transition-opacity ${
+                                    className={`flex items-center gap-3 pb-3 border-b border-gray-50 last:border-0 last:pb-0 transition-opacity ${
                                         !selectedIngredients.has(idx) ? "opacity-50" : ""
                                     }`}
                                 >
-                                    {krogerConnected && ing.productImageUrl ? (
-                                        <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
-                                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                                            <img
-                                                src={ing.productImageUrl}
-                                                alt={ing.productName || ing.name}
-                                                className="w-full h-full object-cover"
-                                            />
-                                        </div>
-                                    ) : null}
-                                    <div className="flex-1 min-w-0">
-                                        <div>
-                                            <span className={`font-medium ${selectedIngredients.has(idx) ? "text-gray-900" : "text-gray-500 line-through"}`}>{ing.name}</span>
-                                            {krogerConnected && ing.stockLevel && ing.stockLevel !== "HIGH" && (
-                                                <span className={`inline-block ml-2 text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap align-middle ${
-                                                    ing.stockLevel === "LOW"
-                                                        ? "bg-amber-100 text-amber-700"
-                                                        : "bg-red-100 text-red-700"
-                                                }`}>
-                                                    {ing.stockLevel === "LOW" ? "Low Stock" : "Out of Stock"}
-                                                </span>
-                                            )}
-                                        </div>
-                                        <div className="text-sm text-gray-500">
-                                            {ing.quantity}
-                                            {ing.category && ` • ${ing.category}`}
-                                            {krogerConnected && ing.productAisle && ` • ${ing.productAisle}`}
-                                            {krogerConnected && typeof ing.price === "number" && (
-                                                <span className="text-[#4A90E2]"> • ${ing.price.toFixed(2)}{ing.soldBy === "WEIGHT" ? "/lb" : ""}</span>
-                                            )}
+                                    {/* Clickable area for opening modal */}
+                                    <div
+                                        onClick={() => {
+                                            // Clear previous swap state when selecting a new ingredient
+                                            setSwapAlternatives(null);
+                                            setShowSwapOptions(false);
+                                            setSelectedIngredientIndex(idx);
+                                        }}
+                                        className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+                                    >
+                                        {krogerConnected && ing.productImageUrl ? (
+                                            <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
+                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                <img
+                                                    src={ing.productImageUrl}
+                                                    alt={ing.productName || ing.name}
+                                                    className="w-full h-full object-cover"
+                                                />
+                                            </div>
+                                        ) : null}
+                                        <div className="flex-1 min-w-0">
+                                            <div>
+                                                <span className={`font-medium ${selectedIngredients.has(idx) ? "text-gray-900" : "text-gray-500 line-through"}`}>{ing.name}</span>
+                                                {krogerConnected && ing.stockLevel && ing.stockLevel !== "HIGH" && (
+                                                    <span className={`inline-block ml-2 text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap align-middle ${
+                                                        ing.stockLevel === "LOW"
+                                                            ? "bg-amber-100 text-amber-700"
+                                                            : "bg-red-100 text-red-700"
+                                                    }`}>
+                                                        {ing.stockLevel === "LOW" ? "Low Stock" : "Out of Stock"}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="text-sm text-gray-500">
+                                                {ing.quantity}
+                                                {ing.category && ` • ${ing.category}`}
+                                                {krogerConnected && ing.productAisle && ` • ${ing.productAisle}`}
+                                                {krogerConnected && typeof ing.price === "number" && (
+                                                    <span className="text-[#4A90E2]"> • ${ing.price.toFixed(2)}{ing.soldBy === "WEIGHT" ? "/lb" : ""}</span>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="flex-shrink-0">
+                                    {/* Checkbox for selection */}
+                                    <div
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleIngredient(idx);
+                                        }}
+                                        className="flex-shrink-0 cursor-pointer p-1"
+                                    >
                                         <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
                                             selectedIngredients.has(idx)
                                                 ? "bg-[#4A90E2] border-[#4A90E2]"
@@ -979,13 +1310,22 @@ function MealDetailPageContent() {
 
                         <button
                             onClick={handleSaveMeal}
-                            disabled={savingMeal}
-                            className="w-full py-4 bg-white border-2 border-[#4A90E2] text-[#4A90E2] rounded-2xl hover:bg-[#4A90E2]/5 transition-colors active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            disabled={savingMeal || isMealAlreadySaved}
+                            className={`w-full py-4 rounded-2xl transition-colors active:scale-[0.98] disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
+                                isMealAlreadySaved
+                                    ? "bg-emerald-50 border-2 border-emerald-200 text-emerald-600"
+                                    : "bg-white border-2 border-[#4A90E2] text-[#4A90E2] hover:bg-[#4A90E2]/5 disabled:opacity-70"
+                            }`}
                         >
                             {savingMeal ? (
                                 <>
                                     <div className="w-5 h-5 border-2 border-[#4A90E2]/30 border-t-[#4A90E2] rounded-full animate-spin" />
                                     <span>Saving...</span>
+                                </>
+                            ) : isMealAlreadySaved ? (
+                                <>
+                                    <CheckCircle className="w-5 h-5" />
+                                    <span>Meal already saved</span>
                                 </>
                             ) : (
                                 <>
@@ -1069,6 +1409,220 @@ function MealDetailPageContent() {
                             >
                                 Done
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Ingredient Detail Modal */}
+            {selectedIngredientIndex !== null && displayIngredients[selectedIngredientIndex] && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
+                    <div className="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl max-h-[80vh] flex flex-col">
+                        {/* Modal Header */}
+                        <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                            <h3 className="font-medium text-gray-900">Ingredient Details</h3>
+                            <button
+                                onClick={() => setSelectedIngredientIndex(null)}
+                                disabled={swappingIngredient}
+                                className="p-2 hover:bg-gray-100 rounded-full transition-colors disabled:opacity-50"
+                            >
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+
+                        {/* Modal Content */}
+                        <div className="flex-1 overflow-y-auto p-4">
+                            {(() => {
+                                const ing = displayIngredients[selectedIngredientIndex];
+                                return (
+                                    <div className="space-y-4">
+                                        {/* Product Image */}
+                                        {krogerConnected && ing.productImageUrl ? (
+                                            <div className="w-full aspect-square max-w-[200px] mx-auto rounded-xl overflow-hidden bg-gray-100">
+                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                <img
+                                                    src={ing.productImageUrl}
+                                                    alt={ing.productName || ing.name}
+                                                    className="w-full h-full object-cover"
+                                                />
+                                            </div>
+                                        ) : (
+                                            <div className="w-full aspect-square max-w-[200px] mx-auto rounded-xl bg-gray-100 flex items-center justify-center">
+                                                <ShoppingCart className="w-16 h-16 text-gray-300" />
+                                            </div>
+                                        )}
+
+                                        {/* Ingredient Name */}
+                                        <div className="text-center">
+                                            <h4 className="text-lg font-medium text-gray-900">{ing.name}</h4>
+                                            {krogerConnected && ing.productName && ing.productName !== ing.name && (
+                                                <p className="text-sm text-gray-500 mt-1">{ing.productName}</p>
+                                            )}
+                                        </div>
+
+                                        {/* Details Grid */}
+                                        <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+                                            <div className="flex justify-between">
+                                                <span className="text-sm text-gray-500">Quantity</span>
+                                                <span className="text-sm font-medium text-gray-900">{ing.quantity}</span>
+                                            </div>
+                                            {ing.category && (
+                                                <div className="flex justify-between">
+                                                    <span className="text-sm text-gray-500">Category</span>
+                                                    <span className="text-sm font-medium text-gray-900">{ing.category}</span>
+                                                </div>
+                                            )}
+                                            {krogerConnected && ing.productAisle && (
+                                                <div className="flex justify-between">
+                                                    <span className="text-sm text-gray-500">Aisle</span>
+                                                    <span className="text-sm font-medium text-gray-900">{ing.productAisle}</span>
+                                                </div>
+                                            )}
+                                            {krogerConnected && typeof ing.price === "number" && (
+                                                <div className="flex justify-between">
+                                                    <span className="text-sm text-gray-500">Price</span>
+                                                    <span className="text-sm font-medium text-[#4A90E2]">
+                                                        ${ing.price.toFixed(2)}{ing.soldBy === "WEIGHT" ? "/lb" : ""}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            {krogerConnected && ing.productSize && (
+                                                <div className="flex justify-between">
+                                                    <span className="text-sm text-gray-500">Size</span>
+                                                    <span className="text-sm font-medium text-gray-900">{ing.productSize}</span>
+                                                </div>
+                                            )}
+                                            {krogerConnected && ing.stockLevel && (
+                                                <div className="flex justify-between">
+                                                    <span className="text-sm text-gray-500">Stock</span>
+                                                    <span className={`text-sm font-medium ${
+                                                        ing.stockLevel === "HIGH"
+                                                            ? "text-emerald-600"
+                                                            : ing.stockLevel === "LOW"
+                                                                ? "text-amber-600"
+                                                                : "text-red-600"
+                                                    }`}>
+                                                        {ing.stockLevel === "HIGH"
+                                                            ? "In Stock"
+                                                            : ing.stockLevel === "LOW"
+                                                                ? "Low Stock"
+                                                                : "Out of Stock"}
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Selection Toggle */}
+                                        <div
+                                            onClick={() => toggleIngredient(selectedIngredientIndex)}
+                                            className="flex items-center justify-between p-3 bg-gray-50 rounded-xl cursor-pointer"
+                                        >
+                                            <span className="text-sm text-gray-700">Include in shopping list</span>
+                                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+                                                selectedIngredients.has(selectedIngredientIndex)
+                                                    ? "bg-[#4A90E2] border-[#4A90E2]"
+                                                    : "border-gray-300 bg-white"
+                                            }`}>
+                                                {selectedIngredients.has(selectedIngredientIndex) && (
+                                                    <CheckCircle className="w-4 h-4 text-white" />
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+                        </div>
+
+                        {/* Modal Footer with Swap Button */}
+                        <div className="p-4 border-t border-gray-100 space-y-3">
+                            {showSwapOptions && swapAlternatives ? (
+                                <>
+                                    <p className="text-sm text-gray-600 font-medium mb-2">Choose a different product:</p>
+                                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                                        {swapAlternatives.map((product) => (
+                                            <button
+                                                key={product.krogerProductId}
+                                                onClick={() => handleSelectSwap(product)}
+                                                disabled={swappingIngredient}
+                                                className="w-full p-3 bg-gray-50 hover:bg-[#4A90E2]/10 border border-gray-200 hover:border-[#4A90E2] rounded-xl text-left transition-colors disabled:opacity-50 flex items-center gap-3"
+                                            >
+                                                {product.imageUrl ? (
+                                                    <div className="w-14 h-14 rounded-lg overflow-hidden bg-white flex-shrink-0">
+                                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                        <img
+                                                            src={product.imageUrl}
+                                                            alt={product.name}
+                                                            className="w-full h-full object-cover"
+                                                        />
+                                                    </div>
+                                                ) : (
+                                                    <div className="w-14 h-14 rounded-lg bg-gray-200 flex items-center justify-center flex-shrink-0">
+                                                        <ShoppingCart className="w-6 h-6 text-gray-400" />
+                                                    </div>
+                                                )}
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="font-medium text-gray-900 text-sm line-clamp-2">{product.name}</div>
+                                                    <div className="text-xs text-gray-500 mt-0.5">
+                                                        {product.size && <span>{product.size}</span>}
+                                                        {product.aisle && <span> • {product.aisle}</span>}
+                                                    </div>
+                                                    {typeof product.price === "number" && (
+                                                        <div className="text-sm font-medium text-[#4A90E2] mt-0.5">
+                                                            ${product.price.toFixed(2)}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <button
+                                        onClick={() => {
+                                            setShowSwapOptions(false);
+                                            setSwapAlternatives(null);
+                                        }}
+                                        className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl font-medium"
+                                    >
+                                        Cancel
+                                    </button>
+                                </>
+                            ) : (
+                                <>
+                                    {krogerConnected && krogerStoreSet ? (
+                                        <button
+                                            onClick={handleShowSwapOptions}
+                                            disabled={loadingSwapSuggestions}
+                                            className="w-full py-3 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white rounded-xl font-medium flex items-center justify-center gap-2 disabled:opacity-70"
+                                        >
+                                            {loadingSwapSuggestions ? (
+                                                <>
+                                                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                    <span>Finding products...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <RefreshCw className="w-5 h-5" />
+                                                    <span>Swap Product</span>
+                                                </>
+                                            )}
+                                        </button>
+                                    ) : (
+                                        <p className="text-sm text-gray-500 text-center py-2">
+                                            Connect Kroger to swap products
+                                        </p>
+                                    )}
+                                    <button
+                                        onClick={() => {
+                                            setSelectedIngredientIndex(null);
+                                            setShowSwapOptions(false);
+                                            setSwapAlternatives(null);
+                                        }}
+                                        disabled={loadingSwapSuggestions}
+                                        className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl font-medium disabled:opacity-50"
+                                    >
+                                        Close
+                                    </button>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>

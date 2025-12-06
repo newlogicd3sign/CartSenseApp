@@ -1,16 +1,22 @@
 // app/api/meals/stream/route.ts
 // Streaming endpoint for meal generation - reduces perceived wait time
+// Note: Kroger enrichment is lazy-loaded on the meal detail page, not during generation
 import OpenAI from "openai";
 import { randomUUID, createHash } from "crypto";
-import { searchKrogerProduct } from "@/lib/kroger";
-import { adminDb, adminStorage } from "@/lib/firebaseAdmin";
+import { adminDb } from "@/lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
+import { v2 as cloudinary } from "cloudinary";
+
+// Configure Cloudinary
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
-
-const ENABLE_KROGER = process.env.ENABLE_KROGER_INTEGRATION === "true";
 const FREE_TIER_MONTHLY_LIMIT = 10;
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -135,88 +141,6 @@ function normalizeString(value: unknown, fallback = ""): string {
     return String(value);
 }
 
-// Fallback mapping for common ingredient patterns when AI doesn't provide grocerySearchTerm
-function getGrocerySearchFallback(ingredientName: string): string | null {
-    const lower = ingredientName.toLowerCase().trim();
-
-    // Prep words to strip from the beginning
-    const prepWords = [
-        "sliced", "diced", "chopped", "minced", "grated", "shredded",
-        "cubed", "julienned", "thinly sliced", "finely chopped", "finely diced",
-        "freshly ground", "freshly grated", "freshly squeezed", "coarsely chopped",
-        "roughly chopped", "crushed", "mashed", "pureed", "peeled", "deveined",
-        "trimmed", "halved", "quartered", "whole", "fresh", "frozen", "thawed",
-        "cooked", "raw", "uncooked", "prepared", "rinsed", "drained",
-    ];
-
-    // Remove prep words from the start
-    let cleaned = lower;
-    for (const prep of prepWords) {
-        if (cleaned.startsWith(prep + " ")) {
-            cleaned = cleaned.slice(prep.length + 1).trim();
-        }
-    }
-
-    // Specific mappings for common problematic ingredients
-    const specificMappings: Record<string, string> = {
-        // Produce
-        "banana": "fresh bananas",
-        "bananas": "fresh bananas",
-        "apple": "fresh apples",
-        "apples": "fresh apples",
-        "onion": "yellow onion",
-        "onions": "yellow onions",
-        "garlic": "fresh garlic",
-        "garlic cloves": "fresh garlic",
-        "ginger": "fresh ginger",
-        "lemon": "fresh lemons",
-        "lemons": "fresh lemons",
-        "lime": "fresh limes",
-        "limes": "fresh limes",
-        "avocado": "fresh avocado",
-        "avocados": "fresh avocados",
-        "tomato": "fresh tomatoes",
-        "tomatoes": "fresh tomatoes",
-        "spinach": "fresh spinach",
-        "kale": "fresh kale",
-        "lettuce": "romaine lettuce",
-        "cilantro": "fresh cilantro",
-        "parsley": "fresh parsley",
-        "basil": "fresh basil",
-        "mint": "fresh mint",
-        // Dairy
-        "mozzarella": "mozzarella cheese",
-        "cheddar": "cheddar cheese",
-        "parmesan": "parmesan cheese",
-        "feta": "feta cheese",
-        "cream cheese": "cream cheese",
-        "sour cream": "sour cream",
-        // Proteins
-        "chicken breast": "boneless skinless chicken breast",
-        "chicken breasts": "boneless skinless chicken breast",
-        "chicken thighs": "boneless skinless chicken thighs",
-        "ground beef": "ground beef",
-        "ground turkey": "ground turkey",
-        "salmon": "fresh salmon",
-        "shrimp": "raw shrimp",
-        // Eggs
-        "egg": "large eggs",
-        "eggs": "large eggs",
-    };
-
-    // Check specific mappings first
-    if (specificMappings[cleaned]) {
-        return specificMappings[cleaned];
-    }
-
-    // If we cleaned something, return the cleaned version
-    if (cleaned !== lower) {
-        return cleaned;
-    }
-
-    return null;
-}
-
 function normalizeIngredient(raw: unknown): Ingredient {
     const r = raw as Record<string, unknown>;
     const priceValue = r.price != null && Number.isFinite(Number(r.price)) ? Number(r.price) : undefined;
@@ -296,20 +220,25 @@ async function getCachedImage(cacheKey: string): Promise<string | null> {
     }
 }
 
-async function uploadImageToStorage(cacheKey: string, imageBuffer: Buffer): Promise<string> {
-    const bucket = adminStorage.bucket();
-    const file = bucket.file(`meal-images/${cacheKey}.png`);
-
-    await file.save(imageBuffer, {
-        metadata: {
-            contentType: "image/png",
-            cacheControl: "public, max-age=31536000", // Cache for 1 year
-        },
+async function uploadImageToCloudinary(cacheKey: string, imageBuffer: Buffer): Promise<string> {
+    return new Promise((resolve, reject) => {
+        cloudinary.uploader.upload_stream(
+            {
+                public_id: `meal-images/${cacheKey}`,
+                folder: "cartsense",
+                resource_type: "image",
+            },
+            (error, result) => {
+                if (error) {
+                    reject(error);
+                } else if (result) {
+                    resolve(result.secure_url);
+                } else {
+                    reject(new Error("No result from Cloudinary"));
+                }
+            }
+        ).end(imageBuffer);
     });
-
-    await file.makePublic();
-
-    return `https://storage.googleapis.com/${bucket.name}/meal-images/${cacheKey}.png`;
 }
 
 async function downloadImage(url: string): Promise<Buffer> {
@@ -358,9 +287,9 @@ async function getOrGenerateImage(meal: Meal): Promise<string | undefined> {
 
         const tempUrl = result.data?.[0]?.url;
         if (tempUrl) {
-            // Download from DALL-E and upload to Firebase Storage for permanent URL
+            // Download from DALL-E and upload to Cloudinary for permanent URL
             const imageBuffer = await downloadImage(tempUrl);
-            const permanentUrl = await uploadImageToStorage(cacheKey, imageBuffer);
+            const permanentUrl = await uploadImageToCloudinary(cacheKey, imageBuffer);
 
             // Cache the permanent URL in Firestore
             cacheImage(cacheKey, permanentUrl, meal.name).catch(() => {});
@@ -386,8 +315,8 @@ async function loadUserHistoryForModel(uid?: string): Promise<HistoryEventForMod
             return {
                 type: d.type ?? "unknown",
                 mealId: d.mealId ?? null,
-                promptSnippet: d.prompt?.slice(0, 140) ?? null,
-                messageSnippet: d.message?.slice(0, 140) ?? null,
+                promptSnippet: d.prompt ?? null,
+                messageSnippet: d.message ?? null,
             };
         });
     } catch {
@@ -419,7 +348,58 @@ async function loadDoctorInstructions(uid?: string): Promise<DoctorContextForMod
 
 // ---------- OpenAI streaming ----------
 
-function buildSystemPrompt(doctorContext: DoctorContextForModel | null): string {
+// Detect if prompt is a broad meal plan request vs specific recipe search
+function isBroadMealPlanRequest(prompt: string): boolean {
+    const lower = prompt.toLowerCase().trim();
+
+    // List of specific proteins/ingredients that indicate a focused recipe search
+    const hasSpecificIngredient = /\b(ground\s*(chicken|turkey|beef|pork)|chicken|turkey|beef|pork|fish|salmon|shrimp|tofu|steak|lamb|eggs?|pasta|rice|quinoa|beans|lentils|tuna|cod|tilapia)\b/i.test(lower);
+
+    // If they mention a specific ingredient, it's almost always a specific request
+    // UNLESS they also mention broad planning keywords
+    if (hasSpecificIngredient) {
+        const hasBroadKeyword = /\b(meal\s*plan|for\s*the\s*week|weekly|daily\s*meals|full\s*day|breakfast.*lunch.*dinner)\b/i.test(lower);
+        if (!hasBroadKeyword) {
+            console.log("[STREAM] Detected specific ingredient request:", lower);
+            return false; // NOT a broad request
+        }
+    }
+
+    // Patterns that indicate broad meal planning (no specific ingredient)
+    const broadPatterns = [
+        /meal\s*plan/i,
+        /week('s)?\s*(worth|of)?\s*meals?/i,
+        /meals?\s*for\s*(the|this)?\s*week/i,
+        /daily\s*meals?/i,
+        /full\s*day/i,
+        /day('s)?\s*(worth|of)?\s*meals?/i,
+        /breakfast.*lunch.*dinner/i,
+        /what\s*(should|can)\s*i\s*eat/i,
+        /plan\s*my\s*(meals?|eating)/i,
+        /give\s*me\s*(some|a\s*few|multiple)?\s*meal\s*ideas/i,
+        /^meals?\s*$/i,  // just "meal" or "meals" alone
+        /^healthy\s+meals?$/i,  // just "healthy meal(s)"
+    ];
+
+    for (const pattern of broadPatterns) {
+        if (pattern.test(lower)) {
+            console.log("[STREAM] Detected broad meal plan request:", lower);
+            return true;
+        }
+    }
+
+    // Check for generic "meal ideas" without specific ingredients
+    if (lower.includes("meal ideas") && !hasSpecificIngredient) {
+        console.log("[STREAM] Detected generic meal ideas request:", lower);
+        return true;
+    }
+
+    // Default: if no broad pattern matched, treat as specific request
+    console.log("[STREAM] Defaulting to specific request:", lower);
+    return false;
+}
+
+function buildSystemPrompt(prompt: string, doctorContext: DoctorContextForModel | null, isPremium: boolean): string {
     const doctorConstraintsText = doctorContext
         ? `Doctor-imposed restrictions (hard constraints):
 - Blocked ingredients: ${doctorContext.blockedIngredients.join(", ") || "None"}
@@ -428,14 +408,34 @@ function buildSystemPrompt(doctorContext: DoctorContextForModel | null): string 
 You MUST strictly avoid all blocked ingredients and food groups.`
         : "Doctor-imposed restrictions: None on file.";
 
+    // Detect if this is a broad meal plan or specific recipe search
+    const isBroadRequest = isBroadMealPlanRequest(prompt);
+
+    // Different output instructions based on request type
+    let mealCountInstruction: string;
+    if (isBroadRequest) {
+        // Broad meal plan: 1 of each type (free) or 2 of each (premium)
+        const mealsPerType = isPremium ? 2 : 1;
+        mealCountInstruction = `This is a BROAD meal plan request. Generate exactly ${mealsPerType} breakfast, ${mealsPerType} lunch, ${mealsPerType} dinner, and ${mealsPerType} snack (${mealsPerType * 4} meals total). This gives the user a complete day's worth of meals.`;
+    } else {
+        // Specific recipe search: give them options of the same type
+        mealCountInstruction = `This is a SPECIFIC recipe request. The user is looking for a particular type of dish or ingredient.
+Return 3-4 different recipe OPTIONS that match their request.
+All recipes can be the same meal type - do NOT force a mix of breakfast/lunch/dinner/snack.
+For example, if they ask for "ground turkey recipes", give them 3-4 different ground turkey recipe ideas to choose from.
+Pick the most appropriate mealType for what they're asking (e.g., "ground chicken meal" = probably dinner options).`;
+    }
+
     return `You are CartSense, an AI meal planner that suggests realistic meals built from grocery-store ingredients.
 
 Constraints:
 - Always respect allergies and sensitivities from the user.
 - Always respect doctor-imposed restrictions.
 - Focus on heart-conscious meals (lower saturated fat, reasonable sodium) by default.
-- Include a mix of breakfast, lunch, dinner, and snack options when appropriate.
 - Use ingredients that could reasonably be found at Kroger or similar U.S. grocery stores.
+
+OUTPUT INSTRUCTIONS:
+${mealCountInstruction}
 
 ${doctorConstraintsText}
 
@@ -535,16 +535,14 @@ export async function POST(request: Request) {
             let monthlyPromptCount = 0;
             let promptPeriodStart: Date | null = null;
             let needsReset = false;
-
-            let defaultKrogerLocationId: string | null = null;
+            let isPremium = false;
 
             if (uid) {
                 const userSnap = await adminDb.collection("users").doc(uid).get();
                 if (userSnap.exists) {
-                    const userData = userSnap.data() as { monthlyPromptCount?: number; promptPeriodStart?: any; isPremium?: boolean; defaultKrogerLocationId?: string } | undefined;
-                    defaultKrogerLocationId = userData?.defaultKrogerLocationId || null;
+                    const userData = userSnap.data() as { monthlyPromptCount?: number; promptPeriodStart?: any; isPremium?: boolean } | undefined;
                     if (userData) {
-                        const isPremium = userData.isPremium ?? false;
+                        isPremium = userData.isPremium ?? false;
                         monthlyPromptCount = userData.monthlyPromptCount ?? 0;
 
                         if (userData.promptPeriodStart) {
@@ -591,7 +589,7 @@ export async function POST(request: Request) {
                 response_format: { type: "json_object" },
                 stream: true,
                 messages: [
-                    { role: "system", content: buildSystemPrompt(doctorContext) },
+                    { role: "system", content: buildSystemPrompt(prompt, doctorContext, isPremium) },
                     { role: "user", content: JSON.stringify({ userPrompt: prompt, prefs: prefs || {}, history, doctorInstructions: doctorContext }) },
                 ],
             });
@@ -644,48 +642,8 @@ export async function POST(request: Request) {
 
             await Promise.all(imagePromises);
 
-            // Kroger enrichment (optional, in parallel)
-            if (ENABLE_KROGER && meals.length > 0) {
-                await writer.write(sendEvent({ type: "status", message: "Finding products at your store..." }));
-
-                const enrichPromises = meals.slice(0, 3).map(async (meal, mealIndex) => {
-                    const enrichedIngredients = await Promise.all(
-                        meal.ingredients.map(async (ingredient) => {
-                            try {
-                                // Use grocerySearchTerm if available, with fallback mapping, then fall back to name
-                                const searchTerm = ingredient.grocerySearchTerm
-                                    || getGrocerySearchFallback(ingredient.name)
-                                    || ingredient.name;
-                                const match = await searchKrogerProduct(searchTerm, {
-                                    locationId: defaultKrogerLocationId || undefined,
-                                });
-                                if (!match) return ingredient;
-                                return {
-                                    ...ingredient,
-                                    krogerProductId: match.krogerProductId,
-                                    productName: match.name,
-                                    productImageUrl: match.imageUrl,
-                                    productSize: match.size,
-                                    productAisle: match.aisle,
-                                    price: match.price, // Only use real Kroger prices, never estimated
-                                    soldBy: match.soldBy, // WEIGHT = per lb, UNIT = per item
-                                    stockLevel: match.stockLevel, // HIGH, LOW, or TEMPORARILY_OUT_OF_STOCK
-                                    available: match.available, // Whether product is available in-store
-                                    aisle: ingredient.aisle ?? match.aisle,
-                                };
-                            } catch {
-                                return ingredient;
-                            }
-                        })
-                    );
-
-                    const updatedMeal = { ...meals[mealIndex], ingredients: enrichedIngredients };
-                    meals[mealIndex] = updatedMeal;
-                    await writer.write(sendEvent({ type: "meal_updated", meal: updatedMeal, index: mealIndex }));
-                });
-
-                await Promise.all(enrichPromises);
-            }
+            // Note: Kroger enrichment is now lazy-loaded when viewing a meal detail page
+            // This saves API calls since users may not view all generated meals
 
             // Update monthly prompt count
             let newMonthlyPromptCount = monthlyPromptCount;

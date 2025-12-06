@@ -2,7 +2,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { randomUUID, createHash } from "crypto";
-import { searchKrogerProduct } from "@/lib/kroger";
 import { adminDb } from "@/lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
 
@@ -10,7 +9,6 @@ const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY, // ✅ FIXED: process.env.OPENAI_API_KEY
 });
 
-const ENABLE_KROGER = process.env.ENABLE_KROGER_INTEGRATION === "true";
 const FREE_TIER_MONTHLY_LIMIT = 10;
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -271,84 +269,6 @@ function messageContentToString(content: unknown): string {
     return "";
 }
 
-// ---------- Kroger enrichment ----------
-
-const MAX_MEALS_WITH_PRODUCTS = 3;
-const MAX_INGREDIENTS_PER_MEAL = 6;
-
-async function enrichMealsWithKroger(meals: Meal[]): Promise<Meal[]> {
-    if (!ENABLE_KROGER) {
-        console.log("[MEALS] Kroger enrichment disabled via env flag");
-        return meals;
-    }
-
-    console.log(
-        `[MEALS] Enriching up to ${MAX_MEALS_WITH_PRODUCTS} meals with Kroger products`,
-    );
-
-    const limitedMeals = meals.slice(0, MAX_MEALS_WITH_PRODUCTS);
-
-    const enrichedMeals = await Promise.all(
-        limitedMeals.map(async (meal, mealIndex) => {
-            console.log(
-                `[MEALS] Enriching meal ${mealIndex + 1}: ${meal.name} (${meal.id})`,
-            );
-            const enrichedIngredients = await Promise.all(
-                meal.ingredients.map(async (ingredient, index) => {
-                    if (index >= MAX_INGREDIENTS_PER_MEAL) return ingredient;
-
-                    try {
-                        console.log(
-                            `[MEALS]  -> searching Kroger for ingredient "${ingredient.name}"`,
-                        );
-                        const match = await searchKrogerProduct(ingredient.name);
-
-                        if (!match) {
-                            console.log(
-                                `[MEALS]  -> no Kroger match for "${ingredient.name}"`,
-                            );
-                            return ingredient;
-                        }
-
-                        console.log(
-                            `[MEALS]  -> matched Kroger product "${match.name}" (${
-                                match.krogerProductId
-                            })`,
-                        );
-
-                        const enriched: Ingredient = {
-                            ...ingredient,
-                            krogerProductId: match.krogerProductId,
-                            productName: match.name,
-                            productImageUrl: match.imageUrl,
-                            productSize: match.size,
-                            productAisle: match.aisle,
-                            price: match.price, // Only use real Kroger prices, never estimated
-                            aisle: ingredient.aisle ?? match.aisle ?? ingredient.aisle,
-                        };
-
-                        return enriched;
-                    } catch (err) {
-                        console.error(
-                            "[MEALS] Kroger enrichment error for ingredient:",
-                            ingredient.name,
-                            err,
-                        );
-                        return ingredient;
-                    }
-                }),
-            );
-
-            return {
-                ...meal,
-                ingredients: enrichedIngredients,
-            };
-        }),
-    );
-
-    return [...enrichedMeals, ...meals.slice(MAX_MEALS_WITH_PRODUCTS)];
-}
-
 // ---------- Image generation (hero images) with Firestore caching ----------
 
 const MAX_MEALS_WITH_IMAGES = 3;
@@ -549,12 +469,12 @@ async function loadUserHistoryForModel(
 
             const promptSnippet =
                 d.prompt && typeof d.prompt === "string"
-                    ? d.prompt.slice(0, 140)
+                    ? d.prompt
                     : null;
 
             const messageSnippet =
                 d.message && typeof d.message === "string"
-                    ? d.message.slice(0, 140)
+                    ? d.message
                     : null;
 
             return {
@@ -656,6 +576,57 @@ async function runModeration(prompt: string): Promise<boolean> {
     return flagged;
 }
 
+// Detect if prompt is a broad meal plan request vs specific recipe search
+function isBroadMealPlanRequest(prompt: string): boolean {
+    const lower = prompt.toLowerCase().trim();
+
+    // List of specific proteins/ingredients that indicate a focused recipe search
+    const hasSpecificIngredient = /\b(ground\s*(chicken|turkey|beef|pork)|chicken|turkey|beef|pork|fish|salmon|shrimp|tofu|steak|lamb|eggs?|pasta|rice|quinoa|beans|lentils|tuna|cod|tilapia)\b/i.test(lower);
+
+    // If they mention a specific ingredient, it's almost always a specific request
+    // UNLESS they also mention broad planning keywords
+    if (hasSpecificIngredient) {
+        const hasBroadKeyword = /\b(meal\s*plan|for\s*the\s*week|weekly|daily\s*meals|full\s*day|breakfast.*lunch.*dinner)\b/i.test(lower);
+        if (!hasBroadKeyword) {
+            console.log("[MEALS] Detected specific ingredient request:", lower);
+            return false; // NOT a broad request
+        }
+    }
+
+    // Patterns that indicate broad meal planning (no specific ingredient)
+    const broadPatterns = [
+        /meal\s*plan/i,
+        /week('s)?\s*(worth|of)?\s*meals?/i,
+        /meals?\s*for\s*(the|this)?\s*week/i,
+        /daily\s*meals?/i,
+        /full\s*day/i,
+        /day('s)?\s*(worth|of)?\s*meals?/i,
+        /breakfast.*lunch.*dinner/i,
+        /what\s*(should|can)\s*i\s*eat/i,
+        /plan\s*my\s*(meals?|eating)/i,
+        /give\s*me\s*(some|a\s*few|multiple)?\s*meal\s*ideas/i,
+        /^meals?\s*$/i,  // just "meal" or "meals" alone
+        /^healthy\s+meals?$/i,  // just "healthy meal(s)"
+    ];
+
+    for (const pattern of broadPatterns) {
+        if (pattern.test(lower)) {
+            console.log("[MEALS] Detected broad meal plan request:", lower);
+            return true;
+        }
+    }
+
+    // Check for generic "meal ideas" without specific ingredients
+    if (lower.includes("meal ideas") && !hasSpecificIngredient) {
+        console.log("[MEALS] Detected generic meal ideas request:", lower);
+        return true;
+    }
+
+    // Default: if no broad pattern matched, treat as specific request
+    console.log("[MEALS] Defaulting to specific request:", lower);
+    return false;
+}
+
 async function generateMealsFromModel(
     prompt: string,
     prefs: UserPrefs,
@@ -672,6 +643,10 @@ async function generateMealsFromModel(
         "[MEALS] Doctor context present:",
         Boolean(doctorContext),
     );
+
+    // Detect request type
+    const isBroadRequest = isBroadMealPlanRequest(prompt);
+    console.log("[MEALS] Is broad meal plan request:", isBroadRequest);
 
     const doctorConstraintsText = doctorContext
         ? `
@@ -706,6 +681,23 @@ These are preferences, not allergies. Avoid these ingredients unless the user sp
 `.trim()
         : "";
 
+    // Different instructions based on request type
+    const outputInstructions = isBroadRequest
+        ? `
+OUTPUT QUANTITY:
+This is a BROAD meal plan request. Return exactly 4 meals:
+- 1 breakfast
+- 1 lunch
+- 1 dinner
+- 1 snack
+This gives the user a complete day's worth of meals.`
+        : `
+OUTPUT QUANTITY:
+This is a SPECIFIC recipe request. The user is looking for a particular type of dish or ingredient.
+Return 3-4 different recipe OPTIONS that match their request (all can be the same meal type).
+For example, if they ask for "ground turkey recipes", give them 3-4 different ground turkey recipe ideas to choose from.
+Do NOT force a mix of breakfast/lunch/dinner/snack - just give them multiple variations of what they asked for.`;
+
     const systemPrompt = `
 You are CartSense, an AI meal planner that suggests realistic meals built from grocery-store ingredients.
 
@@ -714,7 +706,6 @@ Constraints:
 - Always respect doctor-imposed restrictions from the user profile (blocked ingredients and food groups).
 - Avoid using ingredients the user has marked as disliked (preference, not allergy).
 - Focus on heart-conscious meals (lower saturated fat, reasonable sodium) by default.
-- Include a mix of breakfast, lunch, dinner, and snack options when appropriate.
 - Use ingredients that could reasonably be found at Kroger or similar U.S. grocery stores.
 - Use the provided "history" of user interactions to infer preferences:
   - Which meal types they save and view
@@ -722,6 +713,8 @@ Constraints:
   - Their past prompts
 - Subtly bias toward what they seem to like (proteins, meal types, flavor patterns),
   and away from what they often remove or complain about.
+
+${outputInstructions}
 
 ${doctorConstraintsText}
 
@@ -933,17 +926,6 @@ export async function POST(request: Request) {
         );
         let meals = normalizeMealsFromModel(aiMeals);
         console.log("[MEALS] After normalization:", meals.length, "meal(s)");
-
-        // Optional Kroger enrichment
-        if (ENABLE_KROGER && meals.length > 0) {
-            console.log("[MEALS] Running Kroger enrichment");
-            meals = await enrichMealsWithKroger(meals);
-        } else {
-            console.log(
-                "[MEALS] Skipping Kroger enrichment. ENABLE_KROGER=",
-                ENABLE_KROGER,
-            );
-        }
 
         // 🖼 Attach hero images (first few meals)
         if (meals.length > 0) {

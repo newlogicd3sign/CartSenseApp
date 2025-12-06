@@ -108,7 +108,35 @@ function SetupPageContent() {
 
     useEffect(() => {
         setAccentColor(getRandomAccentColor());
+
+        // Restore form data from localStorage (survives OAuth redirect)
+        const savedFormData = localStorage.getItem("setupFormData");
+        if (savedFormData) {
+            try {
+                const data = JSON.parse(savedFormData);
+                if (data.name) setName(data.name);
+                if (data.dietType) setDietType(data.dietType);
+                if (data.selectedAllergies) setSelectedAllergies(data.selectedAllergies);
+                if (data.selectedSensitivities) setSelectedSensitivities(data.selectedSensitivities);
+                if (data.selectedDislikedFoods) setSelectedDislikedFoods(data.selectedDislikedFoods);
+                console.log("Restored form data from localStorage:", data);
+            } catch (e) {
+                console.error("Failed to restore form data:", e);
+            }
+        }
     }, []);
+
+    // Save form data to localStorage whenever it changes
+    useEffect(() => {
+        const formData = {
+            name,
+            dietType,
+            selectedAllergies,
+            selectedSensitivities,
+            selectedDislikedFoods,
+        };
+        localStorage.setItem("setupFormData", JSON.stringify(formData));
+    }, [name, dietType, selectedAllergies, selectedSensitivities, selectedDislikedFoods]);
 
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -147,7 +175,18 @@ function SetupPageContent() {
         const storeName = localStorage.getItem("pendingStoreLink") || "Kroger";
 
         if (krogerLinkedParam === "success") {
+            // Restore the selected store from localStorage for proper branding on step 6
+            const storedStoreData = localStorage.getItem("pendingStoreData");
+            if (storedStoreData) {
+                try {
+                    const storeData = JSON.parse(storedStoreData) as KrogerLocationSearchResult;
+                    setSelectedStore(storeData);
+                } catch (e) {
+                    console.error("Failed to parse stored store data:", e);
+                }
+            }
             localStorage.removeItem("pendingStoreLink");
+            localStorage.removeItem("pendingStoreData");
             setKrogerLinked(true);
             showToast(`Your ${storeName} account has been linked!`, "success");
             // Stay on Kroger linking step to show success state
@@ -159,6 +198,7 @@ function SetupPageContent() {
             router.replace("/setup");
         } else if (krogerError) {
             localStorage.removeItem("pendingStoreLink");
+            localStorage.removeItem("pendingStoreData");
             const errorMessages: Record<string, string> = {
                 oauth_denied: `You declined to link your ${storeName} account.`,
                 missing_params: `Missing parameters from ${storeName}. Please try again.`,
@@ -243,12 +283,38 @@ function SetupPageContent() {
         if (step > 1) setStep(step - 1);
     };
 
-    const handleLinkKroger = () => {
+    const handleLinkKroger = async () => {
         if (!user) return;
-        // Save store name to localStorage for use after OAuth redirect
+
+        // Save preferences to Firestore BEFORE redirecting to OAuth
+        // This ensures data isn't lost during the redirect (especially in incognito)
+        try {
+            const dataToSave = {
+                name: name.trim(),
+                dietType,
+                allergiesAndSensitivities: {
+                    allergies: selectedAllergies,
+                    sensitivities: selectedSensitivities,
+                },
+                dislikedFoods: selectedDislikedFoods,
+            };
+
+            await setDoc(
+                doc(db, "users", user.uid),
+                dataToSave,
+                { merge: true }
+            );
+            console.log("Saved preferences before Kroger OAuth redirect");
+        } catch (err) {
+            console.error("Failed to save preferences before OAuth:", err);
+            // Continue anyway - we'll try to save again at the end
+        }
+
+        // Save store name and data to localStorage for use after OAuth redirect
         if (selectedStore) {
             const storeBrand = getStoreBrand(selectedStore.name);
             localStorage.setItem("pendingStoreLink", storeBrand.displayName);
+            localStorage.setItem("pendingStoreData", JSON.stringify(selectedStore));
         }
         // Redirect to Kroger OAuth with return URL to setup
         window.location.href = `/api/kroger/auth?userId=${user.uid}&returnTo=setup&step=6`;
@@ -334,6 +400,10 @@ function SetupPageContent() {
     };
 
     const handleFinishSetup = async () => {
+        console.log("handleFinishSetup called");
+        console.log("user:", user);
+        console.log("user.uid:", user?.uid);
+
         if (!user) {
             showToast("Not logged in. Please log in and try again.", "error");
             return;
@@ -341,25 +411,38 @@ function SetupPageContent() {
 
         setSaving(true);
 
+        const dataToSave = {
+            name: name.trim(),
+            dietType,
+            allergiesAndSensitivities: {
+                allergies: selectedAllergies,
+                sensitivities: selectedSensitivities,
+            },
+            dislikedFoods: selectedDislikedFoods,
+        };
+
+        console.log("Data to save:", dataToSave);
+        console.log("Document path: users/" + user.uid);
+
         try {
+            console.log("Attempting setDoc...");
             await setDoc(
                 doc(db, "users", user.uid),
-                {
-                    name: name.trim(),
-                    dietType,
-                    allergiesAndSensitivities: {
-                        allergies: selectedAllergies,
-                        sensitivities: selectedSensitivities,
-                    },
-                    dislikedFoods: selectedDislikedFoods,
-                },
+                dataToSave,
                 { merge: true }
             );
+            console.log("setDoc succeeded!");
+
+            // Clear the saved form data from localStorage
+            localStorage.removeItem("setupFormData");
 
             showToast("Your preferences have been saved!", "success");
             sessionStorage.setItem("animateEntry", "true");
             router.push("/prompt");
         } catch (err: any) {
+            console.error("setDoc FAILED:", err);
+            console.error("Error code:", err.code);
+            console.error("Error message:", err.message);
             showToast(err.message || "Failed to save", "error");
             setSaving(false);
         }

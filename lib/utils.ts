@@ -1,3 +1,11 @@
+// Ingredients that should be completely excluded from shopping lists
+// These are items you don't need to buy (tap water, etc.)
+const EXCLUDED_INGREDIENTS = new Set([
+  "water", "cold water", "warm water", "hot water", "boiling water",
+  "ice water", "lukewarm water", "room temperature water", "tap water",
+  "filtered water", "ice", "ice cubes",
+]);
+
 // Staple items that you typically don't need multiples of (oils, spices, etc.)
 // These will be skipped if already in the shopping list
 const STAPLE_ITEMS = new Set([
@@ -48,6 +56,34 @@ export function normalizeIngredientName(name: string): string {
     .replace(/^(fresh|dried|ground|minced|chopped|diced|sliced|whole|organic|large|medium|small|extra|virgin)\s+/gi, "")
     .replace(/,.*$/, "") // Remove anything after comma
     .trim();
+}
+
+/**
+ * Check if an ingredient should be completely excluded from shopping lists
+ * (e.g., water which comes from the tap)
+ */
+export function isExcludedIngredient(ingredientName: string): boolean {
+  const normalized = normalizeIngredientName(ingredientName);
+
+  // Check exact match
+  if (EXCLUDED_INGREDIENTS.has(normalized)) {
+    return true;
+  }
+
+  // Check if the normalized name is just "water" or ends with "water"
+  // This catches variations like "1 cup water" normalized to "water"
+  if (normalized === "water" || normalized.endsWith(" water")) {
+    return true;
+  }
+
+  // Check if it contains an excluded item
+  for (const excluded of EXCLUDED_INGREDIENTS) {
+    if (normalized === excluded || normalized.includes(excluded)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -134,39 +170,45 @@ export function getRandomAccentColorExcluding(exclude: AccentColor): AccentColor
 // Kroger family of stores brand mapping
 // The Kroger API returns store names like "Smith's Food & Drug", "Ralphs", "Fred Meyer", etc.
 // This extracts the brand name for display purposes
-export const KROGER_STORE_BRANDS: Record<string, { displayName: string; tagline: string }> = {
-  "kroger": { displayName: "Kroger", tagline: "Fresh for Everyone" },
-  "smith's": { displayName: "Smith's", tagline: "Fresh for Everyone" },
-  "smiths": { displayName: "Smith's", tagline: "Fresh for Everyone" },
-  "ralphs": { displayName: "Ralphs", tagline: "Fresh for Everyone" },
-  "fred meyer": { displayName: "Fred Meyer", tagline: "Fresh for Everyone" },
-  "king soopers": { displayName: "King Soopers", tagline: "Fresh for Everyone" },
-  "fry's": { displayName: "Fry's", tagline: "Fresh for Everyone" },
-  "frys": { displayName: "Fry's", tagline: "Fresh for Everyone" },
-  "dillons": { displayName: "Dillons", tagline: "Fresh for Everyone" },
-  "qfc": { displayName: "QFC", tagline: "Quality Food Centers" },
-  "harris teeter": { displayName: "Harris Teeter", tagline: "Fresh for Everyone" },
-  "pick 'n save": { displayName: "Pick 'n Save", tagline: "Fresh for Everyone" },
-  "metro market": { displayName: "Metro Market", tagline: "Fresh for Everyone" },
-  "mariano's": { displayName: "Mariano's", tagline: "Fresh for Everyone" },
-  "marianos": { displayName: "Mariano's", tagline: "Fresh for Everyone" },
-  "food 4 less": { displayName: "Food 4 Less", tagline: "Why Pay More?" },
-  "foods co": { displayName: "Foods Co", tagline: "Fresh for Everyone" },
-  "gerbes": { displayName: "Gerbes", tagline: "Fresh for Everyone" },
-  "jay c": { displayName: "Jay C", tagline: "Fresh for Everyone" },
-  "city market": { displayName: "City Market", tagline: "Fresh for Everyone" },
-  "pay less": { displayName: "Pay Less", tagline: "Fresh for Everyone" },
-  "owen's": { displayName: "Owen's", tagline: "Fresh for Everyone" },
-  "owens": { displayName: "Owen's", tagline: "Fresh for Everyone" },
-  "baker's": { displayName: "Baker's", tagline: "Fresh for Everyone" },
-  "bakers": { displayName: "Baker's", tagline: "Fresh for Everyone" },
+export type StoreBrandInfo = {
+  displayName: string;
+  tagline: string;
+  cartUrl: string;
+};
+
+export const KROGER_STORE_BRANDS: Record<string, StoreBrandInfo> = {
+  "kroger": { displayName: "Kroger", tagline: "Fresh for Everyone", cartUrl: "https://www.kroger.com/cart" },
+  "smith's": { displayName: "Smith's", tagline: "Fresh for Everyone", cartUrl: "https://www.smithsfoodanddrug.com/cart" },
+  "smiths": { displayName: "Smith's", tagline: "Fresh for Everyone", cartUrl: "https://www.smithsfoodanddrug.com/cart" },
+  "ralphs": { displayName: "Ralphs", tagline: "Fresh for Everyone", cartUrl: "https://www.ralphs.com/cart" },
+  "fred meyer": { displayName: "Fred Meyer", tagline: "Fresh for Everyone", cartUrl: "https://www.fredmeyer.com/cart" },
+  "king soopers": { displayName: "King Soopers", tagline: "Fresh for Everyone", cartUrl: "https://www.kingsoopers.com/cart" },
+  "fry's": { displayName: "Fry's", tagline: "Fresh for Everyone", cartUrl: "https://www.frysfood.com/cart" },
+  "frys": { displayName: "Fry's", tagline: "Fresh for Everyone", cartUrl: "https://www.frysfood.com/cart" },
+  "dillons": { displayName: "Dillons", tagline: "Fresh for Everyone", cartUrl: "https://www.dillons.com/cart" },
+  "qfc": { displayName: "QFC", tagline: "Quality Food Centers", cartUrl: "https://www.qfc.com/cart" },
+  "harris teeter": { displayName: "Harris Teeter", tagline: "Fresh for Everyone", cartUrl: "https://www.harristeeter.com/cart" },
+  "pick 'n save": { displayName: "Pick 'n Save", tagline: "Fresh for Everyone", cartUrl: "https://www.picknsave.com/cart" },
+  "metro market": { displayName: "Metro Market", tagline: "Fresh for Everyone", cartUrl: "https://www.metromarket.net/cart" },
+  "mariano's": { displayName: "Mariano's", tagline: "Fresh for Everyone", cartUrl: "https://www.marianos.com/cart" },
+  "marianos": { displayName: "Mariano's", tagline: "Fresh for Everyone", cartUrl: "https://www.marianos.com/cart" },
+  "food 4 less": { displayName: "Food 4 Less", tagline: "Why Pay More?", cartUrl: "https://www.food4less.com/cart" },
+  "foods co": { displayName: "Foods Co", tagline: "Fresh for Everyone", cartUrl: "https://www.foodsco.net/cart" },
+  "gerbes": { displayName: "Gerbes", tagline: "Fresh for Everyone", cartUrl: "https://www.gerbes.com/cart" },
+  "jay c": { displayName: "Jay C", tagline: "Fresh for Everyone", cartUrl: "https://www.jaycfoods.com/cart" },
+  "city market": { displayName: "City Market", tagline: "Fresh for Everyone", cartUrl: "https://www.citymarket.com/cart" },
+  "pay less": { displayName: "Pay Less", tagline: "Fresh for Everyone", cartUrl: "https://www.pay-less.com/cart" },
+  "owen's": { displayName: "Owen's", tagline: "Fresh for Everyone", cartUrl: "https://www.owensmarket.com/cart" },
+  "owens": { displayName: "Owen's", tagline: "Fresh for Everyone", cartUrl: "https://www.owensmarket.com/cart" },
+  "baker's": { displayName: "Baker's", tagline: "Fresh for Everyone", cartUrl: "https://www.bakersplus.com/cart" },
+  "bakers": { displayName: "Baker's", tagline: "Fresh for Everyone", cartUrl: "https://www.bakersplus.com/cart" },
 };
 
 /**
  * Extract the store brand from a Kroger location name.
- * E.g., "Smith's Food & Drug" -> { displayName: "Smith's", tagline: "Fresh for Everyone" }
+ * E.g., "Smith's Food & Drug" -> { displayName: "Smith's", tagline: "Fresh for Everyone", cartUrl: "..." }
  */
-export function getStoreBrand(locationName: string): { displayName: string; tagline: string } {
+export function getStoreBrand(locationName: string): StoreBrandInfo {
   const lowerName = locationName.toLowerCase();
 
   // Check for each known brand
@@ -177,5 +219,5 @@ export function getStoreBrand(locationName: string): { displayName: string; tagl
   }
 
   // Default to generic Kroger family branding
-  return { displayName: "Kroger", tagline: "Kroger Family of Stores" };
+  return { displayName: "Kroger", tagline: "Kroger Family of Stores", cartUrl: "https://www.kroger.com/cart" };
 }
