@@ -32,15 +32,15 @@ export async function POST(request: Request) {
         }
 
         const systemPrompt = `
-You are a medical diet instruction parser.
+You are a diet instruction parser.
 
-You will be given a PHOTO of a doctor's instructions for a patient's diet
+You will be given a PHOTO of diet instructions
 (e.g., "no red meat", "limit sodium", "avoid grapefruit", "no added sugar", etc.).
 
 Your job is to:
-1. Extract specific ingredients, foods, or common packaged items the patient should *avoid*.
+1. Extract specific ingredients, foods, or common packaged items that should be *avoided*.
 2. Group any broader patterns (e.g., "fried foods", "fast food", "high sodium", "red meat").
-3. Produce a short summary of the doctor's instructions in plain language.
+3. Produce a short summary of the diet instructions in plain language.
 
 Return ONLY valid JSON with this shape (no extra keys):
 
@@ -52,14 +52,14 @@ Return ONLY valid JSON with this shape (no extra keys):
 
 - "blockedIngredients": concrete ingredients or specific foods to avoid (e.g., "bacon", "sausage", "whole milk", "soda", "butter", "cheddar cheese").
 - "blockedFoodGroups": broader patterns or categories (e.g., "fried foods", "fast food", "processed meats", "high-sodium canned soups").
-- "instructionsSummary": concise human-readable explanation of the doctor's notes (2–4 sentences).
+- "instructionsSummary": concise human-readable explanation of the diet instructions (2–4 sentences).
 
 If there are no clear blocked ingredients, use an empty array.
 If there are no clear blocked groups, use an empty array.
 `;
 
         const userPrompt = `
-Extract the diet restrictions and blocked foods from this doctor's note image.
+Extract the diet restrictions and blocked foods from this diet instruction image.
 Return ONLY JSON in the exact format specified in the system message.
 `;
 

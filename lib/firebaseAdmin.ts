@@ -5,6 +5,7 @@ import admin from "firebase-admin";
 if (!admin.apps.length) {
     const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
     const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+    const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
     // Handle various formats of the private key from different environments
     let privateKey = process.env.FIREBASE_PRIVATE_KEY;
     if (privateKey) {
@@ -20,12 +21,14 @@ if (!admin.apps.length) {
                 clientEmail,
                 privateKey,
             }),
+            storageBucket,
         });
     } else if (projectId) {
         // Fallback to Application Default Credentials
         // Run: gcloud auth application-default login
         admin.initializeApp({
             projectId,
+            storageBucket,
         });
     } else {
         throw new Error(
@@ -36,3 +39,4 @@ if (!admin.apps.length) {
 
 export const adminDb = admin.firestore();
 export const adminAuth = admin.auth();
+export const adminStorage = admin.storage();

@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
 import { searchKrogerProduct, searchAlternativeProduct, type KrogerProductMatch } from "@/lib/kroger";
+import { isExcludedIngredient } from "@/lib/utils";
 
 const TOKEN_URL = process.env.KROGER_TOKEN_URL ?? "https://api-ce.kroger.com/v1/connect/oauth2/token";
 const API_BASE_URL = process.env.KROGER_API_BASE_URL ?? "https://api-ce.kroger.com/v1";
@@ -136,10 +137,13 @@ export async function POST(request: Request) {
             );
         }
 
+        // Filter out excluded ingredients like water before processing
+        const filteredItems = items.filter((item) => !isExcludedIngredient(item.name));
+
         // Search for each item and enrich with Kroger product data
         // If the best match is unavailable, search for an alternative
         const enrichedItems: (EnrichedItem & { itemId: string; usedAlternative?: boolean })[] = await Promise.all(
-            items.map(async (item) => {
+            filteredItems.map(async (item) => {
                 let product = await searchKrogerProduct(item.name, {
                     locationId: locationId || undefined,
                 });

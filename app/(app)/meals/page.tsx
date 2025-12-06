@@ -73,7 +73,7 @@ function MealsPageContent() {
     const [streamComplete, setStreamComplete] = useState(false);
     const [statusColor, setStatusColor] = useState<AccentColor>(ACCENT_COLORS[0]);
 
-    const hasStartedStreaming = useRef(false);
+    const hasStartedStreaming = useRef<string | null>(null);
     const mealsMetaRef = useRef<MealsMeta | null>(null);
     const colorIndexRef = useRef(0);
 
@@ -112,8 +112,9 @@ function MealsPageContent() {
 
     // Stream meals from API
     const streamMeals = useCallback(async (uid: string, userPrefs: Record<string, unknown>, prompt: string) => {
-        if (hasStartedStreaming.current) return;
-        hasStartedStreaming.current = true;
+        // Prevent duplicate streams for the same prompt
+        if (hasStartedStreaming.current === prompt) return;
+        hasStartedStreaming.current = prompt;
 
         setLoadingMeals(true);
         setStreamStatus("Connecting...");
@@ -157,6 +158,11 @@ function MealsPageContent() {
                             case "meal":
                                 mealsArray[event.index] = event.meal;
                                 setMeals([...mealsArray]);
+                                // Update sessionStorage immediately so detail page can access
+                                sessionStorage.setItem("generatedMeals", JSON.stringify({
+                                    meals: mealsArray.filter(Boolean),
+                                    meta: mealsMetaRef.current,
+                                }));
                                 // First meal arrived - stop showing loading
                                 if (mealsArray.filter(Boolean).length === 1) {
                                     setLoadingMeals(false);
@@ -166,11 +172,21 @@ function MealsPageContent() {
                             case "meal_updated":
                                 mealsArray[event.index] = event.meal;
                                 setMeals([...mealsArray]);
+                                // Update sessionStorage with updated meal (e.g., new image)
+                                sessionStorage.setItem("generatedMeals", JSON.stringify({
+                                    meals: mealsArray.filter(Boolean),
+                                    meta: mealsMetaRef.current,
+                                }));
                                 break;
 
                             case "meta":
                                 mealsMetaRef.current = event.meta;
                                 setMealsMeta(event.meta);
+                                // Update sessionStorage with meta
+                                sessionStorage.setItem("generatedMeals", JSON.stringify({
+                                    meals: mealsArray.filter(Boolean),
+                                    meta: event.meta,
+                                }));
                                 break;
 
                             case "error":
@@ -181,11 +197,6 @@ function MealsPageContent() {
                             case "done":
                                 setStreamComplete(true);
                                 setStreamStatus("");
-                                // Save to sessionStorage for detail page (use ref for current meta)
-                                sessionStorage.setItem("generatedMeals", JSON.stringify({
-                                    meals: mealsArray.filter(Boolean),
-                                    meta: mealsMetaRef.current,
-                                }));
                                 // Log event
                                 logUserEvent(uid, { type: "prompt_submitted", prompt }).catch(() => {});
                                 break;
@@ -311,7 +322,7 @@ function MealsPageContent() {
                                     <Heart className="w-3.5 h-3.5 text-white" />
                                 </div>
                                 <span className="text-sm font-medium text-emerald-700">
-                                    Doctor's instructions applied
+                                    Diet instructions applied
                                 </span>
                             </div>
                             {(blockedIngredients.length > 0 || blockedGroups.length > 0) && (
@@ -458,10 +469,10 @@ function MealsPageContent() {
                                                     </span>
                                                 )}
                                             </div>
-                                            <h2 className="text-base font-medium text-gray-900 mb-1 line-clamp-1">
+                                            <h2 className="text-base font-medium text-gray-900 mb-1">
                                                 {meal.name}
                                             </h2>
-                                            <p className="text-sm text-gray-500 line-clamp-1 mb-2">
+                                            <p className="text-sm text-gray-500 mb-2">
                                                 {meal.description}
                                             </p>
 

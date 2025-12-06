@@ -21,7 +21,6 @@ import {
     AlertTriangle,
     FileText,
     ShoppingCart,
-    MapPin,
     CheckCircle,
     AlertCircle,
     Edit3,
@@ -34,10 +33,13 @@ import {
     Lock,
     Eye,
     EyeOff,
+    Sparkles,
+    CreditCard,
 } from "lucide-react";
 import { signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential, deleteUser } from "firebase/auth";
 import { deleteDoc } from "firebase/firestore";
 import { useToast } from "@/components/Toast";
+import { getStoreBrand } from "@/lib/utils";
 
 const ALLERGY_OPTIONS = [
     "Dairy",
@@ -194,6 +196,9 @@ function AccountPageContent() {
     const [deletePassword, setDeletePassword] = useState("");
     const [deletingAccount, setDeletingAccount] = useState(false);
     const [deleteError, setDeleteError] = useState<string | null>(null);
+
+    // Subscription portal state
+    const [loadingPortal, setLoadingPortal] = useState(false);
 
     const formatDoctorUpdatedAt = (value?: any) => {
         if (!value) return "";
@@ -496,6 +501,15 @@ function AccountPageContent() {
     const handleUseStoreFromSearch = async (store: KrogerLocationSearchResult) => {
         if (!user) return;
 
+        // Check if this store already exists
+        const existingStore = locations.find(
+            (loc) => loc.krogerLocationId === store.locationId
+        );
+        if (existingStore) {
+            showToast(`${store.name} is already in your saved stores.`, "error");
+            return;
+        }
+
         try {
             setSavingLocation(true);
             setLocationMessage(null);
@@ -692,6 +706,32 @@ function AccountPageContent() {
         router.push("/login");
     };
 
+    const handleManageSubscription = async () => {
+        if (!user) return;
+
+        try {
+            setLoadingPortal(true);
+            const res = await fetch("/api/stripe/portal", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ uid: user.uid }),
+            });
+
+            const data = await res.json();
+
+            if (data.url) {
+                window.location.href = data.url;
+            } else {
+                showToast("Could not open billing portal.", "error");
+            }
+        } catch (error) {
+            console.error("Portal error:", error);
+            showToast("Something went wrong. Please try again.", "error");
+        } finally {
+            setLoadingPortal(false);
+        }
+    };
+
     const handleChangePassword = async () => {
         if (!user || !user.email) return;
 
@@ -831,6 +871,51 @@ function AccountPageContent() {
             {/* Content */}
             <div className="px-6 py-6">
                 <div className="max-w-3xl mx-auto space-y-4">
+                    {/* Premium Subscription Card */}
+                    {userDoc?.isPremium && (
+                        <div className="bg-gradient-to-r from-violet-50 to-purple-50 rounded-2xl border border-violet-200 overflow-hidden">
+                            <div className="px-5 py-4 border-b border-violet-200">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-violet-100 rounded-xl flex items-center justify-center">
+                                        <Sparkles className="w-5 h-5 text-violet-600" />
+                                    </div>
+                                    <div>
+                                        <h2 className="font-medium text-violet-900">Premium Subscription</h2>
+                                        <p className="text-xs text-violet-600">You have full access to all features</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="px-5 py-4">
+                                <div className="flex items-center gap-2 mb-4">
+                                    <CheckCircle className="w-5 h-5 text-emerald-500" />
+                                    <span className="text-sm text-violet-800">Your subscription is active</span>
+                                </div>
+
+                                <button
+                                    onClick={() => void handleManageSubscription()}
+                                    disabled={loadingPortal}
+                                    className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 text-white rounded-xl text-sm font-medium hover:bg-violet-700 transition-colors disabled:opacity-70"
+                                >
+                                    {loadingPortal ? (
+                                        <>
+                                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            <span>Loading...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <CreditCard className="w-4 h-4" />
+                                            <span>Manage Subscription</span>
+                                        </>
+                                    )}
+                                </button>
+                                <p className="text-xs text-violet-500 mt-3">
+                                    Update payment method, view invoices, or cancel subscription
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Usage Card - Free Tier */}
                     {!userDoc?.isPremium && (() => {
                         // Calculate monthly prompt count and days until reset
@@ -899,6 +984,15 @@ function AccountPageContent() {
                                             {FREE_TIER_MONTHLY_LIMIT - monthlyCount} generation{FREE_TIER_MONTHLY_LIMIT - monthlyCount !== 1 ? "s" : ""} remaining. Resets in {daysUntilReset} day{daysUntilReset !== 1 ? "s" : ""}.
                                         </p>
                                     )}
+
+                                    {/* Upgrade CTA */}
+                                    <button
+                                        onClick={() => router.push("/upgrade")}
+                                        className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-xl text-sm font-medium hover:from-violet-700 hover:to-purple-700 transition-colors"
+                                    >
+                                        <Sparkles className="w-4 h-4" />
+                                        <span>Upgrade to Premium</span>
+                                    </button>
                                 </div>
                             </div>
                         );
@@ -1128,7 +1222,7 @@ function AccountPageContent() {
                             {!hasDoctorNote ? (
                                 <div>
                                     <p className="text-sm text-gray-500 mb-4">
-                                        Upload your doctor's diet instructions to automatically filter meal suggestions.
+                                        Upload your diet instructions to automatically filter meal suggestions.
                                     </p>
                                     <button
                                         onClick={() => router.push("/diet-restrictions")}
@@ -1180,7 +1274,12 @@ function AccountPageContent() {
                         </div>
                     </div>
 
-                    {/* Kroger Account Card */}
+                    {/* Store & Account Card - Combined */}
+                    {(() => {
+                        const defaultLocation = locations.find(loc => loc.krogerLocationId === userDoc?.defaultKrogerLocationId);
+                        const storeBrand = defaultLocation ? getStoreBrand(defaultLocation.name) : { displayName: "Kroger", tagline: "Kroger Family of Stores" };
+                        const isGenericKroger = !defaultLocation;
+                        return (
                     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
                         <div className="px-5 py-4 border-b border-gray-100">
                             <div className="flex items-center gap-3">
@@ -1188,170 +1287,204 @@ function AccountPageContent() {
                                     <ShoppingCart className="w-5 h-5 text-[#0056a3]" />
                                 </div>
                                 <div>
-                                    <h2 className="font-medium text-gray-900">Kroger Account</h2>
-                                    <p className="text-xs text-gray-500">Connect to add items to cart</p>
+                                    <h2 className="font-medium text-gray-900">
+                                        {isGenericKroger ? "Store & Account" : `${storeBrand.displayName} Store & Account`}
+                                    </h2>
+                                    <p className="text-xs text-gray-500">Choose your store and connect your account to add items directly to your cart</p>
                                 </div>
                             </div>
                         </div>
 
-                        <div className="px-5 py-4">
-                            {userDoc?.krogerLinked ? (
-                                <div className="space-y-4">
-                                    {/* Linked status */}
-                                    <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-xl">
-                                        <div className="flex items-center gap-3">
-                                            <CheckCircle className="w-5 h-5 text-emerald-500" />
-                                            <span className="text-sm text-emerald-700">Your Kroger account is linked</span>
-                                        </div>
+                        <div className="px-5 py-4 space-y-5">
+                            {/* Supported stores info when no store selected */}
+                            {locations.length === 0 && (
+                                <div className="p-3 bg-blue-50 rounded-xl border border-blue-100">
+                                    <p className="text-xs font-medium text-blue-800 mb-1">Kroger Family of Stores</p>
+                                    <p className="text-xs text-blue-700 leading-relaxed">
+                                        Kroger, Ralphs, Fred Meyer, King Soopers, Fry&apos;s, Smith&apos;s, Dillons, QFC, Harris Teeter, Pick &apos;n Save, Mariano&apos;s, Food 4 Less, City Market, Baker&apos;s, and more
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Step 1: Store Selection */}
+                            <div>
+                                <div className="flex items-center gap-2 mb-3">
+                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
+                                        locations.length > 0 ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
+                                    }`}>
+                                        {locations.length > 0 ? <CheckCircle className="w-4 h-4" /> : "1"}
                                     </div>
-
-                                    {/* Unlink button */}
-                                    <button
-                                        onClick={() => void handleUnlinkKroger()}
-                                        disabled={unlinkingKroger}
-                                        className="flex items-center gap-2 text-sm text-red-500 hover:text-red-600 transition-colors"
-                                    >
-                                        <X className="w-4 h-4" />
-                                        <span>{unlinkingKroger ? "Unlinking..." : "Unlink Kroger Account"}</span>
-                                    </button>
-                                </div>
-                            ) : (
-                                <button
-                                    onClick={() => {
-                                        if (user) {
-                                            window.location.href = `/api/kroger/auth?userId=${user.uid}`;
-                                        }
-                                    }}
-                                    className="flex items-center gap-2 px-4 py-2.5 bg-[#0056a3] text-white rounded-xl text-sm font-medium hover:bg-[#004080] transition-colors"
-                                >
-                                    <ExternalLink className="w-4 h-4" />
-                                    <span>Link Kroger Account</span>
-                                </button>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Shopping Locations Card */}
-                    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-                        <div className="px-5 py-4 border-b border-gray-100">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-orange-50 rounded-xl flex items-center justify-center">
-                                    <MapPin className="w-5 h-5 text-orange-500" />
-                                </div>
-                                <div>
-                                    <h2 className="font-medium text-gray-900">Shopping Locations</h2>
-                                    <p className="text-xs text-gray-500">Your preferred Kroger stores</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="px-5 py-4 space-y-4">
-                            {/* Existing locations */}
-                            {loadingLocations ? (
-                                <p className="text-sm text-gray-500">Loading locations...</p>
-                            ) : locations.length === 0 ? (
-                                <p className="text-sm text-gray-500">No stores added yet.</p>
-                            ) : (
-                                <div className="space-y-2">
-                                    {locations.map((loc) => (
-                                        <div
-                                            key={loc.id}
-                                            className="flex items-center justify-between p-3 bg-gray-50 rounded-xl"
-                                        >
-                                            <div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="font-medium text-gray-900 text-sm">{loc.name}</span>
-                                                    {loc.isDefault && (
-                                                        <span className="px-2 py-0.5 bg-[#4A90E2]/10 text-[#4A90E2] rounded text-xs font-medium">
-                                                            Default
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                <p className="text-xs text-gray-500 mt-0.5">
-                                                    {loc.city && loc.state && `${loc.city}, ${loc.state}`}
-                                                </p>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                {!loc.isDefault && (
-                                                    <button
-                                                        onClick={() => void handleSetDefault(loc)}
-                                                        className="text-xs text-[#4A90E2] hover:underline"
-                                                    >
-                                                        Set default
-                                                    </button>
-                                                )}
-                                                <button
-                                                    onClick={() => void handleRemoveStore(loc)}
-                                                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                                    title="Remove store"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-
-                            {/* ZIP Search */}
-                            <div className="pt-3 border-t border-gray-100">
-                                <label className="text-sm font-medium text-gray-700 mb-2 block">
-                                    Find a store by ZIP
-                                </label>
-                                <div className="flex gap-2">
-                                    <input
-                                        value={zipSearch}
-                                        onChange={(e) => setZipSearch(e.target.value)}
-                                        placeholder="Enter ZIP code"
-                                        className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 focus:border-[#4A90E2] focus:outline-none"
-                                    />
-                                    <button
-                                        onClick={() => void handleSearchStoresByZip()}
-                                        disabled={searchingStores}
-                                        className="px-4 py-2.5 bg-gray-900 text-white rounded-xl text-sm font-medium disabled:opacity-70"
-                                    >
-                                        {searchingStores ? "..." : "Search"}
-                                    </button>
+                                    <span className="text-sm font-medium text-gray-900">Choose Your Store</span>
                                 </div>
 
-                                {storeSearchError && (
-                                    <p className="text-sm text-red-500 mt-2">{storeSearchError}</p>
-                                )}
-
-                                {storeResults.length > 0 && (
-                                    <div className="mt-3 space-y-2">
-                                        {storeResults.map((store) => (
+                                {/* Existing locations */}
+                                {loadingLocations ? (
+                                    <p className="text-sm text-gray-500 ml-8">Loading locations...</p>
+                                ) : locations.length === 0 ? (
+                                    <p className="text-sm text-gray-500 ml-8">Search below to find and add your store.</p>
+                                ) : (
+                                    <div className="space-y-2 ml-8">
+                                        {locations.map((loc) => (
                                             <div
-                                                key={store.locationId}
-                                                className="flex items-center justify-between p-3 border border-gray-200 rounded-xl"
+                                                key={loc.id}
+                                                className="flex items-center justify-between p-3 bg-gray-50 rounded-xl"
                                             >
                                                 <div>
-                                                    <span className="font-medium text-gray-900 text-sm">{store.name}</span>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-medium text-gray-900 text-sm">{loc.name}</span>
+                                                        {loc.isDefault && (
+                                                            <span className="px-2 py-0.5 bg-[#4A90E2]/10 text-[#4A90E2] rounded text-xs font-medium">
+                                                                Default
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     <p className="text-xs text-gray-500 mt-0.5">
-                                                        {store.addressLine1}, {store.city}, {store.state}
+                                                        {loc.city && loc.state && `${loc.city}, ${loc.state}`}
                                                     </p>
                                                 </div>
-                                                <button
-                                                    onClick={() => handleUseStoreFromSearch(store)}
-                                                    disabled={savingLocation}
-                                                    className="px-3 py-1.5 bg-[#4A90E2]/10 text-[#4A90E2] rounded-lg text-xs font-medium hover:bg-[#4A90E2]/20 transition-colors disabled:opacity-70"
-                                                >
-                                                    {savingLocation ? "..." : "Use"}
-                                                </button>
+                                                <div className="flex items-center gap-2">
+                                                    {!loc.isDefault && (
+                                                        <button
+                                                            onClick={() => void handleSetDefault(loc)}
+                                                            className="text-xs text-[#4A90E2] hover:underline"
+                                                        >
+                                                            Set default
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        onClick={() => void handleRemoveStore(loc)}
+                                                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                        title="Remove store"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
                                 )}
+
+                                {/* ZIP Search */}
+                                <div className="mt-3 ml-8">
+                                    <label className="text-sm font-medium text-gray-700 mb-2 block">
+                                        Find a store by ZIP
+                                    </label>
+                                    <div className="flex gap-2">
+                                        <input
+                                            value={zipSearch}
+                                            onChange={(e) => setZipSearch(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") {
+                                                    e.preventDefault();
+                                                    void handleSearchStoresByZip();
+                                                }
+                                            }}
+                                            placeholder="Enter ZIP code"
+                                            className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 focus:border-[#4A90E2] focus:outline-none"
+                                        />
+                                        <button
+                                            onClick={() => void handleSearchStoresByZip()}
+                                            disabled={searchingStores}
+                                            className="px-4 py-2.5 bg-gray-900 text-white rounded-xl text-sm font-medium disabled:opacity-70"
+                                        >
+                                            {searchingStores ? "..." : "Search"}
+                                        </button>
+                                    </div>
+
+                                    {storeSearchError && (
+                                        <p className="text-sm text-red-500 mt-2">{storeSearchError}</p>
+                                    )}
+
+                                    {storeResults.length > 0 && (
+                                        <div className="mt-3 space-y-2">
+                                            {storeResults.map((store) => (
+                                                <div
+                                                    key={store.locationId}
+                                                    className="flex items-center justify-between p-3 border border-gray-200 rounded-xl"
+                                                >
+                                                    <div>
+                                                        <span className="font-medium text-gray-900 text-sm">{store.name}</span>
+                                                        <p className="text-xs text-gray-500 mt-0.5">
+                                                            {store.addressLine1}, {store.city}, {store.state}
+                                                        </p>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => handleUseStoreFromSearch(store)}
+                                                        disabled={savingLocation}
+                                                        className="px-3 py-1.5 bg-[#4A90E2]/10 text-[#4A90E2] rounded-lg text-xs font-medium hover:bg-[#4A90E2]/20 transition-colors disabled:opacity-70"
+                                                    >
+                                                        {savingLocation ? "..." : "Use"}
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {locationMessage && (
+                                    <div className="flex items-center gap-2 p-2 bg-emerald-50 rounded-lg mt-3 ml-8">
+                                        <CheckCircle className="w-4 h-4 text-emerald-500" />
+                                        <span className="text-sm text-emerald-700">{locationMessage}</span>
+                                    </div>
+                                )}
                             </div>
 
-                            {locationMessage && (
-                                <div className="flex items-center gap-2 p-2 bg-emerald-50 rounded-lg">
-                                    <CheckCircle className="w-4 h-4 text-emerald-500" />
-                                    <span className="text-sm text-emerald-700">{locationMessage}</span>
+                            {/* Divider */}
+                            <div className="border-t border-gray-100" />
+
+                            {/* Step 2: Account Linking */}
+                            <div>
+                                <div className="flex items-center gap-2 mb-3">
+                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
+                                        userDoc?.krogerLinked ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
+                                    }`}>
+                                        {userDoc?.krogerLinked ? <CheckCircle className="w-4 h-4" /> : "2"}
+                                    </div>
+                                    <span className="text-sm font-medium text-gray-900">Connect Your Account</span>
                                 </div>
-                            )}
+
+                                <div className="ml-8">
+                                    {userDoc?.krogerLinked ? (
+                                        <div className="space-y-3">
+                                            <div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-100 text-emerald-700 rounded-full">
+                                                <CheckCircle className="w-4 h-4" />
+                                                <span className="text-sm font-medium">
+                                                    {isGenericKroger ? "Store account linked" : `${storeBrand.displayName} account linked`}
+                                                </span>
+                                            </div>
+                                            <button
+                                                onClick={() => void handleUnlinkKroger()}
+                                                disabled={unlinkingKroger}
+                                                className="flex items-center gap-2 text-sm text-red-500 hover:text-red-600 transition-colors"
+                                            >
+                                                <X className="w-4 h-4" />
+                                                <span>{unlinkingKroger ? "Unlinking..." : `Unlink ${isGenericKroger ? "Store" : storeBrand.displayName} Account`}</span>
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            <p className="text-sm text-gray-500">
+                                                Link your account to add items directly to your cart and see real prices.
+                                            </p>
+                                            <button
+                                                onClick={() => {
+                                                    if (user) {
+                                                        window.location.href = `/api/kroger/auth?userId=${user.uid}`;
+                                                    }
+                                                }}
+                                                className="flex items-center gap-2 px-4 py-2.5 bg-[#0056a3] text-white rounded-xl text-sm font-medium hover:bg-[#004080] transition-colors"
+                                            >
+                                                <ExternalLink className="w-4 h-4" />
+                                                <span>Link {isGenericKroger ? "Store" : storeBrand.displayName} Account</span>
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     </div>
+                        );
+                    })()}
 
                     {/* Password & Security Card */}
                     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">

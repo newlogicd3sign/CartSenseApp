@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import {
     FileText,
     Upload,
@@ -16,6 +17,7 @@ import {
     ArrowLeft,
 } from "lucide-react";
 import { useToast } from "@/components/Toast";
+import { UpgradePrompt } from "@/components/UpgradePrompt";
 
 type DietRestrictionsParsed = {
     blockedIngredients: string[];
@@ -32,6 +34,33 @@ export default function DietRestrictionsPage() {
     const [result, setResult] = useState<DietRestrictionsParsed | null>(null);
     const [saving, setSaving] = useState(false);
     const [consentChecked, setConsentChecked] = useState(false);
+
+    // Premium check
+    const [loadingUser, setLoadingUser] = useState(true);
+    const [isPremium, setIsPremium] = useState(false);
+
+    useEffect(() => {
+        const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+            if (!firebaseUser) {
+                router.push("/login");
+                return;
+            }
+
+            try {
+                const ref = doc(db, "users", firebaseUser.uid);
+                const snap = await getDoc(ref);
+                if (snap.exists()) {
+                    setIsPremium(snap.data().isPremium ?? false);
+                }
+            } catch (err) {
+                console.error("Error checking premium status", err);
+            } finally {
+                setLoadingUser(false);
+            }
+        });
+
+        return () => unsub();
+    }, [router]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const f = e.target.files?.[0];
@@ -153,6 +182,29 @@ export default function DietRestrictionsPage() {
         setPreviewUrl(null);
         setResult(null);
     };
+
+    // Loading state
+    if (loadingUser) {
+        return (
+            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
+                <div className="text-center">
+                    <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
+                    <p className="text-gray-500">Loading...</p>
+                </div>
+            </div>
+        );
+    }
+
+    // Premium paywall
+    if (!isPremium) {
+        return (
+            <UpgradePrompt
+                feature="diet_photo"
+                variant="full_page"
+                onClose={() => router.back()}
+            />
+        );
+    }
 
     return (
         <div className="min-h-screen bg-[#f8fafb]">
