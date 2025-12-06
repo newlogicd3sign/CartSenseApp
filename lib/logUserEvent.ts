@@ -11,10 +11,13 @@ export type LogUserEventPayload = {
         | "meal_saved"
         | "added_to_shopping_list"
         | "thread_message"
+        | "ingredient_swapped"
         | string;
     mealId?: string;
     prompt?: string;
     message?: string;
+    oldIngredient?: string;
+    newIngredient?: string;
 };
 
 export async function logUserEvent(

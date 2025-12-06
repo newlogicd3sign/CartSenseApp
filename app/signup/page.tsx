@@ -173,7 +173,7 @@ export default function SignupPage() {
                             {[
                                 "AI-powered personalized meal suggestions",
                                 "Smart grocery lists with Kroger integration",
-                                "Doctor's diet instructions support",
+                                "Diet instructions support",
                                 "Save and organize your favorite meals",
                             ].map((feature, i) => (
                                 <li key={i} className="flex items-center gap-2 text-sm text-gray-500">
