@@ -7,7 +7,7 @@ import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { Mail, Lock, ArrowRight, CheckCircle } from "lucide-react";
+import { Mail, Lock, ArrowRight, CheckCircle, Eye, EyeOff } from "lucide-react";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
 import { useToast } from "@/components/Toast";
 
@@ -18,6 +18,17 @@ export default function SignupPage() {
     const [password, setPassword] = useState("");
     const [agreedToTerms, setAgreedToTerms] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
+    const [showTermsReminder, setShowTermsReminder] = useState(false);
+
+    // Password validation
+    const passwordRules = {
+        minLength: password.length >= 8,
+        hasUppercase: /[A-Z]/.test(password),
+        hasLowercase: /[a-z]/.test(password),
+        hasNumber: /[0-9]/.test(password),
+    };
+    const isPasswordValid = Object.values(passwordRules).every(Boolean);
 
     const handleSignup = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -95,47 +106,105 @@ export default function SignupPage() {
                                 <div className="relative">
                                     <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                                     <input
-                                        type="password"
+                                        type={showPassword ? "text" : "password"}
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
                                         placeholder="Create a password"
-                                        className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#4A90E2] focus:outline-none focus:bg-white transition-colors"
+                                        className="w-full pl-12 pr-12 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#4A90E2] focus:outline-none focus:bg-white transition-colors"
                                         required
-                                        minLength={6}
                                     />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPassword(!showPassword)}
+                                        className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                                    >
+                                        {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                                    </button>
                                 </div>
-                                <p className="text-xs text-gray-400 mt-1.5 ml-1">
-                                    Must be at least 6 characters
-                                </p>
+                                {/* Password Requirements */}
+                                <div className="mt-3 p-4 bg-gray-50 border border-gray-300 rounded-xl">
+                                    <p className="text-xs font-medium text-gray-600 mb-3">Password must contain:</p>
+                                    <div className="space-y-2">
+                                        <div className={`flex items-center gap-2.5 text-sm ${passwordRules.minLength ? 'text-emerald-600' : 'text-gray-600'}`}>
+                                            {passwordRules.minLength ? (
+                                                <CheckCircle className="w-4 h-4 text-emerald-500" />
+                                            ) : (
+                                                <div className="w-4 h-4 rounded-full border-2 border-gray-400" />
+                                            )}
+                                            <span>At least 8 characters</span>
+                                        </div>
+                                        <div className={`flex items-center gap-2.5 text-sm ${passwordRules.hasUppercase ? 'text-emerald-600' : 'text-gray-600'}`}>
+                                            {passwordRules.hasUppercase ? (
+                                                <CheckCircle className="w-4 h-4 text-emerald-500" />
+                                            ) : (
+                                                <div className="w-4 h-4 rounded-full border-2 border-gray-400" />
+                                            )}
+                                            <span>One uppercase letter</span>
+                                        </div>
+                                        <div className={`flex items-center gap-2.5 text-sm ${passwordRules.hasLowercase ? 'text-emerald-600' : 'text-gray-600'}`}>
+                                            {passwordRules.hasLowercase ? (
+                                                <CheckCircle className="w-4 h-4 text-emerald-500" />
+                                            ) : (
+                                                <div className="w-4 h-4 rounded-full border-2 border-gray-400" />
+                                            )}
+                                            <span>One lowercase letter</span>
+                                        </div>
+                                        <div className={`flex items-center gap-2.5 text-sm ${passwordRules.hasNumber ? 'text-emerald-600' : 'text-gray-600'}`}>
+                                            {passwordRules.hasNumber ? (
+                                                <CheckCircle className="w-4 h-4 text-emerald-500" />
+                                            ) : (
+                                                <div className="w-4 h-4 rounded-full border-2 border-gray-400" />
+                                            )}
+                                            <span>One number</span>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             {/* Terms Checkbox */}
-                            <div className="flex items-start gap-3">
-                                <input
-                                    type="checkbox"
-                                    id="terms"
-                                    checked={agreedToTerms}
-                                    onChange={(e) => setAgreedToTerms(e.target.checked)}
-                                    className="w-5 h-5 mt-0.5 rounded border-gray-300 text-[#4A90E2] focus:ring-[#4A90E2] cursor-pointer"
-                                />
-                                <label htmlFor="terms" className="text-sm text-gray-600 cursor-pointer">
-                                    I agree to the{" "}
-                                    <Link href="/terms" className="text-[#4A90E2] hover:underline">
-                                        Terms & Conditions
-                                    </Link>{" "}
-                                    and{" "}
-                                    <Link href="/privacy-policy" className="text-[#4A90E2] hover:underline">
-                                        Privacy Policy
-                                    </Link>
-                                </label>
+                            <div>
+                                <div className={`flex items-start gap-3 p-3 rounded-xl transition-colors ${showTermsReminder && !agreedToTerms ? 'bg-amber-50 border border-amber-200' : ''}`}>
+                                    <input
+                                        type="checkbox"
+                                        id="terms"
+                                        checked={agreedToTerms}
+                                        onChange={(e) => {
+                                            setAgreedToTerms(e.target.checked);
+                                            if (e.target.checked) setShowTermsReminder(false);
+                                        }}
+                                        className="w-5 h-5 mt-0.5 rounded border-gray-300 text-[#4A90E2] focus:ring-[#4A90E2] cursor-pointer"
+                                    />
+                                    <label htmlFor="terms" className="text-sm text-gray-600 cursor-pointer">
+                                        I agree to the{" "}
+                                        <Link href="/terms" className="text-[#4A90E2] hover:underline">
+                                            Terms & Conditions
+                                        </Link>{" "}
+                                        and{" "}
+                                        <Link href="/privacy-policy" className="text-[#4A90E2] hover:underline">
+                                            Privacy Policy
+                                        </Link>
+                                    </label>
+                                </div>
+                                {showTermsReminder && !agreedToTerms && (
+                                    <p className="text-sm text-amber-600 mt-2 ml-1">
+                                        Please agree to the Terms & Conditions to continue
+                                    </p>
+                                )}
                             </div>
 
                             {/* Submit Button */}
-                            <button
-                                type="submit"
-                                disabled={loading || !agreedToTerms}
-                                className="w-full py-4 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            <div
+                                onClick={() => {
+                                    if (!agreedToTerms && isPasswordValid && !loading) {
+                                        setShowTermsReminder(true);
+                                    }
+                                }}
                             >
+                                <button
+                                    type="submit"
+                                    disabled={loading || !agreedToTerms || !isPasswordValid}
+                                    className="w-full py-4 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                >
                                 {loading ? (
                                     <>
                                         <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -147,7 +216,8 @@ export default function SignupPage() {
                                         <ArrowRight className="w-5 h-5" />
                                     </>
                                 )}
-                            </button>
+                                </button>
+                            </div>
                         </form>
 
                         {/* Divider */}
