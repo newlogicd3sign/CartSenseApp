@@ -6,6 +6,14 @@ import {
     cacheNotFound,
     type CachedKrogerProduct,
 } from "./krogerCache";
+import {
+    isPetFood as isPetFoodCheck,
+    isNonFoodProduct as isNonFoodCheck,
+    findIngredientRule,
+    calculateQualityScore,
+    calculateRelevanceScore,
+    type ProductCandidate,
+} from "./productSelectionService";
 
 // ✅ Defaults for Kroger api-ce, overridable via env
 const TOKEN_URL =
@@ -110,128 +118,59 @@ type KrogerProduct = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Product Availability & Scoring
+// Product Availability & Filtering (delegates to productSelectionService)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Pet food indicators - used to completely filter out pet products
-const PET_FOOD_BRANDS = [
-    "purina", "pedigree", "iams", "blue buffalo", "meow mix", "fancy feast",
-    "friskies", "alpo", "beneful", "cesar", "nutro", "rachael ray nutrish",
-    "wellness pet", "hill's science diet", "royal canin", "blue wilderness",
-    "taste of the wild", "orijen", "acana", "merrick", "canidae", "fromm",
-    "nutrisource", "diamond naturals", "earthborn", "zignature", "instinct",
-];
-
-const PET_FOOD_KEYWORDS = [
-    "dog food", "cat food", "pet food", "dog treat", "cat treat", "pet treat",
-    "kibble", "puppy food", "kitten food", "canine", "feline", "for dogs",
-    "for cats", "for pets", "dog biscuit", "cat litter",
-];
-
-// Non-food product indicators - household, health, beauty, etc.
-const NON_FOOD_KEYWORDS = [
-    // Oral care
-    "toothpaste", "toothbrush", "mouthwash", "dental floss", "denture",
-    // Personal care / beauty
-    "shampoo", "conditioner", "body wash", "soap bar", "hand soap", "lotion",
-    "deodorant", "antiperspirant", "razor", "shaving cream", "aftershave",
-    "makeup", "mascara", "lipstick", "foundation", "concealer", "nail polish",
-    "hair dye", "hair color", "styling gel", "hairspray", "mousse",
-    "face wash", "cleanser", "moisturizer", "sunscreen", "tanning",
-    "cotton balls", "cotton swabs", "q-tips",
-    // Health / medicine
-    "medicine", "aspirin", "ibuprofen", "acetaminophen", "tylenol", "advil",
-    "allergy relief", "cold medicine", "cough syrup", "antacid", "laxative",
-    "bandage", "band-aid", "first aid", "thermometer", "heating pad",
-    "vitamin supplement", "multivitamin", "fiber supplement",
-    // Baby (non-food)
-    "diaper", "baby wipe", "baby powder", "baby lotion", "baby shampoo",
-    // Cleaning products
-    "dish soap", "dishwasher detergent", "laundry detergent", "fabric softener",
-    "bleach", "all-purpose cleaner", "glass cleaner", "disinfectant", "lysol",
-    "toilet cleaner", "drain cleaner", "oven cleaner", "carpet cleaner",
-    "air freshener", "febreze", "sponge", "scrub brush", "mop", "broom",
-    "trash bag", "garbage bag", "aluminum foil", "plastic wrap", "parchment",
-    // Paper products
-    "paper towel", "toilet paper", "tissue", "napkin", "paper plate", "paper cup",
-    // Laundry
-    "stain remover", "dryer sheet", "laundry pod",
-    // Batteries / household
-    "battery", "light bulb", "candle",
-];
-
-const NON_FOOD_CATEGORIES = [
-    "pet", "dog", "cat", "health", "beauty", "personal care", "oral care",
-    "household", "cleaning", "laundry", "paper products", "baby care",
-    "pharmacy", "medicine", "first aid", "cosmetics", "hair care", "skin care",
-];
-
 /**
- * Check if a product is pet food - these should never be displayed for human food searches.
+ * Convert KrogerProduct or CachedKrogerProduct to ProductCandidate for selection service.
  */
-function isPetFood(product: KrogerProduct | CachedKrogerProduct): boolean {
-    const desc = ("description" in product ? product.description : "").toLowerCase();
+function toProductCandidate(product: KrogerProduct | CachedKrogerProduct): ProductCandidate {
+    const item = "items" in product ? product.items?.[0] : null;
+    const stockLevel = "stockLevel" in product
+        ? product.stockLevel
+        : item?.inventory?.stockLevel ?? null;
+    const isInStock = "isInStock" in product
+        ? product.isInStock
+        : stockLevel !== "TEMPORARILY_OUT_OF_STOCK";
 
-    // Check brand names
-    if (PET_FOOD_BRANDS.some((brand) => desc.includes(brand))) {
-        return true;
-    }
-
-    // Check keywords
-    if (PET_FOOD_KEYWORDS.some((keyword) => desc.includes(keyword))) {
-        return true;
-    }
-
-    // Check categories
-    const categories: string[] = [];
-    if ("categories" in product && Array.isArray(product.categories)) {
-        categories.push(...product.categories.map(c => c.toLowerCase()));
-    }
-    if ("category" in product && typeof product.category === "string") {
-        categories.push(product.category.toLowerCase());
-    }
-    if ("department" in product && typeof product.department === "string") {
-        categories.push(product.department.toLowerCase());
+    // Extract price
+    let price: number | null = null;
+    if ("promoPrice" in product) {
+        price = product.promoPrice ?? product.regularPrice ?? null;
+    } else if (item?.price) {
+        if (typeof item.price === "number") {
+            price = item.price;
+        } else if (typeof item.price === "object") {
+            price = item.price.promo ?? item.price.regular ?? null;
+        }
     }
 
-    if (categories.some((c) => c.includes("pet") || c.includes("dog") || c.includes("cat"))) {
-        return true;
-    }
-
-    return false;
+    return {
+        productId: product.productId,
+        description: product.description,
+        brand: "brand" in product ? product.brand ?? null : null,
+        categories: "categories" in product ? product.categories : undefined,
+        category: "category" in product ? product.category : null,
+        department: "department" in product ? product.department : null,
+        price,
+        stockLevel,
+        isInStock,
+        size: "size" in product ? product.size : item?.size ?? null,
+    };
 }
 
 /**
- * Check if a product is a non-food item (household, health, beauty, etc.)
- * These should never be displayed for grocery/ingredient searches.
+ * Check if a product is pet food - delegates to selection service.
+ */
+function isPetFood(product: KrogerProduct | CachedKrogerProduct): boolean {
+    return isPetFoodCheck(toProductCandidate(product));
+}
+
+/**
+ * Check if a product is a non-food item - delegates to selection service.
  */
 function isNonFoodProduct(product: KrogerProduct | CachedKrogerProduct): boolean {
-    const desc = ("description" in product ? product.description : "").toLowerCase();
-
-    // Check non-food keywords
-    if (NON_FOOD_KEYWORDS.some((keyword) => desc.includes(keyword))) {
-        return true;
-    }
-
-    // Check categories
-    const categories: string[] = [];
-    if ("categories" in product && Array.isArray(product.categories)) {
-        categories.push(...product.categories.map(c => c.toLowerCase()));
-    }
-    if ("category" in product && typeof product.category === "string") {
-        categories.push(product.category.toLowerCase());
-    }
-    if ("department" in product && typeof product.department === "string") {
-        categories.push(product.department.toLowerCase());
-    }
-
-    // Check if any category matches non-food categories
-    // But be careful not to exclude "grocery" items that might have "health" in a sub-category
-    if (categories.some((c) => NON_FOOD_CATEGORIES.some((nf) => c.includes(nf)))) {
-        return true;
-    }
-
-    return false;
+    return isNonFoodCheck(toProductCandidate(product));
 }
 
 /**
@@ -274,142 +213,45 @@ function isProductAvailable(product: KrogerProduct | CachedKrogerProduct): { ava
 
 /**
  * Score how good a product is for a given ingredient search term.
+ * Uses the selection service for quality-based scoring.
  * Works with both KrogerProduct (API) and CachedKrogerProduct (cache).
  */
 function scoreProduct(
     product: KrogerProduct | CachedKrogerProduct,
     searchTerm: string,
 ): number {
-    // Get description - works for both types
-    const desc = ("description" in product ? product.description : "").toLowerCase();
+    // Convert to ProductCandidate and use selection service
+    const candidate = toProductCandidate(product);
+
+    // Get ingredient rule for quality scoring
+    const ingredientRule = findIngredientRule(searchTerm);
+
+    // Use selection service's quality and relevance scoring
+    const qualityResult = calculateQualityScore(candidate, ingredientRule, ingredientRule?.category);
+    const relevanceResult = calculateRelevanceScore(candidate, searchTerm);
+
+    // Combined score - quality weighted more heavily for fresh ingredient selection
+    const combinedScore = (qualityResult.score * 1.5) + relevanceResult.score;
+
+    // Additional pantry staple price adjustments (keep existing logic)
+    let priceBonus = 0;
     const term = searchTerm.toLowerCase().trim();
-
-    let score = 0;
-
-    // Stock level affects scoring
-    const { stockLevel } = isProductAvailable(product);
-    if (stockLevel === "LOW") {
-        score -= 2;
-    } else if (stockLevel === "HIGH") {
-        score += 3;
-    }
-
-    // Basic text match
-    if (desc.includes(term)) score += 5;
-
-    // Exact word match
-    const wordRegex = new RegExp(`\\b${term}\\b`);
-    if (wordRegex.test(desc)) score += 3;
-
-    // Get categories - handle both types
-    const categories: string[] = [];
-    if ("categories" in product && Array.isArray(product.categories)) {
-        categories.push(...product.categories.map(c => c.toLowerCase()));
-    }
-    if ("category" in product && typeof product.category === "string") {
-        categories.push(product.category.toLowerCase());
-    }
-    if ("department" in product && typeof product.department === "string") {
-        categories.push(product.department.toLowerCase());
-    }
-
-    const freshProduceCategories = ["produce", "fruit", "vegetable", "fresh fruit", "fresh vegetable"];
-    const otherGoodCategoryHints = ["meat", "seafood", "dairy", "cheese", "eggs", "pantry", "spices", "baking"];
-
-    const isInFreshProduceCategory = categories.some((c) =>
-        freshProduceCategories.some((g) => c.includes(g)) && !c.includes("frozen")
-    );
-
-    if (isInFreshProduceCategory) {
-        score += 15;
-    } else if (categories.some((c) => otherGoodCategoryHints.some((g) => c.includes(g)))) {
-        score += 4;
-    }
-
-    // Penalize beverages/sodas
-    const badWords = [
-        "soda", "soft drink", "pop", "cola", "energy drink", "sports drink",
-        "sparkling", "sprite", "coke", "pepsi", "mountain dew", "zero sugar",
-        "diet", "lemonade", "drink", "beverage", "tea", "cocktail", "mixer",
-    ];
-    if (badWords.some((w) => desc.includes(w))) {
-        score -= 10;
-    }
-
-    // Note: Pet food is filtered out entirely by isPetFood() before scoring
-
-    // Penalize processed products
-    const processedIndicators = [
-        "chips", "bread", "muffin", "cake", "cookie", "bar", "smoothie", "shake",
-        "dried", "dehydrated", "freeze-dried", "trail mix", "granola", "cereal",
-        "jam", "jelly", "preserves", "sauce", "syrup", "flavored", "candy",
-        "pudding", "yogurt", "ice cream",
-    ];
-    if (processedIndicators.some((w) => desc.includes(w))) {
-        score -= 8;
-    }
-
-    // Boost juice products when searching for juice
-    if (term.includes("juice")) {
-        if (desc.includes("juice") && !desc.includes("lemonade") && !desc.includes("drink")) {
-            score += 8;
-        }
-    }
-
-    // Boost fresh items
-    if (desc.includes("fresh") || desc.startsWith("fresh ")) {
-        score += 10;
-    }
-
-    // Penalize frozen products
-    const frozenIndicators = ["frozen", "steamable", "steam-in-bag", "microwaveable"];
-    const isFrozenProduct = frozenIndicators.some((w) => desc.includes(w)) ||
-        categories.some((c) => c.includes("frozen"));
-
-    if (isFrozenProduct && !isInFreshProduceCategory) {
-        score -= 15;
-    }
-
-    // Boost raw ingredient indicators
-    const rawIndicators = ["bunch", "single", "each", "per lb", "- lb", "/lb"];
-    if (rawIndicators.some((w) => desc.includes(w))) {
-        score += 5;
-    }
-
-    // Reward short descriptions
-    if (desc.length < 40) score += 2;
-
-    // Handle pantry staples - prefer smaller/cheaper sizes
     const pantryStaples = [
         "olive oil", "vegetable oil", "canola oil", "coconut oil", "sesame oil",
         "soy sauce", "vinegar", "honey", "maple syrup", "worcestershire",
         "mustard", "ketchup", "mayonnaise", "hot sauce", "sriracha",
         "salt", "pepper", "sugar", "flour", "baking powder", "baking soda",
     ];
+    const desc = candidate.description.toLowerCase();
     const isPantryStaple = pantryStaples.some((staple) => term.includes(staple) || desc.includes(staple));
 
-    if (isPantryStaple) {
-        // Get price - handle both types
-        let price: number | null = null;
-        if ("promoPrice" in product) {
-            price = product.promoPrice ?? product.regularPrice;
-        } else if ("items" in product && product.items?.[0]?.price) {
-            const itemPrice = product.items[0].price;
-            if (typeof itemPrice === "number") {
-                price = itemPrice;
-            } else if (typeof itemPrice === "object") {
-                price = itemPrice.promo ?? itemPrice.regular ?? null;
-            }
-        }
-
-        if (typeof price === "number") {
-            if (price <= 4) score += 5;
-            else if (price <= 6) score += 2;
-            else if (price > 10) score -= 3;
-        }
+    if (isPantryStaple && typeof candidate.price === "number") {
+        if (candidate.price <= 4) priceBonus = 5;
+        else if (candidate.price <= 6) priceBonus = 2;
+        else if (candidate.price > 10) priceBonus = -3;
     }
 
-    return score;
+    return combinedScore + priceBonus;
 }
 
 function buildFallbackSearchTerm(original: string): string | null {
@@ -671,10 +513,9 @@ export async function searchKrogerProduct(
             }
         }
 
-        const imageUrl =
-            chosen.images?.[0]?.sizes?.[0]?.url ??
-            (chosen.images?.[0]?.sizes && chosen.images[0].sizes[chosen.images[0].sizes.length - 1]?.url) ??
-            undefined;
+        // Prefer larger images (last in sizes array)
+        const imageSizes = chosen.images?.[0]?.sizes;
+        const imageUrl = imageSizes?.[imageSizes.length - 1]?.url ?? imageSizes?.[0]?.url ?? undefined;
 
         const soldBy = item?.soldBy?.toUpperCase() === "WEIGHT" ? "WEIGHT" as const : "UNIT" as const;
 
@@ -863,10 +704,9 @@ export async function searchAlternativeProduct(
     const { available, stockLevel } = isProductAvailable(chosen);
     const item = chosen.items?.[0];
 
-    const imageUrl =
-        chosen.images?.[0]?.sizes?.[0]?.url ??
-        (chosen.images?.[0]?.sizes && chosen.images[0].sizes[chosen.images[0].sizes.length - 1]?.url) ??
-        undefined;
+    // Prefer larger images (last in sizes array)
+    const altImageSizes = chosen.images?.[0]?.sizes;
+    const imageUrl = altImageSizes?.[altImageSizes.length - 1]?.url ?? altImageSizes?.[0]?.url ?? undefined;
 
     let priceValue: number | undefined;
     if (item?.price) {
@@ -1019,10 +859,9 @@ export async function searchKrogerProducts(
         const { available, stockLevel } = isProductAvailable(product);
         const item = product.items?.[0];
 
-        const imageUrl =
-            product.images?.[0]?.sizes?.[0]?.url ??
-            (product.images?.[0]?.sizes && product.images[0].sizes[product.images[0].sizes.length - 1]?.url) ??
-            undefined;
+        // Prefer larger images (last in sizes array)
+        const prodImageSizes = product.images?.[0]?.sizes;
+        const imageUrl = prodImageSizes?.[prodImageSizes.length - 1]?.url ?? prodImageSizes?.[0]?.url ?? undefined;
 
         let priceValue: number | undefined;
         if (item?.price) {

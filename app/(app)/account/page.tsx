@@ -194,6 +194,7 @@ function AccountPageContent() {
     // Delete account state
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [deletePassword, setDeletePassword] = useState("");
+    const [showDeletePassword, setShowDeletePassword] = useState(false);
     const [deletingAccount, setDeletingAccount] = useState(false);
     const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -1687,12 +1688,19 @@ function AccountPageContent() {
                                         <div className="relative">
                                             <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                             <input
-                                                type="password"
+                                                type={showDeletePassword ? "text" : "password"}
                                                 value={deletePassword}
                                                 onChange={(e) => setDeletePassword(e.target.value)}
                                                 placeholder="Enter your password"
-                                                className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-red-400 focus:outline-none focus:bg-white transition-colors"
+                                                className="w-full pl-11 pr-11 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-red-400 focus:outline-none focus:bg-white transition-colors"
                                             />
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowDeletePassword(!showDeletePassword)}
+                                                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                                            >
+                                                {showDeletePassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                            </button>
                                         </div>
                                     </div>
 
@@ -1725,6 +1733,7 @@ function AccountPageContent() {
                                             onClick={() => {
                                                 setShowDeleteConfirm(false);
                                                 setDeletePassword("");
+                                                setShowDeletePassword(false);
                                                 setDeleteError(null);
                                             }}
                                             className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
