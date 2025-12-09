@@ -8,6 +8,10 @@ import Image from "next/image";
 import { Mail, ArrowRight, CheckCircle, ArrowLeft } from "lucide-react";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
 import { useToast } from "@/components/Toast";
+import { Button } from "@/components/Button";
+import { FormInput } from "@/components/FormInput";
+import { Card } from "@/components/Card";
+import { IconBox } from "@/components/IconBox";
 
 export default function ForgotPasswordPage() {
     const { showToast } = useToast();
@@ -53,51 +57,39 @@ export default function ForgotPasswordPage() {
                     </div>
 
                     {/* Form Card */}
-                    <div className="bg-white rounded-2xl shadow-lg p-6">
+                    <Card padding="lg" className="shadow-lg">
                         {!isSuccess ? (
                             <form onSubmit={handleResetPassword} className="space-y-4">
                                 {/* Email Input */}
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        Email
-                                    </label>
-                                    <div className="relative">
-                                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                                        <input
-                                            type="email"
-                                            value={email}
-                                            onChange={(e) => setEmail(e.target.value)}
-                                            placeholder="you@example.com"
-                                            className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#4A90E2] focus:outline-none focus:bg-white transition-colors"
-                                            required
-                                        />
-                                    </div>
-                                </div>
+                                <FormInput
+                                    type="email"
+                                    label="Email"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    placeholder="you@example.com"
+                                    icon={<Mail className="w-5 h-5" />}
+                                    required
+                                />
 
                                 {/* Submit Button */}
-                                <button
+                                <Button
                                     type="submit"
-                                    disabled={loading || !email.trim()}
-                                    className="w-full py-4 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                    disabled={!email.trim()}
+                                    loading={loading}
+                                    fullWidth
+                                    size="lg"
+                                    icon={!loading ? <ArrowRight className="w-5 h-5" /> : undefined}
+                                    iconPosition="right"
+                                    className="rounded-2xl py-4"
                                 >
-                                    {loading ? (
-                                        <>
-                                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                            <span>Sending...</span>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <span>Send Reset Link</span>
-                                            <ArrowRight className="w-5 h-5" />
-                                        </>
-                                    )}
-                                </button>
+                                    {loading ? "Sending..." : "Send Reset Link"}
+                                </Button>
                             </form>
                         ) : (
                             <div className="text-center py-4">
-                                <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                                    <CheckCircle className="w-8 h-8 text-emerald-500" />
-                                </div>
+                                <IconBox size="lg" variant="success" className="mx-auto mb-4 w-16 h-16 rounded-full">
+                                    <CheckCircle className="w-8 h-8" />
+                                </IconBox>
                                 <h2 className="text-lg font-medium text-gray-900 mb-2">Check your email</h2>
                                 <p className="text-gray-500 text-sm mb-4">
                                     We've sent a password reset link to <span className="font-medium text-gray-700">{email}</span>
@@ -124,7 +116,7 @@ export default function ForgotPasswordPage() {
                                 <span className="font-medium">Back to Sign In</span>
                             </Link>
                         </div>
-                    </div>
+                    </Card>
 
                     {/* Footer Text */}
                     <p className="text-center text-sm text-gray-400 mt-6 px-4">

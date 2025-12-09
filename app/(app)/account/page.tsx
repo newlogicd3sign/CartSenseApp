@@ -45,6 +45,7 @@ import {
 import { signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential, deleteUser } from "firebase/auth";
 import { deleteDoc } from "firebase/firestore";
 import { useToast } from "@/components/Toast";
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { getStoreBrand } from "@/lib/utils";
 import type { FamilyMember } from "@/types/family";
 
@@ -1092,22 +1093,11 @@ function AccountPageContent() {
     const hasDoctorNote = Boolean(doctor?.hasActiveNote);
 
     if (loadingUser) {
-        return (
-            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                <div className="text-center">
-                    <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
-                    <p className="text-gray-500">Loading your account...</p>
-                </div>
-            </div>
-        );
+        return <LoadingScreen message="Loading your account..." />;
     }
 
     if (!user) {
-        return (
-            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                <p className="text-gray-500">Redirecting to login...</p>
-            </div>
-        );
+        return <LoadingScreen message="Redirecting to login..." />;
     }
 
     return (
@@ -2449,16 +2439,7 @@ function AccountPageContent() {
 
 export default function AccountPage() {
     return (
-        <Suspense
-            fallback={
-                <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                    <div className="text-center">
-                        <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
-                        <p className="text-gray-500">Loading your account...</p>
-                    </div>
-                </div>
-            }
-        >
+        <Suspense fallback={<LoadingScreen message="Loading your account..." />}>
             <AccountPageContent />
         </Suspense>
     );

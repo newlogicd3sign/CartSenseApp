@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
+import { LoadingScreen } from "@/components/LoadingScreen";
 
 type DietRestrictionsParsed = {
     blockedIngredients: string[];
@@ -209,14 +210,7 @@ function DietRestrictionsContent() {
 
     // Loading state
     if (loadingUser) {
-        return (
-            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                <div className="text-center">
-                    <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
-                    <p className="text-gray-500">Loading...</p>
-                </div>
-            </div>
-        );
+        return <LoadingScreen />;
     }
 
     // Premium paywall
@@ -506,16 +500,7 @@ function DietRestrictionsContent() {
 
 export default function DietRestrictionsPage() {
     return (
-        <Suspense
-            fallback={
-                <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                    <div className="text-center">
-                        <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
-                        <p className="text-gray-500">Loading...</p>
-                    </div>
-                </div>
-            }
-        >
+        <Suspense fallback={<LoadingScreen />}>
             <DietRestrictionsContent />
         </Suspense>
     );

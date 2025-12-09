@@ -43,6 +43,7 @@ import {
 } from "lucide-react";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { useToast } from "@/components/Toast";
+import { LoadingScreen } from "@/components/LoadingScreen";
 import {
     isStapleItem,
     isSameIngredient,
@@ -948,22 +949,11 @@ function MealDetailPageContent() {
     };
 
     if (loadingUser || loadingMeal) {
-        return (
-            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                <div className="text-center">
-                    <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
-                    <p className="text-gray-500">Loading your meal...</p>
-                </div>
-            </div>
-        );
+        return <LoadingScreen message="Loading your meal..." />;
     }
 
     if (!user) {
-        return (
-            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                <p className="text-gray-500">Redirecting to login...</p>
-            </div>
-        );
+        return <LoadingScreen message="Redirecting to login..." />;
     }
 
     if (!meal) {
@@ -1673,16 +1663,7 @@ function MealDetailPageContent() {
 
 export default function MealDetailPage() {
     return (
-        <Suspense
-            fallback={
-                <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                    <div className="text-center">
-                        <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
-                        <p className="text-gray-500">Loading meal details...</p>
-                    </div>
-                </div>
-            }
-        >
+        <Suspense fallback={<LoadingScreen message="Loading meal details..." />}>
             <MealDetailPageContent />
         </Suspense>
     );

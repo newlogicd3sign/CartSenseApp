@@ -9,6 +9,7 @@ import { getRandomAccentColor, getRandomAccentColorExcluding, type AccentColor }
 import { Sparkles, UtensilsCrossed, ChefHat, Soup, Pizza, Salad, Sandwich, Croissant, Apple, Carrot, Beef, Fish, Citrus, Drumstick, Wheat, Ham, CookingPot, Hamburger, ShieldCheck, HeartPulse, Users, ChevronRight } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { loadGeneratedMeals } from "@/lib/mealStorage";
+import { LoadingScreen } from "@/components/LoadingScreen";
 
 const foodIcons = [
     UtensilsCrossed,
@@ -227,14 +228,7 @@ export default function PromptPage() {
     };
 
     if (loadingUser) {
-        return (
-            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                <div className="text-center">
-                    <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
-                    <p className="text-gray-500">Loading...</p>
-                </div>
-            </div>
-        );
+        return <LoadingScreen />;
     }
 
     return (

@@ -15,16 +15,14 @@ import {
 import { logUserEvent } from "@/lib/logUserEvent";
 import {
     Bookmark,
-    ChevronRight,
-    Flame,
-    Beef,
-    Wheat,
-    Droplet,
     Search,
     Trash2,
-    X,
 } from "lucide-react";
 import { getRandomAccentColor, type AccentColor } from "@/lib/utils";
+import { LoadingScreen } from "@/components/LoadingScreen";
+import { EmptyState } from "@/components/EmptyState";
+import { ConfirmationModal } from "@/components/ConfirmationModal";
+import { MealCard } from "@/components/MealCard";
 
 type Ingredient = {
     name: string;
@@ -143,22 +141,11 @@ export default function SavedMealsPage() {
     );
 
     if (loadingUser || loadingMeals) {
-        return (
-            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                <div className="text-center">
-                    <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
-                    <p className="text-gray-500">Loading saved meals...</p>
-                </div>
-            </div>
-        );
+        return <LoadingScreen message="Loading saved meals..." />;
     }
 
     if (!user) {
-        return (
-            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                <p className="text-gray-500">Redirecting to login...</p>
-            </div>
-        );
+        return <LoadingScreen message="Redirecting to login..." />;
     }
 
     return (
@@ -202,168 +189,73 @@ export default function SavedMealsPage() {
             <div className="px-6 py-6">
                 <div className="max-w-3xl mx-auto">
                     {meals.length === 0 ? (
-                        <div className="text-center py-16">
-                            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <Bookmark className="w-8 h-8 text-gray-400" />
-                            </div>
-                            <h3 className="text-lg font-medium text-gray-900 mb-2">No saved meals yet</h3>
-                            <p className="text-gray-500 mb-6">
-                                When you save meals, they'll appear here for easy access.
-                            </p>
-                            <button
-                                onClick={() => router.push("/prompt")}
-                                style={{
-                                    background: `linear-gradient(to right, ${accentColor.primary}, ${accentColor.dark})`,
-                                }}
-                                className="px-6 py-3 text-white rounded-xl shadow-lg hover:shadow-xl transition-all"
-                            >
-                                Generate new meals
-                            </button>
-                        </div>
+                        <EmptyState
+                            icon={<Bookmark className="w-8 h-8 text-gray-400" />}
+                            title="No saved meals yet"
+                            description="When you save meals, they'll appear here for easy access."
+                            action={{
+                                label: "Generate new meals",
+                                onClick: () => router.push("/prompt"),
+                                variant: "gradient",
+                                gradientColors: accentColor,
+                            }}
+                        />
                     ) : filteredMeals.length === 0 ? (
-                        <div className="text-center py-16">
-                            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <Search className="w-8 h-8 text-gray-400" />
-                            </div>
-                            <h3 className="text-lg font-medium text-gray-900 mb-2">No matches found</h3>
-                            <p className="text-gray-500">Try a different search term.</p>
-                        </div>
+                        <EmptyState
+                            icon={<Search className="w-8 h-8 text-gray-400" />}
+                            title="No matches found"
+                            description="Try a different search term."
+                        />
                     ) : (
                         <div className="flex flex-col gap-3">
-                            {filteredMeals.map((meal) => {
-                                const thumbSrc =
-                                    meal.imageUrl ??
-                                    "https://placehold.co/256x256/e5e7eb/9ca3af?text=Meal";
-
-                                return (
-                                    <div
-                                        key={meal.id}
-                                        className="relative bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow border border-gray-100 flex p-4 gap-4"
-                                    >
-                                        {/* Delete button - Top Right */}
+                            {filteredMeals.map((meal) => (
+                                <MealCard
+                                    key={meal.id}
+                                    id={meal.id}
+                                    name={meal.name}
+                                    description={meal.description}
+                                    mealType={meal.mealType}
+                                    macros={meal.macros}
+                                    imageUrl={meal.imageUrl}
+                                    onClick={() => handleViewMeal(meal.id)}
+                                    badge={
+                                        <div className="w-5 h-5 bg-[#4A90E2] rounded-full flex items-center justify-center">
+                                            <Bookmark className="w-2.5 h-2.5 text-white fill-white" />
+                                        </div>
+                                    }
+                                    actionButton={
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 setMealToDelete(meal);
                                             }}
-                                            className="absolute top-2 right-2 inline-flex items-center justify-center w-6 h-6 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                            className="inline-flex items-center justify-center w-6 h-6 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                                         >
                                             <Trash2 className="w-3.5 h-3.5" />
                                         </button>
-
-                                        {/* Thumbnail - Left */}
-                                        <div
-                                            onClick={() => handleViewMeal(meal.id)}
-                                            className="w-20 h-20 flex-shrink-0 bg-gray-100 rounded-xl overflow-hidden cursor-pointer"
-                                        >
-                                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                                            <img
-                                                src={thumbSrc}
-                                                alt={meal.name}
-                                                className="w-full h-full object-cover"
-                                            />
-                                        </div>
-
-                                        {/* Content - Right */}
-                                        <div className="flex-1 flex flex-col min-w-0">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <span className="inline-block px-2 py-0.5 bg-gray-100 rounded-md text-xs font-medium text-gray-600 capitalize">
-                                                    {meal.mealType}
-                                                </span>
-                                                <div className="w-5 h-5 bg-[#4A90E2] rounded-full flex items-center justify-center">
-                                                    <Bookmark className="w-2.5 h-2.5 text-white fill-white" />
-                                                </div>
-                                            </div>
-                                            <h2
-                                                onClick={() => handleViewMeal(meal.id)}
-                                                className="text-base font-medium text-gray-900 mb-1 line-clamp-1 cursor-pointer hover:text-[#4A90E2] transition-colors"
-                                            >
-                                                {meal.name}
-                                            </h2>
-                                            <p className="text-sm text-gray-500 line-clamp-1 mb-2">
-                                                {meal.description}
-                                            </p>
-
-                                            {/* Macros */}
-                                            <div className="flex items-center gap-3 text-xs text-gray-500 mb-3">
-                                                <div className="flex items-center gap-1">
-                                                    <Flame className="w-3 h-3 text-orange-500" />
-                                                    <span>{meal.macros.calories}</span>
-                                                </div>
-                                                <div className="flex items-center gap-1">
-                                                    <Beef className="w-3 h-3 text-blue-500" />
-                                                    <span>{meal.macros.protein}g</span>
-                                                </div>
-                                                <div className="flex items-center gap-1">
-                                                    <Wheat className="w-3 h-3 text-amber-500" />
-                                                    <span>{meal.macros.carbs}g</span>
-                                                </div>
-                                                <div className="flex items-center gap-1">
-                                                    <Droplet className="w-3 h-3 text-purple-500" />
-                                                    <span>{meal.macros.fat}g</span>
-                                                </div>
-                                            </div>
-
-                                            {/* View Button */}
-                                            <button
-                                                onClick={() => handleViewMeal(meal.id)}
-                                                className="inline-flex items-center gap-0.5 px-2 py-1 bg-[#4A90E2]/10 text-[#4A90E2] text-[10px] font-medium rounded-lg hover:bg-[#4A90E2]/20 transition-colors whitespace-nowrap w-fit"
-                                            >
-                                                <span>View meal</span>
-                                                <ChevronRight className="w-3 h-3" />
-                                            </button>
-                                        </div>
-                                    </div>
-                                );
-                            })}
+                                    }
+                                />
+                            ))}
                         </div>
                     )}
                 </div>
             </div>
 
             {/* Delete Confirmation Modal */}
-            {mealToDelete && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
-                    <div
-                        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-                        onClick={() => setMealToDelete(null)}
-                    />
-                    <div className="relative bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl animate-scale-up">
-                        <button
-                            onClick={() => setMealToDelete(null)}
-                            className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
-                        >
-                            <X className="w-5 h-5 text-gray-400" />
-                        </button>
-
-                        <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <Trash2 className="w-6 h-6 text-red-500" />
-                        </div>
-
-                        <h3 className="text-lg font-medium text-gray-900 text-center mb-2">
-                            Remove saved meal?
-                        </h3>
-                        <p className="text-sm text-gray-500 text-center mb-6">
-                            "{mealToDelete.name}" will be removed from your saved meals. This action cannot be undone.
-                        </p>
-
-                        <div className="flex gap-3">
-                            <button
-                                onClick={() => setMealToDelete(null)}
-                                className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={() => handleRemoveMeal(mealToDelete.id)}
-                                className="flex-1 py-3 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-colors"
-                            >
-                                Remove
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <ConfirmationModal
+                isOpen={!!mealToDelete}
+                onClose={() => setMealToDelete(null)}
+                onConfirm={() => mealToDelete && handleRemoveMeal(mealToDelete.id)}
+                icon={<Trash2 className="w-6 h-6 text-red-500" />}
+                title="Remove saved meal?"
+                description={
+                    mealToDelete
+                        ? `"${mealToDelete.name}" will be removed from your saved meals. This action cannot be undone.`
+                        : ""
+                }
+                confirmLabel="Remove"
+                variant="danger"
+            />
         </div>
     );
 }

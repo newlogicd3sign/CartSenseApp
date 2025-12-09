@@ -10,6 +10,7 @@ import { getRandomAccentColor, type AccentColor } from "@/lib/utils";
 import { clearAllMealStorage, loadGeneratedMeals } from "@/lib/mealStorage";
 import Image from "next/image";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
+import { LoadingScreen } from "@/components/LoadingScreen";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
@@ -122,14 +123,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     // Show loading state while checking auth
     if (!authChecked) {
-        return (
-            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                <div className="text-center">
-                    <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
-                    <p className="text-gray-500">Loading...</p>
-                </div>
-            </div>
-        );
+        return <LoadingScreen />;
     }
 
     return (

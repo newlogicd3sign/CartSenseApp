@@ -9,6 +9,10 @@ import Image from "next/image";
 import { Mail, RefreshCw, CheckCircle, LogOut } from "lucide-react";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
 import { useToast } from "@/components/Toast";
+import { LoadingScreen } from "@/components/LoadingScreen";
+import { Button } from "@/components/Button";
+import { Card } from "@/components/Card";
+import { IconBox } from "@/components/IconBox";
 
 export default function VerifyEmailPage() {
     const router = useRouter();
@@ -106,14 +110,7 @@ export default function VerifyEmailPage() {
     };
 
     if (loading) {
-        return (
-            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                <div className="text-center">
-                    <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
-                    <p className="text-gray-500">Loading...</p>
-                </div>
-            </div>
-        );
+        return <LoadingScreen />;
     }
 
     return (
@@ -131,11 +128,11 @@ export default function VerifyEmailPage() {
                     </div>
 
                     {/* Card */}
-                    <div className="bg-white rounded-2xl shadow-lg p-6">
+                    <Card padding="lg" className="shadow-lg">
                         {/* Email Icon */}
-                        <div className="w-20 h-20 bg-[#4A90E2]/10 rounded-full flex items-center justify-center mx-auto mb-6">
-                            <Mail className="w-10 h-10 text-[#4A90E2]" />
-                        </div>
+                        <IconBox size="lg" variant="primary" className="w-20 h-20 rounded-full mx-auto mb-6">
+                            <Mail className="w-10 h-10" />
+                        </IconBox>
 
                         {/* Email Address */}
                         <div className="text-center mb-6">
@@ -154,42 +151,28 @@ export default function VerifyEmailPage() {
                         {/* Action Buttons */}
                         <div className="space-y-3">
                             {/* Check Verification Button */}
-                            <button
+                            <Button
                                 onClick={handleCheckVerification}
-                                disabled={checking}
-                                className="w-full py-4 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                loading={checking}
+                                fullWidth
+                                size="lg"
+                                icon={!checking ? <CheckCircle className="w-5 h-5" /> : undefined}
+                                className="rounded-2xl py-4"
                             >
-                                {checking ? (
-                                    <>
-                                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                        <span>Checking...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <CheckCircle className="w-5 h-5" />
-                                        <span>I've Verified My Email</span>
-                                    </>
-                                )}
-                            </button>
+                                {checking ? "Checking..." : "I've Verified My Email"}
+                            </Button>
 
                             {/* Resend Button */}
-                            <button
+                            <Button
                                 onClick={handleResendVerification}
                                 disabled={resending}
-                                className="w-full py-3 bg-white border-2 border-gray-200 text-gray-700 rounded-xl flex items-center justify-center gap-2 hover:bg-gray-50 active:scale-[0.98] transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                                loading={resending}
+                                variant="outline"
+                                fullWidth
+                                icon={!resending ? <RefreshCw className="w-4 h-4" /> : undefined}
                             >
-                                {resending ? (
-                                    <>
-                                        <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
-                                        <span>Sending...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <RefreshCw className="w-4 h-4" />
-                                        <span>Resend Verification Email</span>
-                                    </>
-                                )}
-                            </button>
+                                {resending ? "Sending..." : "Resend Verification Email"}
+                            </Button>
                         </div>
 
                         {/* Sign Out Link */}
@@ -202,7 +185,7 @@ export default function VerifyEmailPage() {
                                 <span className="text-sm">Sign out and use a different email</span>
                             </button>
                         </div>
-                    </div>
+                    </Card>
 
                     {/* Help Text */}
                     <div className="mt-6 text-center">

@@ -26,8 +26,6 @@ import {
     ChefHat,
     MapPin,
     Lightbulb,
-    Plus,
-    Minus,
     Loader2,
     RefreshCw,
     Search,
@@ -36,6 +34,10 @@ import {
 } from "lucide-react";
 import { getRandomAccentColor, getStoreBrand, type AccentColor, type StoreBrandInfo } from "@/lib/utils";
 import { useToast } from "@/components/Toast";
+import { LoadingScreen } from "@/components/LoadingScreen";
+import { EmptyState } from "@/components/EmptyState";
+import { ConfirmationModal } from "@/components/ConfirmationModal";
+import { Alert } from "@/components/Alert";
 
 type ShoppingItem = {
     id: string;
@@ -264,62 +266,6 @@ export default function ShoppingListPage() {
         return () => unsub();
     }, [user]);
 
-    // Enrich items with Kroger product data when Kroger becomes linked
-    useEffect(() => {
-        if (!user || krogerLinkStatus !== "linked" || items.length === 0) return;
-
-        // Find items that don't have Kroger product data yet
-        const itemsToEnrich = items.filter((item) => !item.krogerProductId);
-        if (itemsToEnrich.length === 0) return;
-
-        const enrichItems = async () => {
-            try {
-                // Use the cart endpoint with enrichOnly flag to get product data without adding to cart
-                const cartItems = itemsToEnrich.map((item) => ({
-                    id: item.id,
-                    name: item.name,
-                    quantity: item.quantity,
-                    count: item.count || 1,
-                }));
-
-                const res = await fetch("/api/kroger/cart", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ userId: user.uid, items: cartItems, enrichOnly: true }),
-                });
-
-                if (!res.ok) return;
-
-                const data = (await res.json()) as KrogerCartResponse;
-
-                // Update items in Firestore with enriched data
-                if (data.enrichedItems && data.enrichedItems.length > 0) {
-                    for (const enriched of data.enrichedItems) {
-                        if (enriched.found && enriched.product) {
-                            const matchingItem = itemsToEnrich.find(
-                                (item) => item.name.toLowerCase() === enriched.originalName.toLowerCase()
-                            );
-                            if (matchingItem) {
-                                await updateDoc(doc(db, "shoppingLists", user.uid, "items", matchingItem.id), {
-                                    krogerProductId: enriched.product.krogerProductId,
-                                    productName: enriched.product.name,
-                                    productImageUrl: enriched.product.imageUrl || null,
-                                    productSize: enriched.product.size || null,
-                                    productAisle: enriched.product.aisle || null,
-                                    price: enriched.product.price || null,
-                                });
-                            }
-                        }
-                    }
-                }
-            } catch (err) {
-                console.error("Error enriching items with Kroger data", err);
-            }
-        };
-
-        void enrichItems();
-    }, [user, krogerLinkStatus, items.length]); // Only re-run when status changes or items count changes
-
     const handleAddToKrogerCart = async (itemsToAdd: ShoppingItem[]) => {
         if (!user || itemsToAdd.length === 0) return;
 
@@ -375,23 +321,6 @@ export default function ShoppingListPage() {
             await deleteDoc(doc(db, "shoppingLists", user.uid, "items", itemId));
         } catch (err) {
             console.error("Error deleting shopping list item", err);
-        }
-    };
-
-    const handleUpdateCount = async (itemId: string, newCount: number) => {
-        if (!user) return;
-        if (newCount < 1) {
-            // If count goes to 0, remove the item
-            await handleRemoveItem(itemId);
-            return;
-        }
-
-        try {
-            await updateDoc(doc(db, "shoppingLists", user.uid, "items", itemId), {
-                count: newCount,
-            });
-        } catch (err) {
-            console.error("Error updating item count", err);
         }
     };
 
@@ -687,23 +616,12 @@ export default function ShoppingListPage() {
         });
     };
 
-    if (loadingUser || loadingItems) {
-        return (
-            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                <div className="text-center">
-                    <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
-                    <p className="text-gray-500">Loading your shopping list...</p>
-                </div>
-            </div>
-        );
+    if (loadingUser || loadingItems || krogerLinkStatus === "loading") {
+        return <LoadingScreen message="Loading your shopping list..." />;
     }
 
     if (!user) {
-        return (
-            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                <p className="text-gray-500">Redirecting to login...</p>
-            </div>
-        );
+        return <LoadingScreen message="Redirecting to login..." />;
     }
 
     return (
@@ -754,44 +672,28 @@ export default function ShoppingListPage() {
             <div className="px-6 py-6">
                 <div className="max-w-3xl mx-auto">
                     {items.length === 0 ? (
-                        <div className="text-center py-16">
-                            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <List className="w-8 h-8 text-gray-400" />
-                            </div>
-                            <h3 className="text-lg font-medium text-gray-900 mb-2">Your list is empty</h3>
-                            <p className="text-gray-500 mb-6">
-                                Add ingredients from meals to start building your shopping list.
-                            </p>
-                            <button
-                                onClick={() => router.push("/prompt")}
-                                style={{
-                                    background: `linear-gradient(to right, ${accentColor.primary}, ${accentColor.dark})`,
-                                }}
-                                className="px-6 py-3 text-white rounded-xl shadow-lg hover:shadow-xl transition-all"
-                            >
-                                Generate meals
-                            </button>
-                        </div>
+                        <EmptyState
+                            icon={<List className="w-8 h-8 text-gray-400" />}
+                            title="Your list is empty"
+                            description="Add ingredients from meals to start building your shopping list."
+                            action={{
+                                label: "Generate meals",
+                                onClick: () => router.push("/prompt"),
+                                variant: "gradient",
+                                gradientColors: accentColor,
+                            }}
+                        />
                     ) : (
                         <div className="space-y-6">
                             {/* Pantry Tip */}
                             {showPantryTip && (
-                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
-                                    <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                                        <Lightbulb className="w-4 h-4 text-amber-600" />
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm text-amber-800">
-                                            <span className="font-medium">Tip:</span> Remove items you already have in your pantry to avoid buying duplicates.
-                                        </p>
-                                    </div>
-                                    <button
-                                        onClick={() => setShowPantryTip(false)}
-                                        className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-amber-100 transition-colors flex-shrink-0"
-                                    >
-                                        <X className="w-4 h-4 text-amber-600" />
-                                    </button>
-                                </div>
+                                <Alert
+                                    variant="warning"
+                                    icon={<Lightbulb className="w-4 h-4" />}
+                                    onClose={() => setShowPantryTip(false)}
+                                >
+                                    <span className="font-medium">Tip:</span> Remove items you already have in your pantry to avoid buying duplicates.
+                                </Alert>
                             )}
 
                             {sortedDates.map((dateKey) => {
@@ -848,19 +750,26 @@ export default function ShoppingListPage() {
                                         <ul className="divide-y divide-gray-50">
                                             {sectionItems.map((item) => {
                                                 const hasKrogerProduct = krogerLinkStatus === "linked" && !!item.krogerProductId;
-                                                const hasProductImage = hasKrogerProduct && item.productImageUrl;
+                                                const hasProductImage = hasKrogerProduct && !!item.productImageUrl;
                                                 return (
                                                     <li
                                                         key={item.id}
-                                                        className="px-5 py-4"
+                                                        className="px-5 py-5 relative"
                                                     >
+                                                        {/* Delete button - upper right */}
+                                                        <button
+                                                            onClick={() => handleRemoveItem(item.id)}
+                                                            className="absolute top-4 right-5 w-8 h-8 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 transition-colors"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
                                                         {/* Clickable area for opening detail modal - only when Kroger is linked */}
                                                         <div
                                                             onClick={() => krogerLinkStatus === "linked" && handleOpenItemDetail(item)}
-                                                            className={`flex items-start gap-3 ${krogerLinkStatus === "linked" ? "cursor-pointer" : ""}`}
+                                                            className={`flex items-start gap-3 pr-10 ${krogerLinkStatus === "linked" ? "cursor-pointer" : ""}`}
                                                         >
-                                                            {/* Product Image or Icon */}
-                                                            {hasProductImage ? (
+                                                            {/* Product Image - only show when Kroger is linked */}
+                                                            {hasProductImage && (
                                                                 <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
                                                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                                                     <img
@@ -868,10 +777,6 @@ export default function ShoppingListPage() {
                                                                         alt={item.productName || item.name}
                                                                         className="w-full h-full object-cover"
                                                                     />
-                                                                </div>
-                                                            ) : (
-                                                                <div className="w-12 h-12 bg-gray-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                                                                    <ChefHat className="w-6 h-6 text-gray-300" />
                                                                 </div>
                                                             )}
                                                             <div className="flex-1">
@@ -888,6 +793,10 @@ export default function ShoppingListPage() {
                                                                             {item.stockLevel === "LOW" ? "Low Stock" : "Out of Stock"}
                                                                         </span>
                                                                     )}
+                                                                </div>
+                                                                {/* Quantity */}
+                                                                <div className="text-sm text-gray-500 mt-1">
+                                                                    Qty: {item.count || 1}
                                                                 </div>
                                                                 {hasKrogerProduct && item.productSize && (
                                                                     <div className="text-sm text-gray-500">
@@ -912,33 +821,6 @@ export default function ShoppingListPage() {
                                                                 )}
                                                             </div>
                                                         </div>
-
-                                                        {/* Quantity Counter and Delete - below content */}
-                                                        <div className="flex items-center justify-between mt-3 pl-15">
-                                                            <div className="flex items-center gap-1">
-                                                                <button
-                                                                    onClick={() => handleUpdateCount(item.id, (item.count || 1) - 1)}
-                                                                    className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
-                                                                >
-                                                                    <Minus className="w-4 h-4" />
-                                                                </button>
-                                                                <span className="w-8 text-center font-medium text-gray-900">
-                                                                    {item.count || 1}
-                                                                </span>
-                                                                <button
-                                                                    onClick={() => handleUpdateCount(item.id, (item.count || 1) + 1)}
-                                                                    className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
-                                                                >
-                                                                    <Plus className="w-4 h-4" />
-                                                                </button>
-                                                            </div>
-                                                            <button
-                                                                onClick={() => handleRemoveItem(item.id)}
-                                                                className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                                                            >
-                                                                <Trash2 className="w-4 h-4" />
-                                                            </button>
-                                                        </div>
                                                     </li>
                                                 );
                                             })}
@@ -952,44 +834,29 @@ export default function ShoppingListPage() {
             </div>
 
             {/* Remove Confirmation Modal */}
-            {removeConfirmDateKey && grouped[removeConfirmDateKey] && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                    <div
-                        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-                        onClick={() => setRemoveConfirmDateKey(null)}
-                    />
-                    <div className="relative w-full max-w-sm bg-white rounded-2xl p-6 animate-slide-up">
-                        <div className="text-center">
-                            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <Trash2 className="w-6 h-6 text-red-500" />
-                            </div>
-                            <h3 className="text-lg font-medium text-gray-900 mb-2">
-                                Remove {grouped[removeConfirmDateKey].length} item{grouped[removeConfirmDateKey].length !== 1 ? "s" : ""}?
-                            </h3>
-                            <p className="text-sm text-gray-500 mb-6">
-                                You&apos;re about to remove all items from {formatDate(grouped[removeConfirmDateKey][0]?.createdAt)}. This action cannot be undone.
-                            </p>
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={() => setRemoveConfirmDateKey(null)}
-                                    className="flex-1 py-2.5 px-4 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        void handleRemoveAllFromDate(removeConfirmDateKey);
-                                        setRemoveConfirmDateKey(null);
-                                    }}
-                                    className="flex-1 py-2.5 px-4 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 transition-colors"
-                                >
-                                    Remove
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <ConfirmationModal
+                isOpen={!!(removeConfirmDateKey && grouped[removeConfirmDateKey])}
+                onClose={() => setRemoveConfirmDateKey(null)}
+                onConfirm={() => {
+                    if (removeConfirmDateKey) {
+                        void handleRemoveAllFromDate(removeConfirmDateKey);
+                        setRemoveConfirmDateKey(null);
+                    }
+                }}
+                icon={<Trash2 className="w-6 h-6 text-red-500" />}
+                title={
+                    removeConfirmDateKey && grouped[removeConfirmDateKey]
+                        ? `Remove ${grouped[removeConfirmDateKey].length} item${grouped[removeConfirmDateKey].length !== 1 ? "s" : ""}?`
+                        : "Remove items?"
+                }
+                description={
+                    removeConfirmDateKey && grouped[removeConfirmDateKey]?.[0]?.createdAt
+                        ? `You're about to remove all items from ${formatDate(grouped[removeConfirmDateKey][0].createdAt)}. This action cannot be undone.`
+                        : "This action cannot be undone."
+                }
+                confirmLabel="Remove"
+                variant="danger"
+            />
 
             {/* Kroger Results Modal */}
             {showKrogerResults && krogerResults && (
