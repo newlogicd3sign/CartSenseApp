@@ -17,6 +17,7 @@ import {
 } from "firebase/firestore";
 import {
     User as UserIcon,
+    Users,
     Heart,
     AlertTriangle,
     FileText,
@@ -35,11 +36,18 @@ import {
     EyeOff,
     Sparkles,
     CreditCard,
+    ToggleLeft,
+    ToggleRight,
+    ChevronDown,
+    ChevronUp,
+    Search,
 } from "lucide-react";
 import { signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential, deleteUser } from "firebase/auth";
 import { deleteDoc } from "firebase/firestore";
 import { useToast } from "@/components/Toast";
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { getStoreBrand } from "@/lib/utils";
+import type { FamilyMember } from "@/types/family";
 
 const ALLERGY_OPTIONS = [
     "Dairy",
@@ -158,7 +166,6 @@ function AccountPageContent() {
     const [loadingLocations, setLoadingLocations] = useState(true);
 
     const [savingLocation, setSavingLocation] = useState(false);
-    const [locationMessage, setLocationMessage] = useState<string | null>(null);
 
     const [zipSearch, setZipSearch] = useState("");
     const [storeResults, setStoreResults] = useState<KrogerLocationSearchResult[]>([]);
@@ -197,6 +204,24 @@ function AccountPageContent() {
     const [showDeletePassword, setShowDeletePassword] = useState(false);
     const [deletingAccount, setDeletingAccount] = useState(false);
     const [deleteError, setDeleteError] = useState<string | null>(null);
+
+    // Family members state
+    const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
+    const [loadingFamilyMembers, setLoadingFamilyMembers] = useState(true);
+    const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+    const [editingMember, setEditingMember] = useState<FamilyMember | null>(null);
+    const [savingMember, setSavingMember] = useState(false);
+    const [deletingMemberId, setDeletingMemberId] = useState<string | null>(null);
+    const [expandedMemberId, setExpandedMemberId] = useState<string | null>(null);
+    const [memberToDelete, setMemberToDelete] = useState<FamilyMember | null>(null);
+
+    // Form state for add/edit member modal
+    const [memberName, setMemberName] = useState("");
+    const [memberDietType, setMemberDietType] = useState("");
+    const [memberAllergies, setMemberAllergies] = useState<string[]>([]);
+    const [memberSensitivities, setMemberSensitivities] = useState<string[]>([]);
+    const [memberDislikedFoods, setMemberDislikedFoods] = useState<string[]>([]);
+    const [memberCustomDislikedFood, setMemberCustomDislikedFood] = useState("");
 
     // Subscription portal state
     const [loadingPortal, setLoadingPortal] = useState(false);
@@ -369,12 +394,50 @@ function AccountPageContent() {
         void loadLocations();
     }, [user, userDoc?.defaultKrogerLocationId]);
 
+    // Load family members
+    useEffect(() => {
+        if (!user) return;
+
+        const loadFamilyMembers = async () => {
+            setLoadingFamilyMembers(true);
+            try {
+                const membersCol = collection(db, "users", user.uid, "familyMembers");
+                const snap = await getDocs(membersCol);
+
+                const members: FamilyMember[] = [];
+                snap.forEach((d) => {
+                    const data = d.data();
+                    members.push({
+                        id: d.id,
+                        name: data.name || "",
+                        isActive: data.isActive ?? true,
+                        dietType: data.dietType,
+                        allergiesAndSensitivities: data.allergiesAndSensitivities,
+                        dislikedFoods: data.dislikedFoods,
+                        doctorDietInstructions: data.doctorDietInstructions,
+                        createdAt: data.createdAt,
+                        updatedAt: data.updatedAt,
+                    });
+                });
+
+                // Sort by name
+                members.sort((a, b) => a.name.localeCompare(b.name));
+                setFamilyMembers(members);
+            } catch (err) {
+                console.error("Error loading family members", err);
+                setFamilyMembers([]);
+            } finally {
+                setLoadingFamilyMembers(false);
+            }
+        };
+
+        void loadFamilyMembers();
+    }, [user]);
+
     const handleSetDefault = async (loc: UserLocation) => {
         if (!user) return;
 
         try {
-            setLocationMessage(null);
-
             const userRef = doc(db, "users", user.uid);
             await updateDoc(userRef, {
                 defaultKrogerLocationId: loc.krogerLocationId,
@@ -400,10 +463,10 @@ function AccountPageContent() {
                     : { defaultKrogerLocationId: loc.krogerLocationId }
             );
 
-            setLocationMessage("Default store updated.");
+            showToast("Default store updated.", "success");
         } catch (err) {
             console.error("Error setting default location", err);
-            setLocationMessage("Could not update default store.");
+            showToast("Could not update default store.", "error");
         }
     };
 
@@ -411,7 +474,6 @@ function AccountPageContent() {
         if (!user) return;
 
         try {
-            setLocationMessage(null);
 
             const locRef = doc(db, "krogerLocations", user.uid, "locations", loc.id);
             await deleteDoc(locRef);
@@ -442,7 +504,7 @@ function AccountPageContent() {
                         ? { ...prev, defaultKrogerLocationId: newDefault.krogerLocationId }
                         : { defaultKrogerLocationId: newDefault.krogerLocationId }
                 );
-                setLocationMessage(`${loc.name} removed. ${newDefault.name} is now your default.`);
+                showToast(`${loc.name} removed. ${newDefault.name} is now your default.`, "success");
             } else if (wasDefault || remainingLocations.length === 0) {
                 // Clear defaultKrogerLocationId if no stores remain or if default was deleted
                 const userRef = doc(db, "users", user.uid);
@@ -453,14 +515,14 @@ function AccountPageContent() {
                 setUserDoc((prev) =>
                     prev ? { ...prev, defaultKrogerLocationId: null } : { defaultKrogerLocationId: null }
                 );
-                setLocationMessage(`${loc.name} removed.`);
+                showToast(`${loc.name} removed.`, "success");
             } else {
                 setLocations(remainingLocations);
-                setLocationMessage(`${loc.name} removed.`);
+                showToast(`${loc.name} removed.`, "success");
             }
         } catch (err) {
             console.error("Error removing location", err);
-            setLocationMessage("Could not remove store.");
+            showToast("Could not remove store.", "error");
         }
     };
 
@@ -513,7 +575,6 @@ function AccountPageContent() {
 
         try {
             setSavingLocation(true);
-            setLocationMessage(null);
 
             const locCol = collection(db, "krogerLocations", user.uid, "locations");
 
@@ -559,14 +620,15 @@ function AccountPageContent() {
             setStoreResults([]);
             setZipSearch("");
 
-            setLocationMessage(
+            showToast(
                 isFirstLocation
                     ? `${store.name} saved as your default store.`
-                    : `${store.name} saved and set as default.`
+                    : `${store.name} saved and set as default.`,
+                "success"
             );
         } catch (err) {
             console.error("Error saving location", err);
-            setLocationMessage("Something went wrong saving this location.");
+            showToast("Something went wrong saving this location.", "error");
         } finally {
             setSavingLocation(false);
         }
@@ -702,6 +764,205 @@ function AccountPageContent() {
         }
     };
 
+    // Family member handlers
+    const resetMemberForm = () => {
+        setMemberName("");
+        setMemberDietType("");
+        setMemberAllergies([]);
+        setMemberSensitivities([]);
+        setMemberDislikedFoods([]);
+        setMemberCustomDislikedFood("");
+    };
+
+    const MAX_HOUSEHOLD_MEMBERS = 5;
+
+    const handleOpenAddMember = () => {
+        if (familyMembers.length >= MAX_HOUSEHOLD_MEMBERS) {
+            showToast(`You can add up to ${MAX_HOUSEHOLD_MEMBERS} household members.`, "error");
+            return;
+        }
+        setEditingMember(null);
+        resetMemberForm();
+        setShowAddMemberModal(true);
+    };
+
+    const handleOpenEditMember = (member: FamilyMember) => {
+        setEditingMember(member);
+        setMemberName(member.name);
+        setMemberDietType(member.dietType ?? "");
+        setMemberAllergies(member.allergiesAndSensitivities?.allergies ?? []);
+        setMemberSensitivities(member.allergiesAndSensitivities?.sensitivities ?? []);
+        setMemberDislikedFoods(member.dislikedFoods ?? []);
+        setMemberCustomDislikedFood("");
+        setShowAddMemberModal(true);
+    };
+
+    const handleCloseMemberModal = () => {
+        setShowAddMemberModal(false);
+        setEditingMember(null);
+        resetMemberForm();
+    };
+
+    const handleSaveMember = async () => {
+        if (!user) return;
+        if (!memberName.trim()) {
+            showToast("Please enter a name.", "error");
+            return;
+        }
+
+        try {
+            setSavingMember(true);
+
+            const memberDataForFirestore = {
+                name: memberName.trim(),
+                dietType: memberDietType || null,
+                allergiesAndSensitivities: {
+                    allergies: memberAllergies,
+                    sensitivities: memberSensitivities,
+                },
+                dislikedFoods: memberDislikedFoods,
+                updatedAt: serverTimestamp(),
+            };
+
+            if (editingMember) {
+                // Update existing member
+                const memberRef = doc(db, "users", user.uid, "familyMembers", editingMember.id);
+                await updateDoc(memberRef, memberDataForFirestore);
+
+                setFamilyMembers((prev) =>
+                    prev.map((m) =>
+                        m.id === editingMember.id
+                            ? {
+                                ...m,
+                                name: memberName.trim(),
+                                dietType: memberDietType || undefined,
+                                allergiesAndSensitivities: {
+                                    allergies: memberAllergies,
+                                    sensitivities: memberSensitivities,
+                                },
+                                dislikedFoods: memberDislikedFoods,
+                                updatedAt: new Date() as any,
+                            }
+                            : m
+                    ).sort((a, b) => a.name.localeCompare(b.name))
+                );
+                showToast(`${memberName} updated.`, "success");
+            } else {
+                // Add new member
+                const membersCol = collection(db, "users", user.uid, "familyMembers");
+                const newMemberRef = await addDoc(membersCol, {
+                    ...memberDataForFirestore,
+                    isActive: true,
+                    createdAt: serverTimestamp(),
+                });
+
+                const newMember: FamilyMember = {
+                    id: newMemberRef.id,
+                    name: memberName.trim(),
+                    isActive: true,
+                    dietType: memberDietType || undefined,
+                    allergiesAndSensitivities: {
+                        allergies: memberAllergies,
+                        sensitivities: memberSensitivities,
+                    },
+                    dislikedFoods: memberDislikedFoods,
+                    createdAt: new Date() as any,
+                    updatedAt: new Date() as any,
+                };
+
+                setFamilyMembers((prev) =>
+                    [...prev, newMember].sort((a, b) => a.name.localeCompare(b.name))
+                );
+                showToast(`${memberName} added to your family.`, "success");
+            }
+
+            handleCloseMemberModal();
+        } catch (err) {
+            console.error("Error saving family member", err);
+            showToast("Could not save family member.", "error");
+        } finally {
+            setSavingMember(false);
+        }
+    };
+
+    const handleToggleMemberActive = async (member: FamilyMember) => {
+        if (!user) return;
+
+        try {
+            const memberRef = doc(db, "users", user.uid, "familyMembers", member.id);
+            await updateDoc(memberRef, {
+                isActive: !member.isActive,
+                updatedAt: serverTimestamp(),
+            });
+
+            setFamilyMembers((prev) =>
+                prev.map((m) =>
+                    m.id === member.id ? { ...m, isActive: !m.isActive } : m
+                )
+            );
+
+            showToast(
+                member.isActive
+                    ? `${member.name} excluded. Their dietary preferences will not be considered when generating meals.`
+                    : `${member.name} included. Their dietary preferences will now be considered when generating meals.`,
+                "success"
+            );
+        } catch (err) {
+            console.error("Error toggling member active status", err);
+            showToast("Could not update household member.", "error");
+        }
+    };
+
+    const handleDeleteMember = (member: FamilyMember) => {
+        setMemberToDelete(member);
+    };
+
+    const confirmDeleteMember = async () => {
+        if (!user || !memberToDelete) return;
+
+        try {
+            setDeletingMemberId(memberToDelete.id);
+
+            const memberRef = doc(db, "users", user.uid, "familyMembers", memberToDelete.id);
+            await deleteDoc(memberRef);
+
+            setFamilyMembers((prev) => prev.filter((m) => m.id !== memberToDelete.id));
+            showToast(`${memberToDelete.name} removed from your household.`, "success");
+            setMemberToDelete(null);
+        } catch (err) {
+            console.error("Error deleting household member", err);
+            showToast("Could not delete household member.", "error");
+        } finally {
+            setDeletingMemberId(null);
+        }
+    };
+
+    const toggleMemberAllergy = (item: string) => {
+        setMemberAllergies((prev) =>
+            prev.includes(item) ? prev.filter((a) => a !== item) : [...prev, item]
+        );
+    };
+
+    const toggleMemberSensitivity = (item: string) => {
+        setMemberSensitivities((prev) =>
+            prev.includes(item) ? prev.filter((s) => s !== item) : [...prev, item]
+        );
+    };
+
+    const toggleMemberDislikedFood = (item: string) => {
+        setMemberDislikedFoods((prev) =>
+            prev.includes(item) ? prev.filter((f) => f !== item) : [...prev, item]
+        );
+    };
+
+    const addMemberCustomDislikedFood = () => {
+        const food = memberCustomDislikedFood.trim();
+        if (food && !memberDislikedFoods.includes(food)) {
+            setMemberDislikedFoods((prev) => [...prev, food]);
+            setMemberCustomDislikedFood("");
+        }
+    };
+
     const handleLogout = async () => {
         await signOut(auth);
         router.push("/login");
@@ -832,22 +1093,11 @@ function AccountPageContent() {
     const hasDoctorNote = Boolean(doctor?.hasActiveNote);
 
     if (loadingUser) {
-        return (
-            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                <div className="text-center">
-                    <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
-                    <p className="text-gray-500">Loading your account...</p>
-                </div>
-            </div>
-        );
+        return <LoadingScreen message="Loading your account..." />;
     }
 
     if (!user) {
-        return (
-            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                <p className="text-gray-500">Redirecting to login...</p>
-            </div>
-        );
+        return <LoadingScreen message="Redirecting to login..." />;
     }
 
     return (
@@ -1206,7 +1456,7 @@ function AccountPageContent() {
                                 </div>
                                 <div>
                                     <h2 className="font-medium text-gray-900">Diet Instructions</h2>
-                                    <p className="text-xs text-gray-500">From your healthcare provider</p>
+                                    <p className="text-xs text-gray-500">Upload to filter meal suggestions</p>
                                 </div>
                             </div>
                             {hasDoctorNote && (
@@ -1270,6 +1520,192 @@ function AccountPageContent() {
                                         <Trash2 className="w-4 h-4" />
                                         <span>{removingDoctorNote ? "Removing..." : "Remove"}</span>
                                     </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Household Members Card */}
+                    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center">
+                                    <Users className="w-5 h-5 text-purple-500" />
+                                </div>
+                                <div>
+                                    <h2 className="font-medium text-gray-900">Household Members</h2>
+                                    <p className="text-xs text-gray-500">
+                                        {familyMembers.length === 0
+                                            ? "Add household members to consider their dietary needs"
+                                            : `${familyMembers.filter(m => m.isActive).length} of ${familyMembers.length} active for meal planning`}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={handleOpenAddMember}
+                                disabled={familyMembers.length >= MAX_HOUSEHOLD_MEMBERS}
+                                className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                title={familyMembers.length >= MAX_HOUSEHOLD_MEMBERS ? `Maximum ${MAX_HOUSEHOLD_MEMBERS} members` : "Add member"}
+                            >
+                                <Plus className="w-4 h-4 text-gray-400" />
+                            </button>
+                        </div>
+
+                        <div className="px-5 py-4">
+                            {loadingFamilyMembers ? (
+                                <div className="flex items-center justify-center py-4">
+                                    <div className="w-5 h-5 border-2 border-gray-200 border-t-purple-500 rounded-full animate-spin" />
+                                </div>
+                            ) : familyMembers.length === 0 ? (
+                                <div>
+                                    <p className="text-sm text-gray-500 mb-4">
+                                        Add household members to include their dietary preferences when generating meals.
+                                    </p>
+                                    <button
+                                        onClick={handleOpenAddMember}
+                                        className="flex items-center gap-2 px-4 py-2.5 bg-purple-500/10 text-purple-600 rounded-xl text-sm font-medium hover:bg-purple-500/20 transition-colors"
+                                    >
+                                        <Plus className="w-4 h-4" />
+                                        <span>Add Household Member</span>
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {familyMembers.map((member) => (
+                                        <div
+                                            key={member.id}
+                                            className="border border-gray-100 rounded-xl overflow-hidden"
+                                        >
+                                            <div
+                                                className="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors"
+                                                onClick={() => setExpandedMemberId(
+                                                    expandedMemberId === member.id ? null : member.id
+                                                )}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                                                        member.isActive
+                                                            ? "bg-purple-100 text-purple-600"
+                                                            : "bg-gray-100 text-gray-400"
+                                                    }`}>
+                                                        {member.name.charAt(0).toUpperCase()}
+                                                    </div>
+                                                    <div>
+                                                        <p className={`text-sm font-medium ${
+                                                            member.isActive ? "text-gray-900" : "text-gray-400"
+                                                        }`}>
+                                                            {member.name}
+                                                        </p>
+                                                        <p className="text-xs text-gray-500">
+                                                            {member.dietType
+                                                                ? getDietLabel(member.dietType)
+                                                                : "No diet preference"}
+                                                            {((member.allergiesAndSensitivities?.allergies?.length ?? 0) > 0 ||
+                                                              (member.allergiesAndSensitivities?.sensitivities?.length ?? 0) > 0) && (
+                                                                <span className="text-gray-400">
+                                                                    {" • "}
+                                                                    {(member.allergiesAndSensitivities?.allergies?.length ?? 0) +
+                                                                     (member.allergiesAndSensitivities?.sensitivities?.length ?? 0)} restriction{((member.allergiesAndSensitivities?.allergies?.length ?? 0) + (member.allergiesAndSensitivities?.sensitivities?.length ?? 0)) !== 1 ? "s" : ""}
+                                                                </span>
+                                                            )}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            void handleToggleMemberActive(member);
+                                                        }}
+                                                        className="p-1"
+                                                        title={member.isActive ? "Exclude from meals" : "Include in meals"}
+                                                    >
+                                                        {member.isActive ? (
+                                                            <ToggleRight className="w-10 h-10 text-purple-500" />
+                                                        ) : (
+                                                            <ToggleLeft className="w-10 h-10 text-gray-300" />
+                                                        )}
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleDeleteMember(member);
+                                                        }}
+                                                        disabled={deletingMemberId === member.id}
+                                                        className="inline-flex items-center justify-center w-8 h-8 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                                                        title="Remove member"
+                                                    >
+                                                        {deletingMemberId === member.id ? (
+                                                            <div className="w-4 h-4 border-2 border-gray-300 border-t-red-500 rounded-full animate-spin" />
+                                                        ) : (
+                                                            <Trash2 className="w-4 h-4" />
+                                                        )}
+                                                    </button>
+                                                    {expandedMemberId === member.id ? (
+                                                        <ChevronUp className="w-4 h-4 text-gray-400" />
+                                                    ) : (
+                                                        <ChevronDown className="w-4 h-4 text-gray-400" />
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Expanded details */}
+                                            {expandedMemberId === member.id && (
+                                                <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
+                                                    <div className="space-y-2 text-sm">
+                                                        {member.allergiesAndSensitivities?.allergies &&
+                                                         member.allergiesAndSensitivities.allergies.length > 0 && (
+                                                            <div>
+                                                                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Allergies</span>
+                                                                <p className="text-gray-700">
+                                                                    {member.allergiesAndSensitivities.allergies.join(", ")}
+                                                                </p>
+                                                            </div>
+                                                        )}
+                                                        {member.allergiesAndSensitivities?.sensitivities &&
+                                                         member.allergiesAndSensitivities.sensitivities.length > 0 && (
+                                                            <div>
+                                                                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Sensitivities</span>
+                                                                <p className="text-gray-700">
+                                                                    {member.allergiesAndSensitivities.sensitivities.join(", ")}
+                                                                </p>
+                                                            </div>
+                                                        )}
+                                                        {member.dislikedFoods && member.dislikedFoods.length > 0 && (
+                                                            <div>
+                                                                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Dislikes</span>
+                                                                <p className="text-gray-700">
+                                                                    {member.dislikedFoods.join(", ")}
+                                                                </p>
+                                                            </div>
+                                                        )}
+                                                        {member.doctorDietInstructions?.hasActiveNote && (
+                                                            <div className="flex items-center gap-2 text-blue-600">
+                                                                <FileText className="w-4 h-4" />
+                                                                <span className="text-xs font-medium">Has diet instructions</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-200">
+                                                        <button
+                                                            onClick={() => handleOpenEditMember(member)}
+                                                            className="flex-1 py-2.5 px-4 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+                                                        >
+                                                            <Edit3 className="w-4 h-4" />
+                                                            <span>Edit</span>
+                                                        </button>
+                                                        <button
+                                                            onClick={() => router.push(`/diet-restrictions?member=${member.id}`)}
+                                                            className="flex-1 py-2.5 px-4 bg-purple-500 text-white rounded-xl text-sm font-medium hover:bg-purple-600 transition-colors flex items-center justify-center gap-2"
+                                                        >
+                                                            <FileText className="w-4 h-4" />
+                                                            <span>Upload Diet Instructions</span>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
                                 </div>
                             )}
                         </div>
@@ -1386,9 +1822,14 @@ function AccountPageContent() {
                                         <button
                                             onClick={() => void handleSearchStoresByZip()}
                                             disabled={searchingStores}
-                                            className="px-4 py-2.5 bg-gray-900 text-white rounded-xl text-sm font-medium disabled:opacity-70"
+                                            className="p-2.5 bg-gray-900 text-white rounded-xl disabled:opacity-70 flex items-center justify-center flex-shrink-0"
+                                            aria-label="Search"
                                         >
-                                            {searchingStores ? "..." : "Search"}
+                                            {searchingStores ? (
+                                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            ) : (
+                                                <Search className="w-5 h-5" />
+                                            )}
                                         </button>
                                     </div>
 
@@ -1422,12 +1863,6 @@ function AccountPageContent() {
                                     )}
                                 </div>
 
-                                {locationMessage && (
-                                    <div className="flex items-center gap-2 p-2 bg-emerald-50 rounded-lg mt-3 ml-8">
-                                        <CheckCircle className="w-4 h-4 text-emerald-500" />
-                                        <span className="text-sm text-emerald-700">{locationMessage}</span>
-                                    </div>
-                                )}
                             </div>
 
                             {/* Divider */}
@@ -1756,22 +2191,255 @@ function AccountPageContent() {
                     </button>
                 </div>
             </div>
+
+            {/* Add/Edit Household Member Modal */}
+            {showAddMemberModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+                        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white">
+                            <h2 className="text-lg font-semibold text-gray-900">
+                                {editingMember ? "Edit Household Member" : "Add Household Member"}
+                            </h2>
+                            <button
+                                onClick={handleCloseMemberModal}
+                                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors"
+                            >
+                                <X className="w-5 h-5 text-gray-400" />
+                            </button>
+                        </div>
+
+                        <div className="px-5 py-4 space-y-4">
+                            {/* Name */}
+                            <div>
+                                <label className="text-sm font-medium text-gray-700 mb-2 block">Name</label>
+                                <input
+                                    type="text"
+                                    value={memberName}
+                                    onChange={(e) => setMemberName(e.target.value)}
+                                    placeholder="Enter name"
+                                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-purple-500 focus:outline-none"
+                                />
+                            </div>
+
+                            {/* Diet Type */}
+                            <div>
+                                <label className="text-sm font-medium text-gray-700 mb-2 block">Diet Focus</label>
+                                <select
+                                    value={memberDietType}
+                                    onChange={(e) => setMemberDietType(e.target.value)}
+                                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:border-purple-500 focus:outline-none"
+                                >
+                                    <option value="">None</option>
+                                    {DIET_OPTIONS.map((opt) => (
+                                        <option key={opt.value} value={opt.value}>
+                                            {opt.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Allergies */}
+                            <div>
+                                <label className="text-sm font-medium text-gray-700 mb-2 block">Allergies</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {ALLERGY_OPTIONS.map((item) => (
+                                        <button
+                                            key={item}
+                                            type="button"
+                                            onClick={() => toggleMemberAllergy(item)}
+                                            className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                                                memberAllergies.includes(item)
+                                                    ? "bg-purple-500 text-white"
+                                                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                            }`}
+                                        >
+                                            {item}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Sensitivities */}
+                            <div>
+                                <label className="text-sm font-medium text-gray-700 mb-2 block">Sensitivities</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {SENSITIVITY_OPTIONS.map((item) => (
+                                        <button
+                                            key={item}
+                                            type="button"
+                                            onClick={() => toggleMemberSensitivity(item)}
+                                            className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                                                memberSensitivities.includes(item)
+                                                    ? "bg-purple-500 text-white"
+                                                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                            }`}
+                                        >
+                                            {item}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Disliked Foods */}
+                            <div>
+                                <label className="text-sm font-medium text-gray-700 mb-2 block">Food Dislikes</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {COMMON_DISLIKED_FOODS.map((item) => (
+                                        <button
+                                            key={item}
+                                            type="button"
+                                            onClick={() => toggleMemberDislikedFood(item)}
+                                            className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                                                memberDislikedFoods.includes(item)
+                                                    ? "bg-purple-500 text-white"
+                                                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                            }`}
+                                        >
+                                            {item}
+                                        </button>
+                                    ))}
+                                </div>
+                                {/* Custom food input */}
+                                <div className="flex gap-2 mt-3">
+                                    <input
+                                        type="text"
+                                        value={memberCustomDislikedFood}
+                                        onChange={(e) => setMemberCustomDislikedFood(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter") {
+                                                e.preventDefault();
+                                                addMemberCustomDislikedFood();
+                                            }
+                                        }}
+                                        placeholder="Add custom food..."
+                                        className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:border-purple-500 focus:outline-none"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={addMemberCustomDislikedFood}
+                                        disabled={!memberCustomDislikedFood.trim()}
+                                        className="px-3 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        Add
+                                    </button>
+                                </div>
+                                {/* Show custom selections */}
+                                {memberDislikedFoods.filter(f => !COMMON_DISLIKED_FOODS.includes(f)).length > 0 && (
+                                    <div className="mt-3">
+                                        <p className="text-xs text-gray-500 mb-2">Custom additions:</p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {memberDislikedFoods
+                                                .filter(f => !COMMON_DISLIKED_FOODS.includes(f))
+                                                .map((item) => (
+                                                    <button
+                                                        key={item}
+                                                        type="button"
+                                                        onClick={() => toggleMemberDislikedFood(item)}
+                                                        className="px-3 py-1.5 rounded-lg text-sm bg-purple-500 text-white"
+                                                    >
+                                                        {item}
+                                                    </button>
+                                                ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Diet Instructions link for existing members */}
+                            {editingMember && (
+                                <div className="pt-2">
+                                    <button
+                                        onClick={() => {
+                                            handleCloseMemberModal();
+                                            router.push(`/diet-restrictions?member=${editingMember.id}`);
+                                        }}
+                                        className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 transition-colors"
+                                    >
+                                        <FileText className="w-4 h-4" />
+                                        <span>
+                                            {editingMember.doctorDietInstructions?.hasActiveNote
+                                                ? "Update Diet Instructions"
+                                                : "Upload Diet Instructions"}
+                                        </span>
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="px-5 py-4 border-t border-gray-100 flex gap-3">
+                            <button
+                                onClick={() => void handleSaveMember()}
+                                disabled={savingMember || !memberName.trim()}
+                                className="flex-1 py-3 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-xl font-medium disabled:opacity-70 flex items-center justify-center gap-2"
+                            >
+                                {savingMember ? (
+                                    <>
+                                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                        <span>Saving...</span>
+                                    </>
+                                ) : (
+                                    editingMember ? "Save Changes" : "Add Household Member"
+                                )}
+                            </button>
+                            <button
+                                onClick={handleCloseMemberModal}
+                                className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Member Confirmation Modal */}
+            {memberToDelete && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden">
+                        <div className="px-5 py-4 border-b border-gray-100">
+                            <h2 className="text-lg font-semibold text-gray-900">Remove Member</h2>
+                        </div>
+                        <div className="px-5 py-4">
+                            <p className="text-gray-600">
+                                Are you sure you want to remove <span className="font-medium text-gray-900">{memberToDelete.name}</span> from your household?
+                            </p>
+                            <p className="text-sm text-gray-500 mt-2">
+                                Their dietary preferences and restrictions will no longer be considered when generating meals.
+                            </p>
+                        </div>
+                        <div className="px-5 py-4 border-t border-gray-100 flex gap-3">
+                            <button
+                                onClick={() => void confirmDeleteMember()}
+                                disabled={deletingMemberId === memberToDelete.id}
+                                className="flex-1 py-3 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                            >
+                                {deletingMemberId === memberToDelete.id ? (
+                                    <>
+                                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                        <span>Removing...</span>
+                                    </>
+                                ) : (
+                                    "Remove"
+                                )}
+                            </button>
+                            <button
+                                onClick={() => setMemberToDelete(null)}
+                                disabled={deletingMemberId === memberToDelete.id}
+                                className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
 
 export default function AccountPage() {
     return (
-        <Suspense
-            fallback={
-                <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                    <div className="text-center">
-                        <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
-                        <p className="text-gray-500">Loading your account...</p>
-                    </div>
-                </div>
-            }
-        >
+        <Suspense fallback={<LoadingScreen message="Loading your account..." />}>
             <AccountPageContent />
         </Suspense>
     );

@@ -7,6 +7,11 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
 
+    // Family members - user can CRUD their own family member profiles
+    match /users/{uid}/familyMembers/{memberId} {
+      allow read, create, update, delete: if request.auth != null && request.auth.uid == uid;
+    }
+
     // Saved meals - user can CRUD their own saved meals
     match /savedMeals/{uid}/meals/{mealId} {
       allow read, create, update, delete: if request.auth != null && request.auth.uid == uid;

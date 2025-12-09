@@ -65,10 +65,24 @@ type UserPrefs = {
     };
 };
 
-type DoctorInstructions = {
+type DoctorDietInstructions = {
+    hasActiveNote?: boolean;
     blockedIngredients?: string[];
-    blockedFoodGroups?: string[];
-    instructionsSummary?: string;
+    blockedGroups?: string[];
+    summaryText?: string;
+};
+
+type FamilyMemberData = {
+    id: string;
+    name: string;
+    isActive: boolean;
+    dietType?: string;
+    allergiesAndSensitivities?: {
+        allergies?: string[];
+        sensitivities?: string[];
+    };
+    dislikedFoods?: string[];
+    doctorDietInstructions?: DoctorDietInstructions;
 };
 
 type RawUserEvent = {
@@ -174,7 +188,7 @@ function normalizeMeal(raw: unknown): Meal {
     const macros = (r.macros as Record<string, unknown>) || {};
 
     return {
-        id: normalizeString(r.id, randomUUID()),
+        id: randomUUID(), // Always generate unique ID - don't trust AI-generated IDs
         mealType: safeMealType,
         name: normalizeString(r.name, "Untitled meal"),
         description: normalizeString(r.description, ""),
@@ -330,13 +344,13 @@ async function loadDoctorInstructions(uid?: string): Promise<DoctorContextForMod
         const snap = await adminDb.collection("users").doc(uid).get();
         if (!snap.exists) return null;
 
-        const data = snap.data() as { doctorInstructions?: DoctorInstructions } | undefined;
-        const docInst = data?.doctorInstructions;
-        if (!docInst) return null;
+        const data = snap.data() as { doctorDietInstructions?: DoctorDietInstructions } | undefined;
+        const docInst = data?.doctorDietInstructions;
+        if (!docInst || !docInst.hasActiveNote) return null;
 
         const blockedIngredients = docInst.blockedIngredients?.map((s) => String(s).trim()).filter(Boolean) ?? [];
-        const blockedFoodGroups = docInst.blockedFoodGroups?.map((s) => String(s).trim()).filter(Boolean) ?? [];
-        const doctorSummary = docInst.instructionsSummary?.trim() || null;
+        const blockedFoodGroups = docInst.blockedGroups?.map((s) => String(s).trim()).filter(Boolean) ?? [];
+        const doctorSummary = docInst.summaryText?.trim() || null;
 
         if (!blockedIngredients.length && !blockedFoodGroups.length && !doctorSummary) return null;
 
@@ -344,6 +358,125 @@ async function loadDoctorInstructions(uid?: string): Promise<DoctorContextForMod
     } catch {
         return null;
     }
+}
+
+async function loadActiveFamilyMembers(uid?: string): Promise<FamilyMemberData[]> {
+    if (!uid) return [];
+    try {
+        const membersSnap = await adminDb
+            .collection("users")
+            .doc(uid)
+            .collection("familyMembers")
+            .where("isActive", "==", true)
+            .get();
+
+        return membersSnap.docs.map((docSnap) => {
+            const d = docSnap.data();
+            return {
+                id: docSnap.id,
+                name: d.name || "Family Member",
+                isActive: true,
+                dietType: d.dietType ?? undefined,
+                allergiesAndSensitivities: d.allergiesAndSensitivities,
+                dislikedFoods: d.dislikedFoods,
+                doctorDietInstructions: d.doctorDietInstructions,
+            };
+        });
+    } catch {
+        return [];
+    }
+}
+
+// Combine all dietary restrictions from user and active family members
+type CombinedDietaryRestrictions = {
+    householdMembers: { name: string; dietType?: string; restrictions: string[] }[];
+    combinedAllergies: string[];
+    combinedSensitivities: string[];
+    combinedDislikes: string[];
+    combinedDoctorBlockedIngredients: string[];
+    combinedDoctorBlockedGroups: string[];
+    dietTypes: string[];
+};
+
+function combineFamilyRestrictions(
+    userDoc: { name?: string; dietType?: string; allergiesAndSensitivities?: { allergies?: string[]; sensitivities?: string[] }; dislikedFoods?: string[] } | null,
+    userDoctorContext: DoctorContextForModel | null,
+    familyMembers: FamilyMemberData[]
+): CombinedDietaryRestrictions {
+    const householdMembers: CombinedDietaryRestrictions["householdMembers"] = [];
+    const allAllergies = new Set<string>();
+    const allSensitivities = new Set<string>();
+    const allDislikes = new Set<string>();
+    const allDoctorBlockedIngredients = new Set<string>();
+    const allDoctorBlockedGroups = new Set<string>();
+    const dietTypes = new Set<string>();
+
+    // Add primary user
+    if (userDoc) {
+        const restrictions: string[] = [];
+        if (userDoc.dietType) {
+            dietTypes.add(userDoc.dietType);
+            restrictions.push(userDoc.dietType);
+        }
+        userDoc.allergiesAndSensitivities?.allergies?.forEach((a) => {
+            allAllergies.add(a);
+            restrictions.push(`allergic to ${a}`);
+        });
+        userDoc.allergiesAndSensitivities?.sensitivities?.forEach((s) => {
+            allSensitivities.add(s);
+        });
+        userDoc.dislikedFoods?.forEach((f) => allDislikes.add(f));
+
+        if (userDoctorContext) {
+            userDoctorContext.blockedIngredients.forEach((i) => allDoctorBlockedIngredients.add(i));
+            userDoctorContext.blockedFoodGroups.forEach((g) => allDoctorBlockedGroups.add(g));
+        }
+
+        householdMembers.push({
+            name: userDoc.name || "You",
+            dietType: userDoc.dietType,
+            restrictions,
+        });
+    }
+
+    // Add family members
+    for (const member of familyMembers) {
+        const restrictions: string[] = [];
+        if (member.dietType) {
+            dietTypes.add(member.dietType);
+            restrictions.push(member.dietType);
+        }
+        member.allergiesAndSensitivities?.allergies?.forEach((a) => {
+            allAllergies.add(a);
+            restrictions.push(`allergic to ${a}`);
+        });
+        member.allergiesAndSensitivities?.sensitivities?.forEach((s) => {
+            allSensitivities.add(s);
+        });
+        member.dislikedFoods?.forEach((f) => allDislikes.add(f));
+
+        // Family member's doctor instructions
+        if (member.doctorDietInstructions?.hasActiveNote) {
+            member.doctorDietInstructions.blockedIngredients?.forEach((i) => allDoctorBlockedIngredients.add(i));
+            member.doctorDietInstructions.blockedGroups?.forEach((g) => allDoctorBlockedGroups.add(g));
+        }
+
+        householdMembers.push({
+            name: member.name,
+            dietType: member.dietType,
+            restrictions,
+        });
+    }
+
+    return {
+        householdMembers,
+        combinedAllergies: Array.from(allAllergies),
+        combinedSensitivities: Array.from(allSensitivities),
+        combinedDislikes: Array.from(allDislikes),
+        combinedDoctorBlockedIngredients: Array.from(allDoctorBlockedIngredients),
+        combinedDoctorBlockedGroups: Array.from(allDoctorBlockedGroups),
+        dietTypes: Array.from(dietTypes),
+    };
 }
 
 // ---------- OpenAI streaming ----------
@@ -399,91 +532,55 @@ function isBroadMealPlanRequest(prompt: string): boolean {
     return false;
 }
 
-function buildSystemPrompt(prompt: string, doctorContext: DoctorContextForModel | null, isPremium: boolean): string {
-    const doctorConstraintsText = doctorContext
-        ? `Doctor-imposed restrictions (hard constraints):
-- Blocked ingredients: ${doctorContext.blockedIngredients.join(", ") || "None"}
-- Blocked food groups: ${doctorContext.blockedFoodGroups.join(", ") || "None"}
-- Doctor summary: ${doctorContext.doctorSummary || "None"}
-You MUST strictly avoid all blocked ingredients and food groups.`
-        : "Doctor-imposed restrictions: None on file.";
+function buildSystemPrompt(prompt: string, restrictions: CombinedDietaryRestrictions, isPremium: boolean): string {
+    // Build household section if multiple members
+    const householdSection = restrictions.householdMembers.length > 1
+        ? `\nHousehold (${restrictions.householdMembers.length}): ${restrictions.householdMembers.map(m => `${m.name}${m.dietType ? ` (${m.dietType})` : ""}`).join(", ")}`
+        : "";
 
-    // Detect if this is a broad meal plan or specific recipe search
+    // Build restrictions - only include non-empty sections
+    const restrictionParts: string[] = [];
+    if (restrictions.combinedAllergies.length) restrictionParts.push(`ALLERGIES (STRICT): ${restrictions.combinedAllergies.join(", ")}`);
+    if (restrictions.combinedDoctorBlockedIngredients.length) restrictionParts.push(`Doctor-blocked (STRICT): ${restrictions.combinedDoctorBlockedIngredients.join(", ")}`);
+    if (restrictions.combinedDoctorBlockedGroups.length) restrictionParts.push(`Blocked groups (STRICT): ${restrictions.combinedDoctorBlockedGroups.join(", ")}`);
+    if (restrictions.combinedSensitivities.length) restrictionParts.push(`Sensitivities: ${restrictions.combinedSensitivities.join(", ")}`);
+    if (restrictions.combinedDislikes.length) restrictionParts.push(`Dislikes: ${restrictions.combinedDislikes.join(", ")}`);
+    if (restrictions.dietTypes.length) restrictionParts.push(`Diets: ${restrictions.dietTypes.join(", ")}`);
+
+    const restrictionsText = restrictionParts.length > 0
+        ? `RESTRICTIONS:${householdSection}\n${restrictionParts.map(r => `- ${r}`).join("\n")}`
+        : "";
+
+    // Meal count based on request type
     const isBroadRequest = isBroadMealPlanRequest(prompt);
-
-    // Different output instructions based on request type
     let mealCountInstruction: string;
     if (isBroadRequest) {
-        // Broad meal plan: 1 of each type (free) or 2 of each (premium)
-        const mealsPerType = isPremium ? 2 : 1;
-        mealCountInstruction = `This is a BROAD meal plan request. Generate exactly ${mealsPerType} breakfast, ${mealsPerType} lunch, ${mealsPerType} dinner, and ${mealsPerType} snack (${mealsPerType * 4} meals total). This gives the user a complete day's worth of meals.`;
+        mealCountInstruction = isPremium
+            ? `EXACT OUTPUT: 2 breakfast (mealType:"breakfast"), 2 lunch (mealType:"lunch"), 2 dinner (mealType:"dinner"), 1 snack (mealType:"snack"). Total: 7 meals. You MUST include all meal types.`
+            : `EXACT OUTPUT: 1 breakfast (mealType:"breakfast"), 1 lunch (mealType:"lunch"), 1 dinner (mealType:"dinner"), 1 snack (mealType:"snack"). Total: 4 meals. You MUST include all meal types.`;
     } else {
-        // Specific recipe search: give them options of the same type
-        mealCountInstruction = `This is a SPECIFIC recipe request. The user is looking for a particular type of dish or ingredient.
-Return 3-4 different recipe OPTIONS that match their request.
-All recipes can be the same meal type - do NOT force a mix of breakfast/lunch/dinner/snack.
-For example, if they ask for "ground turkey recipes", give them 3-4 different ground turkey recipe ideas to choose from.
-Pick the most appropriate mealType for what they're asking (e.g., "ground chicken meal" = probably dinner options).`;
+        mealCountInstruction = `Return 3-4 recipe options matching the request (can all be same meal type).`;
     }
 
-    return `You are CartSense, an AI meal planner that suggests realistic meals built from grocery-store ingredients.
+    return `You are CartSense, an AI meal planner. Be concise.
 
-Constraints:
-- Always respect allergies and sensitivities from the user.
-- Always respect doctor-imposed restrictions.
-- Focus on heart-conscious meals (lower saturated fat, reasonable sodium) by default.
-- Use ingredients that could reasonably be found at Kroger or similar U.S. grocery stores.
+RULES: Respect allergies/doctor restrictions (STRICT). Heart-conscious by default. U.S. grocery ingredients.
 
-OUTPUT INSTRUCTIONS:
+${restrictionsText}
+
+JSON output:
+{"meals":[{"mealType":"breakfast|lunch|dinner|snack","name":"","description":"","servings":N,"macros":{"calories":N,"protein":N,"carbs":N,"fat":N},"ingredients":[{"name":"display name","quantity":"","grocerySearchTerm":"raw product","preparation":""}],"steps":[""]}]}
+
+KEY RULES:
+- macros = PER SERVING, not total
+- grocerySearchTerm = raw product (no prep words). "diced onion" → "yellow onion"
+- Include seasonings in ingredients
+- description: 1 sentence max
+- steps: 5-7 steps, written in a warm food blogger style. Be conversational and enthusiastic! Include specific seasoning tips (e.g., "season generously with salt and pepper", "add a pinch of red pepper flakes for heat"). Explain WHY certain techniques matter (e.g., "let the onions caramelize until golden - this builds amazing flavor"). Share little tips like "taste and adjust seasoning as you go!"
+
+CRITICAL - MEAL TYPE DISTRIBUTION:
 ${mealCountInstruction}
-
-${doctorConstraintsText}
-
-IMPORTANT RECIPE INSTRUCTIONS:
-- Write recipe steps like a friendly food blogger with clear, detailed instructions
-- ALWAYS include seasonings and spices with specific measurements (e.g., "1 tsp garlic powder", "1/2 tsp smoked paprika", "salt and pepper to taste")
-- Each step should explain the "why" when helpful (e.g., "Sear the chicken for 3-4 minutes until golden brown - this creates a flavorful crust")
-- Include prep tips like "dice the onions" or "mince the garlic" in the steps
-- For seasoning steps, be specific: "Season both sides of the chicken with 1/2 tsp salt, 1/4 tsp black pepper, and 1/2 tsp garlic powder"
-- Include all seasonings and spices in the ingredients list with their quantities
-
-Output JSON ONLY in the shape:
-{
-  "meals": [
-    {
-      "id": "string",
-      "mealType": "breakfast" | "lunch" | "dinner" | "snack",
-      "name": "string",
-      "description": "string",
-      "servings": number,
-      "macros": { "calories": number, "protein": number, "carbs": number, "fat": number },
-      "ingredients": [{
-        "name": "string (display name with preparation, e.g. 'sliced bananas')",
-        "quantity": "string",
-        "grocerySearchTerm": "string (clean grocery item to search for, e.g. 'fresh bananas')",
-        "preparation": "string (optional prep method: sliced, diced, minced, etc.)"
-      }],
-      "steps": ["string"]
-    }
-  ]
-}
-IMPORTANT:
-- The "macros" values (calories, protein, carbs, fat) MUST be for 1 single serving, NOT for the entire recipe.
-- The "ingredients" list MUST include all seasonings and spices needed (salt, pepper, garlic powder, herbs, etc.)
-- The "steps" should be detailed, numbered instructions written in a warm, conversational food-blogger style
-
-CRITICAL INGREDIENT FORMATTING:
-- "name": What to display to the user (e.g., "sliced bananas", "diced onion", "minced garlic")
-- "grocerySearchTerm": The actual grocery store product to search for - NO prep words like sliced/diced/minced/chopped. Use the raw ingredient name.
-  Examples:
-    - If name is "sliced bananas" → grocerySearchTerm should be "fresh bananas"
-    - If name is "diced yellow onion" → grocerySearchTerm should be "yellow onion"
-    - If name is "minced garlic" → grocerySearchTerm should be "fresh garlic" or "garlic"
-    - If name is "shredded mozzarella" → grocerySearchTerm should be "mozzarella cheese"
-    - If name is "crushed tomatoes" → grocerySearchTerm should be "crushed tomatoes" (this IS the product)
-- "preparation": The prep method (sliced, diced, minced, chopped, etc.) - leave empty if none needed
-
-No extra keys, no explanations, just JSON.`;
+Do NOT return all the same mealType. You must vary the mealType field across meals.`;
 }
 
 // ---------- Route handler ----------
@@ -575,11 +672,15 @@ export async function POST(request: Request) {
 
             await writer.write(sendEvent({ type: "status", message: "Loading your preferences..." }));
 
-            // Load history and doctor context in parallel
-            const [history, doctorContext] = await Promise.all([
+            // Load history, doctor context, and family members in parallel
+            const [history, doctorContext, familyMembers] = await Promise.all([
                 loadUserHistoryForModel(uid),
                 loadDoctorInstructions(uid),
+                loadActiveFamilyMembers(uid),
             ]);
+
+            // Combine all family dietary restrictions
+            const combinedRestrictions = combineFamilyRestrictions(prefs ?? null, doctorContext, familyMembers);
 
             await writer.write(sendEvent({ type: "status", message: "Generating meal ideas..." }));
 
@@ -589,8 +690,8 @@ export async function POST(request: Request) {
                 response_format: { type: "json_object" },
                 stream: true,
                 messages: [
-                    { role: "system", content: buildSystemPrompt(prompt, doctorContext, isPremium) },
-                    { role: "user", content: JSON.stringify({ userPrompt: prompt, prefs: prefs || {}, history, doctorInstructions: doctorContext }) },
+                    { role: "system", content: buildSystemPrompt(prompt, combinedRestrictions, isPremium) },
+                    { role: "user", content: JSON.stringify({ userPrompt: prompt, prefs: prefs || {}, history, familyRestrictions: combinedRestrictions }) },
                 ],
             });
 

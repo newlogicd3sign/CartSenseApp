@@ -9,6 +9,9 @@ import Image from "next/image";
 import { Mail, Lock, ArrowRight, Eye, EyeOff } from "lucide-react";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
 import { useToast } from "@/components/Toast";
+import { Button } from "@/components/Button";
+import { FormInput } from "@/components/FormInput";
+import { Card } from "@/components/Card";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -55,29 +58,22 @@ export default function LoginPage() {
                     </div>
 
                     {/* Form Card */}
-                    <div className="bg-white rounded-2xl shadow-lg p-6">
+                    <Card padding="lg" className="shadow-lg">
                         <form onSubmit={handleLogin} className="space-y-4">
                             {/* Email Input */}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Email
-                                </label>
-                                <div className="relative">
-                                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                                    <input
-                                        type="email"
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        placeholder="you@example.com"
-                                        className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#4A90E2] focus:outline-none focus:bg-white transition-colors"
-                                        required
-                                    />
-                                </div>
-                            </div>
+                            <FormInput
+                                type="email"
+                                label="Email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                placeholder="you@example.com"
+                                icon={<Mail className="w-5 h-5" />}
+                                required
+                            />
 
                             {/* Password Input */}
                             <div>
-                                <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center justify-between mb-1.5">
                                     <label className="block text-sm font-medium text-gray-700">
                                         Password
                                     </label>
@@ -89,7 +85,9 @@ export default function LoginPage() {
                                     </Link>
                                 </div>
                                 <div className="relative">
-                                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">
+                                        <Lock className="w-5 h-5" />
+                                    </div>
                                     <input
                                         type={showPassword ? "text" : "password"}
                                         value={password}
@@ -109,23 +107,18 @@ export default function LoginPage() {
                             </div>
 
                             {/* Submit Button */}
-                            <button
+                            <Button
                                 type="submit"
-                                disabled={loading || !email.trim() || !password}
-                                className="w-full py-4 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                disabled={!email.trim() || !password}
+                                loading={loading}
+                                fullWidth
+                                size="lg"
+                                icon={!loading ? <ArrowRight className="w-5 h-5" /> : undefined}
+                                iconPosition="right"
+                                className="rounded-2xl py-4"
                             >
-                                {loading ? (
-                                    <>
-                                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                        <span>Signing in...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <span>Sign In</span>
-                                        <ArrowRight className="w-5 h-5" />
-                                    </>
-                                )}
-                            </button>
+                                {loading ? "Signing in..." : "Sign In"}
+                            </Button>
                         </form>
 
                         {/* Divider */}
@@ -142,7 +135,7 @@ export default function LoginPage() {
                         >
                             <span className="font-medium">Create an Account</span>
                         </Link>
-                    </div>
+                    </Card>
 
                     {/* Footer Text */}
                     <p className="text-center text-sm text-gray-400 mt-6 px-4">

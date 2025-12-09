@@ -734,14 +734,14 @@ function SetupPageContent() {
                                                         type="button"
                                                         onClick={handleSearchStoresByZip}
                                                         disabled={searchingStores}
-                                                        className="px-4 py-2.5 bg-gray-900 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                                        className="p-2.5 bg-gray-900 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center flex-shrink-0"
+                                                        aria-label="Search"
                                                     >
                                                         {searchingStores ? (
-                                                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                                                         ) : (
-                                                            <Search className="w-4 h-4" />
+                                                            <Search className="w-5 h-5" />
                                                         )}
-                                                        <span>Search</span>
                                                     </button>
                                                 </div>
                                             </div>
