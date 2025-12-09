@@ -643,7 +643,7 @@ export default function ShoppingListPage() {
                         </div>
 
                         {/* Kroger Link Status - show link/store buttons in header when not fully set up */}
-                        {items.length > 0 && krogerLinkStatus !== "linked" && krogerLinkStatus !== "loading" && (
+                        {items.length > 0 && krogerLinkStatus !== "linked" && (
                             <div className="flex flex-col items-end gap-2">
                                 {krogerLinkStatus === "no_store" ? (
                                     <button
