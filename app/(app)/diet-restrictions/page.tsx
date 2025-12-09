@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
 import { onAuthStateChanged } from "firebase/auth";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import {
     FileText,
     Upload,
@@ -15,9 +15,11 @@ import {
     FileSearch,
     Save,
     ArrowLeft,
+    Users,
 } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
+import { LoadingScreen } from "@/components/LoadingScreen";
 
 type DietRestrictionsParsed = {
     blockedIngredients: string[];
@@ -25,8 +27,10 @@ type DietRestrictionsParsed = {
     summaryText: string;
 };
 
-export default function DietRestrictionsPage() {
+function DietRestrictionsContent() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const memberId = searchParams.get("member");
     const { showToast } = useToast();
     const [file, setFile] = useState<File | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -38,6 +42,9 @@ export default function DietRestrictionsPage() {
     // Premium check
     const [loadingUser, setLoadingUser] = useState(true);
     const [isPremium, setIsPremium] = useState(false);
+
+    // Family member name (if uploading for a family member)
+    const [memberName, setMemberName] = useState<string | null>(null);
 
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -52,6 +59,15 @@ export default function DietRestrictionsPage() {
                 if (snap.exists()) {
                     setIsPremium(snap.data().isPremium ?? false);
                 }
+
+                // If we have a member ID, load their name
+                if (memberId) {
+                    const memberRef = doc(db, "users", firebaseUser.uid, "familyMembers", memberId);
+                    const memberSnap = await getDoc(memberRef);
+                    if (memberSnap.exists()) {
+                        setMemberName(memberSnap.data().name || "Family Member");
+                    }
+                }
             } catch (err) {
                 console.error("Error checking premium status", err);
             } finally {
@@ -60,7 +76,7 @@ export default function DietRestrictionsPage() {
         });
 
         return () => unsub();
-    }, [router]);
+    }, [router, memberId]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const f = e.target.files?.[0];
@@ -151,24 +167,33 @@ export default function DietRestrictionsPage() {
 
             setSaving(true);
 
-            const userRef = doc(db, "users", user.uid);
+            const dietInstructionsData = {
+                hasActiveNote: true,
+                sourceType: "photo",
+                summaryText: result.summaryText,
+                blockedIngredients: result.blockedIngredients,
+                blockedGroups: result.blockedGroups,
+                updatedAt: serverTimestamp(),
+            };
 
-            await setDoc(
-                userRef,
-                {
-                    doctorDietInstructions: {
-                        hasActiveNote: true,
-                        sourceType: "photo",
-                        summaryText: result.summaryText,
-                        blockedIngredients: result.blockedIngredients,
-                        blockedGroups: result.blockedGroups,
-                        updatedAt: serverTimestamp(),
-                    },
-                },
-                { merge: true }
-            );
-
-            showToast("Diet instructions saved to your profile.", "success");
+            if (memberId) {
+                // Save to family member document
+                const memberRef = doc(db, "users", user.uid, "familyMembers", memberId);
+                await updateDoc(memberRef, {
+                    doctorDietInstructions: dietInstructionsData,
+                    updatedAt: serverTimestamp(),
+                });
+                showToast(`Diet instructions saved for ${memberName || "family member"}.`, "success");
+            } else {
+                // Save to user document
+                const userRef = doc(db, "users", user.uid);
+                await setDoc(
+                    userRef,
+                    { doctorDietInstructions: dietInstructionsData },
+                    { merge: true }
+                );
+                showToast("Diet instructions saved to your profile.", "success");
+            }
         } catch (err) {
             console.error(err);
             showToast("Failed to save diet instructions.", "error");
@@ -185,14 +210,7 @@ export default function DietRestrictionsPage() {
 
     // Loading state
     if (loadingUser) {
-        return (
-            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                <div className="text-center">
-                    <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
-                    <p className="text-gray-500">Loading...</p>
-                </div>
-            </div>
-        );
+        return <LoadingScreen />;
     }
 
     // Premium paywall
@@ -218,14 +236,22 @@ export default function DietRestrictionsPage() {
                         >
                             <ArrowLeft className="w-5 h-5 text-gray-600" />
                         </button>
-                        <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
-                            <FileText className="w-5 h-5 text-blue-500" />
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${memberId ? "bg-purple-50" : "bg-blue-50"}`}>
+                            {memberId ? (
+                                <Users className="w-5 h-5 text-purple-500" />
+                            ) : (
+                                <FileText className="w-5 h-5 text-blue-500" />
+                            )}
                         </div>
                         <div>
                             <h1 className="text-xl lg:text-2xl text-gray-900">
-                                Diet Restrictions
+                                Diet Restrictions{memberName ? ` for ${memberName}` : ""}
                             </h1>
-                            <p className="text-sm text-gray-500">Upload your diet instructions</p>
+                            <p className="text-sm text-gray-500">
+                                {memberId
+                                    ? `Upload diet instructions for ${memberName || "family member"}`
+                                    : "Upload your diet instructions"}
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -311,10 +337,8 @@ export default function DietRestrictionsPage() {
                                             htmlFor="diet-consent"
                                             className="text-xs text-gray-600 leading-relaxed"
                                         >
-                                            I understand that CartSense is not a medical provider and this
-                                            feature is for personal meal filtering only. I won't use this
-                                            app as a substitute for professional medical advice, diagnosis,
-                                            or treatment.
+                                            I understand this feature is for personal meal filtering only
+                                            and results should be verified for accuracy.
                                         </label>
                                     </div>
 
@@ -417,7 +441,7 @@ export default function DietRestrictionsPage() {
                                     <button
                                         onClick={handleSaveToProfile}
                                         disabled={saving}
-                                        className="w-full py-3 bg-emerald-500 text-white rounded-xl font-medium hover:bg-emerald-600 transition-colors disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                        className={`w-full py-3 text-white rounded-xl font-medium transition-colors disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${memberId ? "bg-purple-500 hover:bg-purple-600" : "bg-emerald-500 hover:bg-emerald-600"}`}
                                     >
                                         {saving ? (
                                             <>
@@ -427,7 +451,7 @@ export default function DietRestrictionsPage() {
                                         ) : (
                                             <>
                                                 <Save className="w-5 h-5" />
-                                                <span>Save to My Profile</span>
+                                                <span>{memberId ? `Save for ${memberName || "Family Member"}` : "Save to My Profile"}</span>
                                             </>
                                         )}
                                     </button>
@@ -464,12 +488,20 @@ export default function DietRestrictionsPage() {
                     <div className="flex items-start gap-2 px-1 pb-6">
                         <ShieldCheck className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
                         <p className="text-xs text-gray-400">
-                            This feature is for personal wellness only and does not constitute
-                            medical advice. Always consult with your healthcare provider.
+                            This feature is for personal meal filtering only. Always verify
+                            extracted restrictions for accuracy.
                         </p>
                     </div>
                 </div>
             </div>
         </div>
+    );
+}
+
+export default function DietRestrictionsPage() {
+    return (
+        <Suspense fallback={<LoadingScreen />}>
+            <DietRestrictionsContent />
+        </Suspense>
     );
 }

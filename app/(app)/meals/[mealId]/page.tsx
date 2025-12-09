@@ -10,10 +10,16 @@ import {
     getDocs,
     collection,
     addDoc,
+    updateDoc,
     serverTimestamp,
     setDoc,
 } from "firebase/firestore";
 import { logUserEvent } from "@/lib/logUserEvent";
+import {
+    loadGeneratedMeals,
+    updateMealInStorage,
+    saveLastViewedMeal,
+} from "@/lib/mealStorage";
 import {
     ArrowLeft,
     Flame,
@@ -33,9 +39,11 @@ import {
     AlertCircle,
     Sparkles,
     RefreshCw,
+    PencilRuler,
 } from "lucide-react";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { useToast } from "@/components/Toast";
+import { LoadingScreen } from "@/components/LoadingScreen";
 import {
     isStapleItem,
     isSameIngredient,
@@ -250,37 +258,23 @@ function MealDetailPageContent() {
         if (!user || !prefs) return;
         setLoadingMeal(true);
 
-        try {
-            const stored = sessionStorage.getItem("generatedMeals");
-            if (!stored) {
-                setMeal(null);
-                setMealsMeta(null);
-            } else {
-                const parsed: StoredMealsPayload = JSON.parse(stored);
-
-                let list: Meal[] = [];
-                let meta: MealsMeta | null = null;
-
-                if (Array.isArray(parsed)) {
-                    list = parsed;
-                    meta = null;
-                } else {
-                    list = parsed.meals ?? [];
-                    meta = parsed.meta ?? null;
-                }
-
-                const found = list.find((m) => m.id === mealId) || null;
-                setMeal(found);
-                setMealsMeta(meta);
-            }
-        } catch (err) {
-            console.error("Error reading meal from sessionStorage", err);
+        const stored = loadGeneratedMeals();
+        if (!stored || !stored.meals) {
             setMeal(null);
             setMealsMeta(null);
-        } finally {
-            setLoadingMeal(false);
+        } else {
+            const found = stored.meals.find((m) => m.id === mealId) || null;
+            setMeal(found);
+            setMealsMeta(stored.meta ?? null);
+
+            // Save last viewed meal for restoration when returning to the app
+            if (found) {
+                saveLastViewedMeal(mealId, displayedPrompt);
+            }
         }
-    }, [user, prefs, mealId]);
+
+        setLoadingMeal(false);
+    }, [user, prefs, mealId, displayedPrompt]);
 
     useEffect(() => {
         if (!user || !meal || hasLoggedView) return;
@@ -453,14 +447,18 @@ function MealDetailPageContent() {
             const existingItems = existingSnapshot.docs.map((d) => ({
                 id: d.id,
                 name: d.data().name as string,
+                count: (d.data().count as number) || 1,
             }));
 
-            // Filter out duplicates based on ingredient type
+            // Separate items into: to update (increment count), to add (new), and to skip (staples)
             let skippedStaples = 0;
-            const itemsToActuallyAdd = ingredientsToAdd.filter((ing) => {
+            const itemsToUpdate: { id: string; newCount: number }[] = [];
+            const itemsToAdd: typeof ingredientsToAdd = [];
+
+            for (const ing of ingredientsToAdd) {
                 // Skip excluded ingredients like water (you don't need to buy these)
                 if (isExcludedIngredient(ing.name)) {
-                    return false;
+                    continue;
                 }
 
                 // Check if this ingredient already exists in the shopping list
@@ -472,22 +470,39 @@ function MealDetailPageContent() {
                     // If it's a staple item, skip it entirely (don't need multiple olive oils)
                     if (isStapleItem(ing.name)) {
                         skippedStaples++;
-                        return false;
+                        continue;
                     }
-                    // For countable items (bananas, eggs, etc.), still add them
-                    // User may actually need more of these
+                    // For countable items, increment the count
+                    itemsToUpdate.push({
+                        id: existingMatch.id,
+                        newCount: existingMatch.count + 1,
+                    });
+                    // Update the local count so subsequent duplicates in the same batch stack correctly
+                    existingMatch.count += 1;
+                } else {
+                    itemsToAdd.push(ing);
                 }
+            }
 
-                return true;
-            });
-
-            // Add the filtered items
-            if (itemsToActuallyAdd.length > 0) {
+            // Update existing items (increment count)
+            if (itemsToUpdate.length > 0) {
                 await Promise.all(
-                    itemsToActuallyAdd.map((ing) =>
+                    itemsToUpdate.map(({ id, newCount }) =>
+                        updateDoc(doc(db, "shoppingLists", user.uid, "items", id), {
+                            count: newCount,
+                        })
+                    )
+                );
+            }
+
+            // Add new items
+            if (itemsToAdd.length > 0) {
+                await Promise.all(
+                    itemsToAdd.map((ing) =>
                         addDoc(itemsCol, {
                             name: ing.name,
                             quantity: ing.quantity,
+                            count: 1,
                             mealId: meal.id,
                             mealName: meal.name,
                             checked: false,
@@ -505,6 +520,8 @@ function MealDetailPageContent() {
                 );
             }
 
+            const itemsToActuallyAdd = itemsToAdd;
+
             // Automatically save the meal when adding to shopping list
             if (!isMealAlreadySaved) {
                 const mealRef = doc(db, "savedMeals", user.uid, "meals", meal.id);
@@ -518,10 +535,17 @@ function MealDetailPageContent() {
 
             // Build appropriate toast message
             let toastMessage = "";
-            if (itemsToActuallyAdd.length > 0 && skippedStaples > 0) {
-                toastMessage = `Added ${itemsToActuallyAdd.length} item${itemsToActuallyAdd.length !== 1 ? "s" : ""}, skipped ${skippedStaples} already in list.`;
-            } else if (itemsToActuallyAdd.length > 0) {
-                toastMessage = `Added ${itemsToActuallyAdd.length} item${itemsToActuallyAdd.length !== 1 ? "s" : ""} to your shopping list.`;
+            const addedCount = itemsToActuallyAdd.length;
+            const updatedCount = itemsToUpdate.length;
+
+            if (addedCount > 0 && updatedCount > 0) {
+                toastMessage = `Added ${addedCount} item${addedCount !== 1 ? "s" : ""}, updated ${updatedCount} item${updatedCount !== 1 ? "s" : ""}.`;
+            } else if (addedCount > 0 && skippedStaples > 0) {
+                toastMessage = `Added ${addedCount} item${addedCount !== 1 ? "s" : ""}, skipped ${skippedStaples} already in list.`;
+            } else if (addedCount > 0) {
+                toastMessage = `Added ${addedCount} item${addedCount !== 1 ? "s" : ""} to your shopping list.`;
+            } else if (updatedCount > 0) {
+                toastMessage = `Updated quantities for ${updatedCount} item${updatedCount !== 1 ? "s" : ""}.`;
             } else if (skippedStaples > 0) {
                 toastMessage = `All items already in your shopping list.`;
             }
@@ -925,22 +949,11 @@ function MealDetailPageContent() {
     };
 
     if (loadingUser || loadingMeal) {
-        return (
-            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                <div className="text-center">
-                    <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
-                    <p className="text-gray-500">Loading your meal...</p>
-                </div>
-            </div>
-        );
+        return <LoadingScreen message="Loading your meal..." />;
     }
 
     if (!user) {
-        return (
-            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                <p className="text-gray-500">Redirecting to login...</p>
-            </div>
-        );
+        return <LoadingScreen message="Redirecting to login..." />;
     }
 
     if (!meal) {
@@ -1216,14 +1229,15 @@ function MealDetailPageContent() {
                                                     </span>
                                                 )}
                                             </div>
-                                            <div className="text-sm text-gray-500">
-                                                {ing.quantity}
-                                                {ing.category && ` • ${ing.category}`}
-                                                {krogerConnected && ing.productAisle && ` • ${ing.productAisle}`}
-                                                {krogerConnected && typeof ing.price === "number" && (
-                                                    <span className="text-[#4A90E2]"> • ${ing.price.toFixed(2)}{ing.soldBy === "WEIGHT" ? "/lb" : ""}</span>
-                                                )}
-                                            </div>
+                                            {krogerConnected && (
+                                                <div className="text-sm text-gray-500">
+                                                    {ing.productSize || ing.quantity}
+                                                    {ing.productAisle && ` • ${ing.productAisle}`}
+                                                    {typeof ing.price === "number" && (
+                                                        <span className="text-[#4A90E2]"> • ${ing.price.toFixed(2)}{ing.soldBy === "WEIGHT" ? "/lb" : ""}</span>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                     {/* Checkbox for selection */}
@@ -1247,6 +1261,22 @@ function MealDetailPageContent() {
                                 </li>
                             ))}
                         </ul>
+                    </div>
+
+                    {/* Recipe Quantities */}
+                    <div className="bg-white rounded-2xl border border-gray-100 p-5">
+                        <div className="flex items-center gap-2 mb-4">
+                            <PencilRuler className="w-5 h-5 text-gray-400" />
+                            <h3 className="font-medium text-gray-900">Recipe Quantities</h3>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                            {meal.ingredients.map((ing, idx) => (
+                                <div key={idx} className="text-sm text-gray-600">
+                                    <span className="font-medium text-gray-900">{ing.quantity}</span>
+                                    <span className="ml-1">{ing.name}</span>
+                                </div>
+                            ))}
+                        </div>
                     </div>
 
                     {/* Cooking Steps */}
@@ -1462,10 +1492,16 @@ function MealDetailPageContent() {
 
                                         {/* Details Grid */}
                                         <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-                                            <div className="flex justify-between">
-                                                <span className="text-sm text-gray-500">Quantity</span>
-                                                <span className="text-sm font-medium text-gray-900">{ing.quantity}</span>
-                                            </div>
+                                            {krogerConnected && (
+                                                <div className="flex justify-between">
+                                                    <span className="text-sm text-gray-500">
+                                                        {ing.productSize ? "Size" : "Quantity"}
+                                                    </span>
+                                                    <span className="text-sm font-medium text-gray-900">
+                                                        {ing.productSize || ing.quantity}
+                                                    </span>
+                                                </div>
+                                            )}
                                             {ing.category && (
                                                 <div className="flex justify-between">
                                                     <span className="text-sm text-gray-500">Category</span>
@@ -1484,12 +1520,6 @@ function MealDetailPageContent() {
                                                     <span className="text-sm font-medium text-[#4A90E2]">
                                                         ${ing.price.toFixed(2)}{ing.soldBy === "WEIGHT" ? "/lb" : ""}
                                                     </span>
-                                                </div>
-                                            )}
-                                            {krogerConnected && ing.productSize && (
-                                                <div className="flex justify-between">
-                                                    <span className="text-sm text-gray-500">Size</span>
-                                                    <span className="text-sm font-medium text-gray-900">{ing.productSize}</span>
                                                 </div>
                                             )}
                                             {krogerConnected && ing.stockLevel && (
@@ -1633,16 +1663,7 @@ function MealDetailPageContent() {
 
 export default function MealDetailPage() {
     return (
-        <Suspense
-            fallback={
-                <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                    <div className="text-center">
-                        <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
-                        <p className="text-gray-500">Loading meal details...</p>
-                    </div>
-                </div>
-            }
-        >
+        <Suspense fallback={<LoadingScreen message="Loading meal details..." />}>
             <MealDetailPageContent />
         </Suspense>
     );

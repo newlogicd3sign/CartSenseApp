@@ -7,7 +7,16 @@ import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { logUserEvent } from "@/lib/logUserEvent";
 import { ACCENT_COLORS, type AccentColor } from "@/lib/utils";
-import { ArrowLeft, Flame, Beef, Wheat, Droplet, Heart, ChevronRight, Sparkles, ShieldCheck } from "lucide-react";
+import {
+    saveGeneratedMeals,
+    loadGeneratedMeals,
+    clearLastViewedMeal,
+} from "@/lib/mealStorage";
+import { ArrowLeft, Heart, Sparkles, ShieldCheck } from "lucide-react";
+import { LoadingScreen } from "@/components/LoadingScreen";
+import { EmptyState } from "@/components/EmptyState";
+import { MealCard } from "@/components/MealCard";
+import { Alert } from "@/components/Alert";
 
 type Ingredient = {
     name: string;
@@ -67,6 +76,7 @@ function MealsPageContent() {
 
     const [meals, setMeals] = useState<Meal[]>([]);
     const [mealsMeta, setMealsMeta] = useState<MealsMeta | null>(null);
+    const [storedPrompt, setStoredPrompt] = useState<string>("");
     const [loadingMeals, setLoadingMeals] = useState(true);
     const [streamStatus, setStreamStatus] = useState<string>("");
     const [streamError, setStreamError] = useState<string>("");
@@ -158,11 +168,12 @@ function MealsPageContent() {
                             case "meal":
                                 mealsArray[event.index] = event.meal;
                                 setMeals([...mealsArray]);
-                                // Update sessionStorage immediately so detail page can access
-                                sessionStorage.setItem("generatedMeals", JSON.stringify({
-                                    meals: mealsArray.filter(Boolean),
-                                    meta: mealsMetaRef.current,
-                                }));
+                                // Save to both sessionStorage and localStorage
+                                saveGeneratedMeals(
+                                    mealsArray.filter(Boolean),
+                                    mealsMetaRef.current ?? undefined,
+                                    decodeURIComponent(prompt)
+                                );
                                 // First meal arrived - stop showing loading
                                 if (mealsArray.filter(Boolean).length === 1) {
                                     setLoadingMeals(false);
@@ -172,21 +183,23 @@ function MealsPageContent() {
                             case "meal_updated":
                                 mealsArray[event.index] = event.meal;
                                 setMeals([...mealsArray]);
-                                // Update sessionStorage with updated meal (e.g., new image)
-                                sessionStorage.setItem("generatedMeals", JSON.stringify({
-                                    meals: mealsArray.filter(Boolean),
-                                    meta: mealsMetaRef.current,
-                                }));
+                                // Save updated meal (e.g., new image)
+                                saveGeneratedMeals(
+                                    mealsArray.filter(Boolean),
+                                    mealsMetaRef.current ?? undefined,
+                                    decodeURIComponent(prompt)
+                                );
                                 break;
 
                             case "meta":
                                 mealsMetaRef.current = event.meta;
                                 setMealsMeta(event.meta);
-                                // Update sessionStorage with meta
-                                sessionStorage.setItem("generatedMeals", JSON.stringify({
-                                    meals: mealsArray.filter(Boolean),
-                                    meta: event.meta,
-                                }));
+                                // Save with meta
+                                saveGeneratedMeals(
+                                    mealsArray.filter(Boolean),
+                                    event.meta,
+                                    decodeURIComponent(prompt)
+                                );
                                 break;
 
                             case "error":
@@ -222,67 +235,48 @@ function MealsPageContent() {
         }
     }, [loadingUser, user, prefs]);
 
-    // Load from sessionStorage OR start streaming
+    // Load from storage OR start streaming
     useEffect(() => {
         if (!user || !prefs) return;
 
-        // If we should stream, start the stream
+        // If we should stream, start the stream and clear any previous "last viewed" state
         if (shouldStream && promptFromUrl) {
+            clearLastViewedMeal();
             streamMeals(user.uid, prefs, decodeURIComponent(promptFromUrl));
             return;
         }
 
-        // Otherwise load from sessionStorage
+        // Otherwise load from storage (sessionStorage first, then localStorage)
         setLoadingMeals(true);
 
-        try {
-            const stored = sessionStorage.getItem("generatedMeals");
-            if (!stored) {
-                setMeals([]);
-                setMealsMeta(null);
-            } else {
-                const parsed: StoredMealsPayload = JSON.parse(stored);
-
-                if (Array.isArray(parsed)) {
-                    setMeals(parsed);
-                    setMealsMeta(null);
-                } else {
-                    setMeals(parsed.meals ?? []);
-                    setMealsMeta(parsed.meta ?? null);
-                }
-            }
-        } catch (err) {
-            console.error("Failed to parse meals from sessionStorage", err);
+        const stored = loadGeneratedMeals();
+        if (!stored || !stored.meals || stored.meals.length === 0) {
             setMeals([]);
             setMealsMeta(null);
+            setStoredPrompt("");
+        } else {
+            setMeals(stored.meals);
+            setMealsMeta(stored.meta ?? null);
+            setStoredPrompt(stored.prompt ?? "");
         }
 
         setLoadingMeals(false);
     }, [user, prefs, shouldStream, promptFromUrl, streamMeals]);
 
     if (loadingUser) {
-        return (
-            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                <div className="text-center">
-                    <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
-                    <p className="text-gray-500">Loading your profile...</p>
-                </div>
-            </div>
-        );
+        return <LoadingScreen message="Loading your profile..." />;
     }
 
     if (!user) {
-        return (
-            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                <p className="text-gray-500">Redirecting to login...</p>
-            </div>
-        );
+        return <LoadingScreen message="Redirecting to login..." />;
     }
 
     const displayedPrompt =
         promptFromUrl && promptFromUrl.trim().length > 0
             ? decodeURIComponent(promptFromUrl)
-            : "No prompt provided.";
+            : storedPrompt && storedPrompt.trim().length > 0
+                ? storedPrompt
+                : "No prompt provided.";
 
     const doctorApplied = Boolean(mealsMeta?.usedDoctorInstructions);
     const blockedIngredients = mealsMeta?.blockedIngredientsFromDoctor || [];
@@ -316,17 +310,14 @@ function MealsPageContent() {
             {doctorApplied && (
                 <div className="px-6 pt-4">
                     <div className="max-w-3xl mx-auto">
-                        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
-                            <div className="flex items-center gap-2 mb-2">
-                                <div className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center">
-                                    <Heart className="w-3.5 h-3.5 text-white" />
-                                </div>
-                                <span className="text-sm font-medium text-emerald-700">
-                                    Diet instructions applied
-                                </span>
-                            </div>
+                        <Alert
+                            variant="success"
+                            icon={<Heart className="w-4 h-4" />}
+                            title="Diet instructions applied"
+                            className="rounded-2xl"
+                        >
                             {(blockedIngredients.length > 0 || blockedGroups.length > 0) && (
-                                <p className="text-xs text-emerald-600">
+                                <span className="text-xs">
                                     These meals avoid{" "}
                                     {blockedIngredients.length > 0 && (
                                         <span className="font-medium">{blockedIngredients.join(", ")}</span>
@@ -336,27 +327,24 @@ function MealsPageContent() {
                                         <span className="font-medium">{blockedGroups.join(", ")}</span>
                                     )}
                                     {" "}as specified in your diet instructions.
-                                </p>
+                                </span>
                             )}
-                        </div>
+                        </Alert>
                     </div>
                 </div>
             )}
-
 
             {/* Stream Error */}
             {streamError && (
                 <div className="px-6 pt-4">
                     <div className="max-w-3xl mx-auto">
-                        <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
-                            <p className="text-sm text-red-700">{streamError}</p>
-                            <button
-                                onClick={() => router.push("/prompt")}
-                                className="mt-3 px-4 py-2 bg-red-100 text-red-700 rounded-xl text-sm hover:bg-red-200 transition-colors"
-                            >
-                                Try again
-                            </button>
-                        </div>
+                        <Alert
+                            variant="error"
+                            action={{ label: "Try again", onClick: () => router.push("/prompt") }}
+                            className="rounded-2xl"
+                        >
+                            {streamError}
+                        </Alert>
                     </div>
                 </div>
             )}
@@ -365,21 +353,15 @@ function MealsPageContent() {
             <div className="px-6 py-6">
                 <div className="max-w-3xl mx-auto">
                     {meals.length === 0 && !streamError && !loadingMeals && !streamStatus ? (
-                        <div className="text-center py-16">
-                            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <Sparkles className="w-8 h-8 text-gray-400" />
-                            </div>
-                            <h3 className="text-lg font-medium text-gray-900 mb-2">No meals generated</h3>
-                            <p className="text-gray-500 mb-6">
-                                Try going back and submitting a new prompt.
-                            </p>
-                            <button
-                                onClick={() => router.push("/prompt")}
-                                className="px-6 py-3 bg-[#4A90E2]/10 text-[#4A90E2] rounded-xl hover:bg-[#4A90E2]/20 transition-colors"
-                            >
-                                Try again
-                            </button>
-                        </div>
+                        <EmptyState
+                            icon={<Sparkles className="w-8 h-8 text-gray-400" />}
+                            title="No meals generated"
+                            description="Try going back and submitting a new prompt."
+                            action={{
+                                label: "Try again",
+                                onClick: () => router.push("/prompt"),
+                            }}
+                        />
                     ) : meals.length === 0 && streamStatus ? (
                         /* Skeleton placeholder cards while loading */
                         <div className="flex flex-col gap-3">
@@ -432,86 +414,27 @@ function MealsPageContent() {
                     ) : (
                         <div className="flex flex-col gap-3">
                             {/* Meal cards with staggered animation */}
-                            {meals.map((meal, index) => {
-                                const thumbSrc =
-                                    meal.imageUrl ??
-                                    "https://placehold.co/256x256/e5e7eb/9ca3af?text=Meal";
-
-                                return (
-                                    <div
-                                        key={meal.id}
-                                        className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all border border-gray-100 flex p-4 gap-4 animate-fade-slide-in"
-                                        style={{
-                                            animationDelay: `${index * 100}ms`,
-                                            animationFillMode: "backwards",
-                                        }}
-                                    >
-                                        {/* Thumbnail - Left */}
-                                        <div className="w-20 h-20 flex-shrink-0 bg-gray-100 rounded-xl overflow-hidden">
-                                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                                            <img
-                                                src={thumbSrc}
-                                                alt={meal.name}
-                                                className="w-full h-full object-cover transition-opacity duration-300"
-                                            />
-                                        </div>
-
-                                        {/* Content - Right */}
-                                        <div className="flex-1 flex flex-col min-w-0">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <span className="inline-block px-2 py-0.5 bg-gray-100 rounded-md text-xs font-medium text-gray-600 capitalize">
-                                                    {meal.mealType}
-                                                </span>
-                                                {(doctorApplied || userHasDietInstructions) && (
-                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-full text-xs font-medium text-emerald-700">
-                                                        <ShieldCheck className="w-3 h-3" />
-                                                        Diet Compliant
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <h2 className="text-base font-medium text-gray-900 mb-1">
-                                                {meal.name}
-                                            </h2>
-                                            <p className="text-sm text-gray-500 mb-2">
-                                                {meal.description}
-                                            </p>
-
-                                            {/* Macros */}
-                                            <div className="flex items-center gap-3 text-xs text-gray-500 mb-3">
-                                                <div className="flex items-center gap-1">
-                                                    <Flame className="w-3 h-3 text-orange-500" />
-                                                    <span>{meal.macros.calories}</span>
-                                                </div>
-                                                <div className="flex items-center gap-1">
-                                                    <Beef className="w-3 h-3 text-blue-500" />
-                                                    <span>{meal.macros.protein}g</span>
-                                                </div>
-                                                <div className="flex items-center gap-1">
-                                                    <Wheat className="w-3 h-3 text-amber-500" />
-                                                    <span>{meal.macros.carbs}g</span>
-                                                </div>
-                                                <div className="flex items-center gap-1">
-                                                    <Droplet className="w-3 h-3 text-purple-500" />
-                                                    <span>{meal.macros.fat}g</span>
-                                                </div>
-                                            </div>
-
-                                            {/* View Button */}
-                                            <button
-                                                onClick={() =>
-                                                    router.push(
-                                                        `/meals/${meal.id}?prompt=${encodeURIComponent(displayedPrompt)}`
-                                                    )
-                                                }
-                                                className="inline-flex items-center gap-0.5 px-2 py-1 bg-[#4A90E2]/10 text-[#4A90E2] text-[10px] font-medium rounded-lg hover:bg-[#4A90E2]/20 transition-colors w-fit whitespace-nowrap"
-                                            >
-                                                <span>View</span>
-                                                <ChevronRight className="w-3 h-3" />
-                                            </button>
-                                        </div>
-                                    </div>
-                                );
-                            })}
+                            {meals.map((meal, index) => (
+                                <MealCard
+                                    key={meal.id}
+                                    id={meal.id}
+                                    name={meal.name}
+                                    description={meal.description}
+                                    mealType={meal.mealType}
+                                    macros={meal.macros}
+                                    imageUrl={meal.imageUrl}
+                                    onClick={() => router.push(`/meals/${meal.id}?prompt=${encodeURIComponent(displayedPrompt)}`)}
+                                    animationDelay={index * 100}
+                                    badge={
+                                        (doctorApplied || userHasDietInstructions) ? (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-full text-xs font-medium text-emerald-700">
+                                                <ShieldCheck className="w-3 h-3" />
+                                                Diet Compliant
+                                            </span>
+                                        ) : undefined
+                                    }
+                                />
+                            ))}
 
                             {/* Small left-aligned status indicator at the bottom */}
                             {streamStatus && !streamComplete && (
@@ -540,16 +463,7 @@ function MealsPageContent() {
 
 export default function MealsPage() {
     return (
-        <Suspense
-            fallback={
-                <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                    <div className="text-center">
-                        <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
-                        <p className="text-gray-500">Loading meals...</p>
-                    </div>
-                </div>
-            }
-        >
+        <Suspense fallback={<LoadingScreen message="Loading meals..." />}>
             <MealsPageContent />
         </Suspense>
     );

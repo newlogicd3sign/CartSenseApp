@@ -1,14 +1,16 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { auth } from "@/lib/firebaseClient";
 import { signOut, onAuthStateChanged } from "firebase/auth";
 import { Search, List, BookmarkCheck, User, LogOut } from "lucide-react";
 import { getRandomAccentColor, type AccentColor } from "@/lib/utils";
+import { clearAllMealStorage, loadGeneratedMeals } from "@/lib/mealStorage";
 import Image from "next/image";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
+import { LoadingScreen } from "@/components/LoadingScreen";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
@@ -95,16 +97,33 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         return pathname.startsWith(href);
     };
 
+    // Handle Search nav click
+    // - If already in search flow (prompt/meals), clear storage and go to /prompt for fresh start
+    // - If coming from another tab and meals exist, return to /meals to view them
+    const handleSearchNav = useCallback((e: React.MouseEvent) => {
+        e.preventDefault();
+        const isInSearchFlow = pathname === "/prompt" || pathname.startsWith("/meals");
+
+        if (isInSearchFlow) {
+            // Already in search flow - clear and start fresh
+            clearAllMealStorage();
+            router.push("/prompt");
+        } else {
+            // Coming from another tab - check if meals exist
+            const stored = loadGeneratedMeals();
+            if (stored && stored.meals && stored.meals.length > 0) {
+                // Meals exist, go to meals list
+                router.push("/meals");
+            } else {
+                // No meals, go to prompt
+                router.push("/prompt");
+            }
+        }
+    }, [router, pathname]);
+
     // Show loading state while checking auth
     if (!authChecked) {
-        return (
-            <div className="min-h-screen bg-[#f8fafb] flex items-center justify-center">
-                <div className="text-center">
-                    <div className="w-10 h-10 border-3 border-gray-200 border-t-[#4A90E2] rounded-full animate-spin mx-auto mb-3" />
-                    <p className="text-gray-500">Loading...</p>
-                </div>
-            </div>
-        );
+        return <LoadingScreen />;
     }
 
     return (
@@ -127,7 +146,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                 const Icon = item.icon;
                                 const active = isActive(item.href);
                                 const itemColor = navColors[item.href]?.primary || accentColor.primary;
-                                return (
+                                const isSearchItem = item.href === "/prompt";
+
+                                return isSearchItem ? (
+                                    <button
+                                        key={item.href}
+                                        onClick={handleSearchNav}
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-colors ${
+                                            active
+                                                ? ""
+                                                : "text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                                        }`}
+                                        style={active ? { backgroundColor: `${itemColor}15`, color: itemColor } : undefined}
+                                    >
+                                        <Icon className="w-5 h-5" />
+                                        <span className="text-sm font-medium">{item.label}</span>
+                                    </button>
+                                ) : (
                                     <Link
                                         key={item.href}
                                         href={item.href}
@@ -173,7 +208,31 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                     const Icon = item.icon;
                                     const active = isActive(item.href);
                                     const itemColor = navColors[item.href]?.primary || accentColor.primary;
-                                    return (
+                                    const isSearchItem = item.href === "/prompt";
+
+                                    return isSearchItem ? (
+                                        <button
+                                            key={item.href}
+                                            onClick={handleSearchNav}
+                                            className="flex flex-col items-center gap-1 py-2"
+                                        >
+                                            <div
+                                                className="w-10 h-10 flex items-center justify-center rounded-xl transition-colors"
+                                                style={active ? { backgroundColor: `${itemColor}15` } : undefined}
+                                            >
+                                                <Icon
+                                                    className="w-5 h-5 transition-colors"
+                                                    style={{ color: active ? itemColor : "#9ca3af" }}
+                                                />
+                                            </div>
+                                            <span
+                                                className={`text-xs transition-colors ${active ? "font-medium" : ""}`}
+                                                style={{ color: active ? itemColor : "#6b7280" }}
+                                            >
+                                                {item.label}
+                                            </span>
+                                        </button>
+                                    ) : (
                                         <Link
                                             key={item.href}
                                             href={item.href}
