@@ -20,6 +20,7 @@ type ShoppingItem = {
     id: string;
     name: string;
     quantity: string;
+    count?: number;
 };
 
 type EnrichedItem = {
@@ -95,7 +96,7 @@ async function getUserDefaultLocationId(userId: string): Promise<string | null> 
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { userId, items } = body as { userId: string; items: ShoppingItem[] };
+        const { userId, items, enrichOnly } = body as { userId: string; items: ShoppingItem[]; enrichOnly?: boolean };
 
         if (!userId) {
             return NextResponse.json(
@@ -142,7 +143,7 @@ export async function POST(request: Request) {
 
         // Search for each item and enrich with Kroger product data
         // If the best match is unavailable, search for an alternative
-        const enrichedItems: (EnrichedItem & { itemId: string; usedAlternative?: boolean })[] = await Promise.all(
+        const enrichedItems: (EnrichedItem & { itemId: string; count: number; usedAlternative?: boolean })[] = await Promise.all(
             filteredItems.map(async (item) => {
                 let product = await searchKrogerProduct(item.name, {
                     locationId: locationId || undefined,
@@ -171,6 +172,7 @@ export async function POST(request: Request) {
                     itemId: item.id,
                     originalName: item.name,
                     quantity: item.quantity,
+                    count: item.count || 1,
                     found: !!product && product.available,
                     product: product || undefined,
                     usedAlternative,
@@ -194,11 +196,50 @@ export async function POST(request: Request) {
             });
         }
 
+        // If enrichOnly mode, skip adding to cart and just return enriched data
+        if (enrichOnly) {
+            // Update shopping list items in Firestore with Kroger product details
+            const updatePromises = foundItems.map((item) => {
+                if (!item.product) return Promise.resolve();
+
+                const itemRef = adminDb
+                    .collection("shoppingLists")
+                    .doc(userId)
+                    .collection("items")
+                    .doc(item.itemId);
+
+                return itemRef.update({
+                    krogerProductId: item.product.krogerProductId,
+                    productName: item.product.name,
+                    productImageUrl: item.product.imageUrl || null,
+                    productSize: item.product.size || null,
+                    productAisle: item.product.aisle || null,
+                    price: item.product.price || null,
+                    soldBy: item.product.soldBy || null,
+                    stockLevel: item.product.stockLevel || null,
+                });
+            });
+
+            try {
+                await Promise.all(updatePromises);
+            } catch (updateErr) {
+                console.error("Error updating shopping list items with Kroger data:", updateErr);
+            }
+
+            return NextResponse.json({
+                success: true,
+                message: `Enriched ${foundItems.length} items with Kroger product data.`,
+                enrichedItems,
+                addedCount: 0,
+                notFoundCount: notFoundItems.length,
+            });
+        }
+
         // Add found items to Kroger cart
         // Kroger's productId is the UPC
         const cartItems = foundItems.map((item) => ({
             upc: item.product!.krogerProductId,
-            quantity: 1, // Default to 1, could parse from quantity string
+            quantity: item.count,
         }));
 
         const cartRes = await fetch(`${API_BASE_URL}/cart/add`, {

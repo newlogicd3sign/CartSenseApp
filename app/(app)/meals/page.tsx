@@ -7,6 +7,11 @@ import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { logUserEvent } from "@/lib/logUserEvent";
 import { ACCENT_COLORS, type AccentColor } from "@/lib/utils";
+import {
+    saveGeneratedMeals,
+    loadGeneratedMeals,
+    clearLastViewedMeal,
+} from "@/lib/mealStorage";
 import { ArrowLeft, Flame, Beef, Wheat, Droplet, Heart, ChevronRight, Sparkles, ShieldCheck } from "lucide-react";
 
 type Ingredient = {
@@ -67,6 +72,7 @@ function MealsPageContent() {
 
     const [meals, setMeals] = useState<Meal[]>([]);
     const [mealsMeta, setMealsMeta] = useState<MealsMeta | null>(null);
+    const [storedPrompt, setStoredPrompt] = useState<string>("");
     const [loadingMeals, setLoadingMeals] = useState(true);
     const [streamStatus, setStreamStatus] = useState<string>("");
     const [streamError, setStreamError] = useState<string>("");
@@ -158,11 +164,12 @@ function MealsPageContent() {
                             case "meal":
                                 mealsArray[event.index] = event.meal;
                                 setMeals([...mealsArray]);
-                                // Update sessionStorage immediately so detail page can access
-                                sessionStorage.setItem("generatedMeals", JSON.stringify({
-                                    meals: mealsArray.filter(Boolean),
-                                    meta: mealsMetaRef.current,
-                                }));
+                                // Save to both sessionStorage and localStorage
+                                saveGeneratedMeals(
+                                    mealsArray.filter(Boolean),
+                                    mealsMetaRef.current ?? undefined,
+                                    decodeURIComponent(prompt)
+                                );
                                 // First meal arrived - stop showing loading
                                 if (mealsArray.filter(Boolean).length === 1) {
                                     setLoadingMeals(false);
@@ -172,21 +179,23 @@ function MealsPageContent() {
                             case "meal_updated":
                                 mealsArray[event.index] = event.meal;
                                 setMeals([...mealsArray]);
-                                // Update sessionStorage with updated meal (e.g., new image)
-                                sessionStorage.setItem("generatedMeals", JSON.stringify({
-                                    meals: mealsArray.filter(Boolean),
-                                    meta: mealsMetaRef.current,
-                                }));
+                                // Save updated meal (e.g., new image)
+                                saveGeneratedMeals(
+                                    mealsArray.filter(Boolean),
+                                    mealsMetaRef.current ?? undefined,
+                                    decodeURIComponent(prompt)
+                                );
                                 break;
 
                             case "meta":
                                 mealsMetaRef.current = event.meta;
                                 setMealsMeta(event.meta);
-                                // Update sessionStorage with meta
-                                sessionStorage.setItem("generatedMeals", JSON.stringify({
-                                    meals: mealsArray.filter(Boolean),
-                                    meta: event.meta,
-                                }));
+                                // Save with meta
+                                saveGeneratedMeals(
+                                    mealsArray.filter(Boolean),
+                                    event.meta,
+                                    decodeURIComponent(prompt)
+                                );
                                 break;
 
                             case "error":
@@ -222,39 +231,29 @@ function MealsPageContent() {
         }
     }, [loadingUser, user, prefs]);
 
-    // Load from sessionStorage OR start streaming
+    // Load from storage OR start streaming
     useEffect(() => {
         if (!user || !prefs) return;
 
-        // If we should stream, start the stream
+        // If we should stream, start the stream and clear any previous "last viewed" state
         if (shouldStream && promptFromUrl) {
+            clearLastViewedMeal();
             streamMeals(user.uid, prefs, decodeURIComponent(promptFromUrl));
             return;
         }
 
-        // Otherwise load from sessionStorage
+        // Otherwise load from storage (sessionStorage first, then localStorage)
         setLoadingMeals(true);
 
-        try {
-            const stored = sessionStorage.getItem("generatedMeals");
-            if (!stored) {
-                setMeals([]);
-                setMealsMeta(null);
-            } else {
-                const parsed: StoredMealsPayload = JSON.parse(stored);
-
-                if (Array.isArray(parsed)) {
-                    setMeals(parsed);
-                    setMealsMeta(null);
-                } else {
-                    setMeals(parsed.meals ?? []);
-                    setMealsMeta(parsed.meta ?? null);
-                }
-            }
-        } catch (err) {
-            console.error("Failed to parse meals from sessionStorage", err);
+        const stored = loadGeneratedMeals();
+        if (!stored || !stored.meals || stored.meals.length === 0) {
             setMeals([]);
             setMealsMeta(null);
+            setStoredPrompt("");
+        } else {
+            setMeals(stored.meals);
+            setMealsMeta(stored.meta ?? null);
+            setStoredPrompt(stored.prompt ?? "");
         }
 
         setLoadingMeals(false);
@@ -282,7 +281,9 @@ function MealsPageContent() {
     const displayedPrompt =
         promptFromUrl && promptFromUrl.trim().length > 0
             ? decodeURIComponent(promptFromUrl)
-            : "No prompt provided.";
+            : storedPrompt && storedPrompt.trim().length > 0
+                ? storedPrompt
+                : "No prompt provided.";
 
     const doctorApplied = Boolean(mealsMeta?.usedDoctorInstructions);
     const blockedIngredients = mealsMeta?.blockedIngredientsFromDoctor || [];

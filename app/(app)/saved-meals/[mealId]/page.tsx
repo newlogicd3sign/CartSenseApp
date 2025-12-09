@@ -10,6 +10,7 @@ import {
     getDocs,
     collection,
     addDoc,
+    updateDoc,
     serverTimestamp,
     setDoc,
 } from "firebase/firestore";
@@ -36,6 +37,7 @@ import {
     Lock,
     X,
     RefreshCw,
+    PencilRuler,
 } from "lucide-react";
 import { logUserEvent } from "@/lib/logUserEvent";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
@@ -301,14 +303,18 @@ export default function SavedMealDetailPage() {
             const existingItems = existingSnapshot.docs.map((d) => ({
                 id: d.id,
                 name: d.data().name as string,
+                count: (d.data().count as number) || 1,
             }));
 
-            // Filter out duplicates based on ingredient type
+            // Separate items into: to update (increment count), to add (new), and to skip (staples)
             let skippedStaples = 0;
-            const itemsToActuallyAdd = ingredientsToAdd.filter((ing) => {
+            const itemsToUpdate: { id: string; newCount: number }[] = [];
+            const itemsToAdd: typeof ingredientsToAdd = [];
+
+            for (const ing of ingredientsToAdd) {
                 // Skip excluded ingredients like water (you don't need to buy these)
                 if (isExcludedIngredient(ing.name)) {
-                    return false;
+                    continue;
                 }
 
                 // Check if this ingredient already exists in the shopping list
@@ -320,21 +326,38 @@ export default function SavedMealDetailPage() {
                     // If it's a staple item, skip it entirely (don't need multiple olive oils)
                     if (isStapleItem(ing.name)) {
                         skippedStaples++;
-                        return false;
+                        continue;
                     }
-                    // For countable items (bananas, eggs, etc.), still add them
-                    // User may actually need more of these
+                    // For countable items, increment the count
+                    itemsToUpdate.push({
+                        id: existingMatch.id,
+                        newCount: existingMatch.count + 1,
+                    });
+                    // Update the local count so subsequent duplicates in the same batch stack correctly
+                    existingMatch.count += 1;
+                } else {
+                    itemsToAdd.push(ing);
                 }
+            }
 
-                return true;
-            });
+            // Update existing items (increment count)
+            if (itemsToUpdate.length > 0) {
+                await Promise.all(
+                    itemsToUpdate.map(({ id, newCount }) =>
+                        updateDoc(doc(db, "shoppingLists", user.uid, "items", id), {
+                            count: newCount,
+                        })
+                    )
+                );
+            }
 
-            // Add the filtered items
-            if (itemsToActuallyAdd.length > 0) {
-                const writes = itemsToActuallyAdd.map((ing) =>
+            // Add new items
+            if (itemsToAdd.length > 0) {
+                const writes = itemsToAdd.map((ing) =>
                     addDoc(itemsCol, {
                         name: ing.name,
                         quantity: ing.quantity,
+                        count: 1,
                         mealId: meal.id,
                         mealName: meal.name,
                         checked: false,
@@ -354,10 +377,17 @@ export default function SavedMealDetailPage() {
             }
 
             // Build appropriate message
-            if (itemsToActuallyAdd.length > 0 && skippedStaples > 0) {
-                setAddMessage(`Added ${itemsToActuallyAdd.length} item${itemsToActuallyAdd.length !== 1 ? "s" : ""}, skipped ${skippedStaples} already in list.`);
-            } else if (itemsToActuallyAdd.length > 0) {
-                setAddMessage(`Added ${itemsToActuallyAdd.length} item${itemsToActuallyAdd.length !== 1 ? "s" : ""} to your shopping list.`);
+            const addedCount = itemsToAdd.length;
+            const updatedCount = itemsToUpdate.length;
+
+            if (addedCount > 0 && updatedCount > 0) {
+                setAddMessage(`Added ${addedCount} item${addedCount !== 1 ? "s" : ""}, updated ${updatedCount} item${updatedCount !== 1 ? "s" : ""}.`);
+            } else if (addedCount > 0 && skippedStaples > 0) {
+                setAddMessage(`Added ${addedCount} item${addedCount !== 1 ? "s" : ""}, skipped ${skippedStaples} already in list.`);
+            } else if (addedCount > 0) {
+                setAddMessage(`Added ${addedCount} item${addedCount !== 1 ? "s" : ""} to your shopping list.`);
+            } else if (updatedCount > 0) {
+                setAddMessage(`Updated quantities for ${updatedCount} item${updatedCount !== 1 ? "s" : ""}.`);
             } else if (skippedStaples > 0) {
                 setAddMessage(`All items already in your shopping list.`);
             }
@@ -888,14 +918,15 @@ export default function SavedMealDetailPage() {
                                                     </span>
                                                 )}
                                             </div>
-                                            <div className="text-sm text-gray-500">
-                                                {ing.quantity}
-                                                {ing.category && ` • ${ing.category}`}
-                                                {krogerConnected && ing.productAisle && ` • ${ing.productAisle}`}
-                                                {krogerConnected && typeof ing.price === "number" && (
-                                                    <span className="text-[#4A90E2]"> • ${ing.price.toFixed(2)}{ing.soldBy === "WEIGHT" ? "/lb" : ""}</span>
-                                                )}
-                                            </div>
+                                            {krogerConnected && (
+                                                <div className="text-sm text-gray-500">
+                                                    {ing.productSize || ing.quantity}
+                                                    {ing.productAisle && ` • ${ing.productAisle}`}
+                                                    {typeof ing.price === "number" && (
+                                                        <span className="text-[#4A90E2]"> • ${ing.price.toFixed(2)}{ing.soldBy === "WEIGHT" ? "/lb" : ""}</span>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                     {/* Checkbox for selection */}
@@ -919,6 +950,22 @@ export default function SavedMealDetailPage() {
                                 </li>
                             ))}
                         </ul>
+                    </div>
+
+                    {/* Recipe Quantities */}
+                    <div className="bg-white rounded-2xl border border-gray-100 p-5">
+                        <div className="flex items-center gap-2 mb-4">
+                            <PencilRuler className="w-5 h-5 text-gray-400" />
+                            <h3 className="font-medium text-gray-900">Recipe Quantities</h3>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                            {meal.ingredients.map((ing, idx) => (
+                                <div key={idx} className="text-sm text-gray-600">
+                                    <span className="font-medium text-gray-900">{ing.quantity}</span>
+                                    <span className="ml-1">{ing.name}</span>
+                                </div>
+                            ))}
+                        </div>
                     </div>
 
                     {/* Cooking Steps */}
@@ -1028,10 +1075,16 @@ export default function SavedMealDetailPage() {
 
                                         {/* Details Grid */}
                                         <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-                                            <div className="flex justify-between">
-                                                <span className="text-sm text-gray-500">Quantity</span>
-                                                <span className="text-sm font-medium text-gray-900">{ing.quantity}</span>
-                                            </div>
+                                            {krogerConnected && (
+                                                <div className="flex justify-between">
+                                                    <span className="text-sm text-gray-500">
+                                                        {ing.productSize ? "Size" : "Quantity"}
+                                                    </span>
+                                                    <span className="text-sm font-medium text-gray-900">
+                                                        {ing.productSize || ing.quantity}
+                                                    </span>
+                                                </div>
+                                            )}
                                             {ing.category && (
                                                 <div className="flex justify-between">
                                                     <span className="text-sm text-gray-500">Category</span>
@@ -1050,12 +1103,6 @@ export default function SavedMealDetailPage() {
                                                     <span className="text-sm font-medium text-[#4A90E2]">
                                                         ${ing.price.toFixed(2)}{ing.soldBy === "WEIGHT" ? "/lb" : ""}
                                                     </span>
-                                                </div>
-                                            )}
-                                            {krogerConnected && ing.productSize && (
-                                                <div className="flex justify-between">
-                                                    <span className="text-sm text-gray-500">Size</span>
-                                                    <span className="text-sm font-medium text-gray-900">{ing.productSize}</span>
                                                 </div>
                                             )}
                                             {krogerConnected && ing.stockLevel && (

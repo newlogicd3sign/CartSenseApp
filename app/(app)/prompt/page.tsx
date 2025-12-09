@@ -4,10 +4,11 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, collection, getDocs, query, where } from "firebase/firestore";
 import { getRandomAccentColor, getRandomAccentColorExcluding, type AccentColor } from "@/lib/utils";
-import { Sparkles, UtensilsCrossed, ChefHat, Soup, Pizza, Salad, Sandwich, Croissant, Apple, Carrot, Beef, Fish, Citrus, Drumstick, Wheat, Ham, CookingPot, Hamburger, ShieldCheck, HeartPulse } from "lucide-react";
+import { Sparkles, UtensilsCrossed, ChefHat, Soup, Pizza, Salad, Sandwich, Croissant, Apple, Carrot, Beef, Fish, Citrus, Drumstick, Wheat, Ham, CookingPot, Hamburger, ShieldCheck, HeartPulse, Users, ChevronRight } from "lucide-react";
 import { useToast } from "@/components/Toast";
+import { loadGeneratedMeals } from "@/lib/mealStorage";
 
 const foodIcons = [
     UtensilsCrossed,
@@ -96,6 +97,15 @@ export default function PromptPage() {
     const [blockedIngredients, setBlockedIngredients] = useState<string[]>([]);
     const [blockedGroups, setBlockedGroups] = useState<string[]>([]);
 
+    // Family members state
+    const [activeFamilyMemberCount, setActiveFamilyMemberCount] = useState(0);
+    const [activeFamilyMemberNames, setActiveFamilyMemberNames] = useState<string[]>([]);
+
+    // Stored meals state (for "View Previous Meals" option)
+    const [hasStoredMeals, setHasStoredMeals] = useState(false);
+    const [storedMealsCount, setStoredMealsCount] = useState(0);
+    const [storedPrompt, setStoredPrompt] = useState<string | null>(null);
+
     useEffect(() => {
         // Scroll to top when page loads
         window.scrollTo(0, 0);
@@ -112,6 +122,14 @@ export default function PromptPage() {
         if (animateEntry === "true") {
             setAnimateFromSetup(true);
             sessionStorage.removeItem("animateEntry");
+        }
+
+        // Check for stored meals from previous generation
+        const stored = loadGeneratedMeals();
+        if (stored && stored.meals && stored.meals.length > 0) {
+            setHasStoredMeals(true);
+            setStoredMealsCount(stored.meals.length);
+            setStoredPrompt(stored.prompt || null);
         }
     }, []);
 
@@ -162,6 +180,26 @@ export default function PromptPage() {
                         setBlockedIngredients(dietInstructions.blockedIngredients || []);
                         setBlockedGroups(dietInstructions.blockedGroups || []);
                     }
+                }
+
+                // Load active family members
+                try {
+                    const membersQuery = query(
+                        collection(db, "users", firebaseUser.uid, "familyMembers"),
+                        where("isActive", "==", true)
+                    );
+                    const membersSnap = await getDocs(membersQuery);
+                    const activeMembers: string[] = [];
+                    membersSnap.forEach((docSnap) => {
+                        const memberData = docSnap.data();
+                        if (memberData.name) {
+                            activeMembers.push(memberData.name);
+                        }
+                    });
+                    setActiveFamilyMemberCount(activeMembers.length);
+                    setActiveFamilyMemberNames(activeMembers);
+                } catch (err) {
+                    console.error("Error loading family members", err);
                 }
             }
             setLoadingUser(false);
@@ -226,6 +264,33 @@ export default function PromptPage() {
                         </div>
                     )}
 
+                    {/* View Previous Meals Card */}
+                    {hasStoredMeals && (
+                        <button
+                            onClick={() => router.push("/meals")}
+                            className={`w-full bg-white border border-gray-200 rounded-2xl p-4 mb-6 flex items-center justify-between hover:border-gray-300 hover:shadow-sm transition-all ${animateFromSetup ? "animate-content-after-greeting" : ""}`}
+                        >
+                            <div className="flex items-center gap-3">
+                                <div
+                                    className="w-10 h-10 rounded-xl flex items-center justify-center"
+                                    style={{ backgroundColor: `${accentColor.primary}15` }}
+                                >
+                                    <UtensilsCrossed className="w-5 h-5" style={{ color: accentColor.primary }} />
+                                </div>
+                                <div className="text-left">
+                                    <h3 className="font-medium text-gray-900 text-sm">View Previous Meals</h3>
+                                    <p className="text-xs text-gray-500">
+                                        {storedMealsCount} meal{storedMealsCount !== 1 ? "s" : ""} generated
+                                        {storedPrompt && (
+                                            <span className="text-gray-400"> · {storedPrompt.length > 30 ? storedPrompt.slice(0, 30) + "..." : storedPrompt}</span>
+                                        )}
+                                    </p>
+                                </div>
+                            </div>
+                            <ChevronRight className="w-5 h-5 text-gray-400" />
+                        </button>
+                    )}
+
                     {/* Search Card */}
                     <div className={`bg-white rounded-2xl shadow-lg p-5 mb-6 ${animateFromSetup ? "animate-content-after-greeting" : ""}`}>
                         <textarea
@@ -257,6 +322,17 @@ export default function PromptPage() {
                                 <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-200 rounded-full">
                                     <HeartPulse className="w-3.5 h-3.5 text-emerald-600" />
                                     <span className="text-xs font-medium text-emerald-700">Diet Compliant</span>
+                                </div>
+                            )}
+                            {activeFamilyMemberCount > 0 && (
+                                <div
+                                    className="flex items-center gap-1.5 px-2.5 py-1 bg-purple-50 border border-purple-200 rounded-full"
+                                    title={`Cooking for you + ${activeFamilyMemberNames.join(", ")}`}
+                                >
+                                    <Users className="w-3.5 h-3.5 text-purple-600" />
+                                    <span className="text-xs font-medium text-purple-700">
+                                        +{activeFamilyMemberCount} household
+                                    </span>
                                 </div>
                             )}
                         </div>
