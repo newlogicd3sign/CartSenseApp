@@ -576,7 +576,7 @@ KEY RULES:
 - grocerySearchTerm = raw product (no prep words). "diced onion" → "yellow onion"
 - Include seasonings in ingredients
 - description: 1 sentence max
-- steps: 4-6 steps, clear but brief
+- steps: 5-7 steps, written in a warm food blogger style. Be conversational and enthusiastic! Include specific seasoning tips (e.g., "season generously with salt and pepper", "add a pinch of red pepper flakes for heat"). Explain WHY certain techniques matter (e.g., "let the onions caramelize until golden - this builds amazing flavor"). Share little tips like "taste and adjust seasoning as you go!"
 
 CRITICAL - MEAL TYPE DISTRIBUTION:
 ${mealCountInstruction}
