@@ -220,6 +220,7 @@ function DietRestrictionsContent() {
                 feature="diet_photo"
                 variant="full_page"
                 onClose={() => router.back()}
+                reason="voluntary"
             />
         );
     }

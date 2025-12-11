@@ -40,6 +40,14 @@ import {
     Sparkles,
     RefreshCw,
     PencilRuler,
+    Drumstick,
+    Milk,
+    Leaf,
+    Cookie,
+    Package,
+    Bean,
+    FlaskConical,
+    Apple,
 } from "lucide-react";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { useToast } from "@/components/Toast";
@@ -49,6 +57,7 @@ import {
     isSameIngredient,
     isExcludedIngredient,
 } from "@/lib/utils";
+import { getIngredientCategory } from "@/lib/ingredientQualityRules";
 
 type Ingredient = {
     name: string;
@@ -76,6 +85,7 @@ type Meal = {
         calories: number;
         protein: number;
         carbs: number;
+        fiber: number;
         fat: number;
     };
     ingredients: Ingredient[];
@@ -196,6 +206,7 @@ function MealDetailPageContent() {
     // Chat limit state
     const [monthlyChatCount, setMonthlyChatCount] = useState(0);
     const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
+    const [upgradeReason, setUpgradeReason] = useState<"limit_reached" | "voluntary">("limit_reached");
     const FREE_CHAT_LIMIT = 6;
 
     // Ref for chat messages container to control scrolling
@@ -835,6 +846,7 @@ function MealDetailPageContent() {
 
         // Check chat limit for free users
         if (!prefs?.isPremium && monthlyChatCount >= FREE_CHAT_LIMIT) {
+            setUpgradeReason("limit_reached");
             setShowUpgradePrompt(true);
             return;
         }
@@ -885,6 +897,7 @@ function MealDetailPageContent() {
 
             if (!res.ok) {
                 if (data.error === "CHAT_LIMIT_REACHED") {
+                    setUpgradeReason("limit_reached");
                     setShowUpgradePrompt(true);
                     // Remove the optimistically added user message
                     setThreadMessages((prev) => prev.filter((msg) => msg.id !== newUserMsg.id));
@@ -1053,12 +1066,12 @@ function MealDetailPageContent() {
                                 <div className="text-lg font-medium text-gray-900">{meal.macros.protein}g</div>
                                 <div className="text-xs text-gray-500">Protein</div>
                             </div>
-                            <div className="text-center">
+                            <div className="text-center" title={`${meal.macros.carbs}g total carbs - ${meal.macros.fiber ?? 0}g fiber`}>
                                 <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-2">
                                     <Wheat className="w-6 h-6 text-amber-500" />
                                 </div>
-                                <div className="text-lg font-medium text-gray-900">{meal.macros.carbs}g</div>
-                                <div className="text-xs text-gray-500">Carbs</div>
+                                <div className="text-lg font-medium text-gray-900">{Math.max(0, meal.macros.carbs - (meal.macros.fiber ?? 0))}g</div>
+                                <div className="text-xs text-gray-500">Net Carbs</div>
                             </div>
                             <div className="text-center">
                                 <div className="w-12 h-12 bg-purple-50 rounded-full flex items-center justify-center mx-auto mb-2">
@@ -1083,13 +1096,19 @@ function MealDetailPageContent() {
                                     <span className="text-xs font-medium text-violet-700">Premium</span>
                                 </div>
                             ) : (
-                                <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full ${
-                                    FREE_CHAT_LIMIT - monthlyChatCount === 0
-                                        ? "bg-red-100"
-                                        : FREE_CHAT_LIMIT - monthlyChatCount === 1
-                                            ? "bg-amber-100"
-                                            : "bg-blue-100"
-                                }`}>
+                                <button
+                                    onClick={() => {
+                                        setUpgradeReason("voluntary");
+                                        setShowUpgradePrompt(true);
+                                    }}
+                                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full hover:opacity-80 transition-opacity ${
+                                        FREE_CHAT_LIMIT - monthlyChatCount === 0
+                                            ? "bg-red-100"
+                                            : FREE_CHAT_LIMIT - monthlyChatCount === 1
+                                                ? "bg-amber-100"
+                                                : "bg-blue-100"
+                                    }`}
+                                >
                                     <MessageCircle className={`w-3 h-3 ${
                                         FREE_CHAT_LIMIT - monthlyChatCount === 0
                                             ? "text-red-500"
@@ -1106,7 +1125,7 @@ function MealDetailPageContent() {
                                     }`}>
                                         {FREE_CHAT_LIMIT - monthlyChatCount}/{FREE_CHAT_LIMIT} free
                                     </span>
-                                </div>
+                                </button>
                             )}
                         </div>
                         <p className="text-sm text-gray-500 mb-4">
@@ -1187,7 +1206,9 @@ function MealDetailPageContent() {
                                 {selectedIngredients.size === displayIngredients.length ? "Deselect all" : "Select all"}
                             </button>
                         </div>
-                        <p className="text-xs text-gray-500 mb-4">Tap an ingredient to view details or swap it</p>
+                        {krogerConnected && (
+                            <p className="text-xs text-gray-500 mb-4">Tap an ingredient to view details or swap it</p>
+                        )}
                         <ul className="space-y-3">
                             {displayIngredients.map((ing, idx) => (
                                 <li
@@ -1196,15 +1217,16 @@ function MealDetailPageContent() {
                                         !selectedIngredients.has(idx) ? "opacity-50" : ""
                                     }`}
                                 >
-                                    {/* Clickable area for opening modal */}
+                                    {/* Clickable area for opening modal - only when Kroger is connected */}
                                     <div
                                         onClick={() => {
+                                            if (!krogerConnected) return;
                                             // Clear previous swap state when selecting a new ingredient
                                             setSwapAlternatives(null);
                                             setShowSwapOptions(false);
                                             setSelectedIngredientIndex(idx);
                                         }}
-                                        className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+                                        className={`flex items-center gap-3 flex-1 min-w-0 ${krogerConnected ? "cursor-pointer" : ""}`}
                                     >
                                         {krogerConnected && ing.productImageUrl ? (
                                             <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
@@ -1215,7 +1237,35 @@ function MealDetailPageContent() {
                                                     className="w-full h-full object-cover"
                                                 />
                                             </div>
-                                        ) : null}
+                                        ) : (
+                                            <div className="w-12 h-12 rounded-lg bg-gray-100 flex-shrink-0 flex items-center justify-center">
+                                                {(() => {
+                                                    const category = getIngredientCategory(ing.name);
+                                                    switch (category) {
+                                                        case 'protein':
+                                                            return <Drumstick className="w-6 h-6 text-red-400" />;
+                                                        case 'dairy':
+                                                            return <Milk className="w-6 h-6 text-blue-400" />;
+                                                        case 'produce':
+                                                            return <Leaf className="w-6 h-6 text-green-500" />;
+                                                        case 'carb':
+                                                            return <Wheat className="w-6 h-6 text-amber-500" />;
+                                                        case 'fats_oils':
+                                                            return <Droplet className="w-6 h-6 text-yellow-500" />;
+                                                        case 'snacks':
+                                                            return <Cookie className="w-6 h-6 text-orange-400" />;
+                                                        case 'beans':
+                                                            return <Bean className="w-6 h-6 text-amber-600" />;
+                                                        case 'pantry':
+                                                            return <FlaskConical className="w-6 h-6 text-stone-500" />;
+                                                        case 'fruits':
+                                                            return <Apple className="w-6 h-6 text-red-500" />;
+                                                        default:
+                                                            return <Package className="w-6 h-6 text-gray-400" />;
+                                                    }
+                                                })()}
+                                            </div>
+                                        )}
                                         <div className="flex-1 min-w-0">
                                             <div>
                                                 <span className={`font-medium ${selectedIngredients.has(idx) ? "text-gray-900" : "text-gray-500 line-through"}`}>{ing.name}</span>
@@ -1355,7 +1405,7 @@ function MealDetailPageContent() {
                             ) : isMealAlreadySaved ? (
                                 <>
                                     <CheckCircle className="w-5 h-5" />
-                                    <span>Meal already saved</span>
+                                    <span>Meal saved</span>
                                 </>
                             ) : (
                                 <>
@@ -1373,6 +1423,7 @@ function MealDetailPageContent() {
                 <UpgradePrompt
                     feature="meal_chat"
                     onClose={() => setShowUpgradePrompt(false)}
+                    reason={upgradeReason}
                 />
             )}
 
@@ -1478,7 +1529,31 @@ function MealDetailPageContent() {
                                             </div>
                                         ) : (
                                             <div className="w-full aspect-square max-w-[200px] mx-auto rounded-xl bg-gray-100 flex items-center justify-center">
-                                                <ShoppingCart className="w-16 h-16 text-gray-300" />
+                                                {(() => {
+                                                    const category = getIngredientCategory(ing.name);
+                                                    switch (category) {
+                                                        case 'protein':
+                                                            return <Drumstick className="w-16 h-16 text-red-400" />;
+                                                        case 'dairy':
+                                                            return <Milk className="w-16 h-16 text-blue-400" />;
+                                                        case 'produce':
+                                                            return <Leaf className="w-16 h-16 text-green-500" />;
+                                                        case 'carb':
+                                                            return <Wheat className="w-16 h-16 text-amber-500" />;
+                                                        case 'fats_oils':
+                                                            return <Droplet className="w-16 h-16 text-yellow-500" />;
+                                                        case 'snacks':
+                                                            return <Cookie className="w-16 h-16 text-orange-400" />;
+                                                        case 'beans':
+                                                            return <Bean className="w-16 h-16 text-amber-600" />;
+                                                        case 'pantry':
+                                                            return <FlaskConical className="w-16 h-16 text-stone-500" />;
+                                                        case 'fruits':
+                                                            return <Apple className="w-16 h-16 text-red-500" />;
+                                                        default:
+                                                            return <Package className="w-16 h-16 text-gray-400" />;
+                                                    }
+                                                })()}
                                             </div>
                                         )}
 

@@ -34,6 +34,7 @@ type Meal = {
         calories: number;
         protein: number;
         carbs: number;
+        fiber: number;
         fat: number;
     };
     ingredients: Ingredient[];
@@ -84,7 +85,7 @@ JSON response:
 {"reply":"explanation","action":"no_change|update_meal|new_meal_variant","updatedMeal":{...if action != no_change}}
 
 updatedMeal shape:
-{"id":"","mealType":"breakfast|lunch|dinner|snack","name":"","description":"","servings":N,"macros":{"calories":N,"protein":N,"carbs":N,"fat":N},"ingredients":[{"name":"display","quantity":"","grocerySearchTerm":"raw product","preparation":""}],"steps":[""]}
+{"id":"","mealType":"breakfast|lunch|dinner|snack","name":"","description":"","servings":N,"macros":{"calories":N,"protein":N,"carbs":N,"fiber":N,"fat":N},"ingredients":[{"name":"display","quantity":"","grocerySearchTerm":"raw product","preparation":""}],"steps":[""]}
 
 KEY RULES:
 - macros = PER SERVING

@@ -33,6 +33,7 @@ type Meal = {
         calories: number;
         protein: number;
         carbs: number;
+        fiber: number;
         fat: number;
     };
     ingredients: Ingredient[];

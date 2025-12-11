@@ -41,11 +41,14 @@ import {
     ChevronDown,
     ChevronUp,
     Search,
+    Mail,
 } from "lucide-react";
 import { signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential, deleteUser } from "firebase/auth";
 import { deleteDoc } from "firebase/firestore";
 import { useToast } from "@/components/Toast";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { Modal } from "@/components/Modal";
+import { StoreSearchModal } from "@/components/StoreSearchModal";
 import { getStoreBrand } from "@/lib/utils";
 import type { FamilyMember } from "@/types/family";
 
@@ -105,6 +108,12 @@ const DIET_OPTIONS = [
     { value: "dairy_free", label: "Dairy free" },
 ];
 
+const COOKING_EXPERIENCE_OPTIONS = [
+    { value: "beginner", label: "Beginner", description: "New to cooking, prefer simple recipes" },
+    { value: "intermediate", label: "Intermediate", description: "Comfortable with most recipes" },
+    { value: "advanced", label: "Advanced", description: "Enjoy complex techniques and recipes" },
+];
+
 type DoctorDietInstructions = {
     hasActiveNote?: boolean;
     sourceType?: "photo" | "manual";
@@ -117,6 +126,7 @@ type DoctorDietInstructions = {
 type UserPrefsDoc = {
     name?: string;
     dietType?: string;
+    cookingExperience?: string;
     allergiesAndSensitivities?: {
         allergies?: string[];
         sensitivities?: string[];
@@ -165,19 +175,15 @@ function AccountPageContent() {
     const [locations, setLocations] = useState<UserLocation[]>([]);
     const [loadingLocations, setLoadingLocations] = useState(true);
 
-    const [savingLocation, setSavingLocation] = useState(false);
-
-    const [zipSearch, setZipSearch] = useState("");
-    const [storeResults, setStoreResults] = useState<KrogerLocationSearchResult[]>([]);
-    const [searchingStores, setSearchingStores] = useState(false);
-    const [storeSearchError, setStoreSearchError] = useState<string | null>(null);
-
     const [editingDietAllergies, setEditingDietAllergies] = useState(false);
     const [selectedDietType, setSelectedDietType] = useState("");
+    const [selectedCookingExperience, setSelectedCookingExperience] = useState("");
     const [selectedAllergies, setSelectedAllergies] = useState<string[]>([]);
     const [selectedSensitivities, setSelectedSensitivities] = useState<string[]>([]);
     const [selectedDislikedFoods, setSelectedDislikedFoods] = useState<string[]>([]);
     const [customDislikedFood, setCustomDislikedFood] = useState("");
+    const [customAllergy, setCustomAllergy] = useState("");
+    const [customSensitivity, setCustomSensitivity] = useState("");
     const [savingDietAllergies, setSavingDietAllergies] = useState(false);
 
     const [removingDoctorNote, setRemovingDoctorNote] = useState(false);
@@ -200,8 +206,7 @@ function AccountPageContent() {
 
     // Delete account state
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-    const [deletePassword, setDeletePassword] = useState("");
-    const [showDeletePassword, setShowDeletePassword] = useState(false);
+    const [deleteEmail, setDeleteEmail] = useState("");
     const [deletingAccount, setDeletingAccount] = useState(false);
     const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -222,9 +227,14 @@ function AccountPageContent() {
     const [memberSensitivities, setMemberSensitivities] = useState<string[]>([]);
     const [memberDislikedFoods, setMemberDislikedFoods] = useState<string[]>([]);
     const [memberCustomDislikedFood, setMemberCustomDislikedFood] = useState("");
+    const [memberCustomAllergy, setMemberCustomAllergy] = useState("");
+    const [memberCustomSensitivity, setMemberCustomSensitivity] = useState("");
 
     // Subscription portal state
     const [loadingPortal, setLoadingPortal] = useState(false);
+
+    // Store search modal state
+    const [showStoreSearchModal, setShowStoreSearchModal] = useState(false);
 
     const formatDoctorUpdatedAt = (value?: any) => {
         if (!value) return "";
@@ -526,41 +536,6 @@ function AccountPageContent() {
         }
     };
 
-    const handleSearchStoresByZip = async () => {
-        const zip = zipSearch.trim();
-        if (!zip) {
-            setStoreSearchError("Please enter a ZIP code.");
-            setStoreResults([]);
-            return;
-        }
-
-        try {
-            setSearchingStores(true);
-            setStoreSearchError(null);
-            setStoreResults([]);
-
-            const res = await fetch(`/api/kroger/locations?zip=${encodeURIComponent(zip)}`);
-
-            if (!res.ok) {
-                const data = await res.json().catch(() => null);
-                setStoreSearchError(data?.message || "Could not load stores for that ZIP.");
-                return;
-            }
-
-            const data = (await res.json()) as { locations?: KrogerLocationSearchResult[] };
-            const locs = data.locations ?? [];
-            setStoreResults(locs);
-            if (locs.length === 0) {
-                setStoreSearchError("No stores found for that ZIP.");
-            }
-        } catch (err) {
-            console.error("Error searching stores", err);
-            setStoreSearchError("Something went wrong searching for stores.");
-        } finally {
-            setSearchingStores(false);
-        }
-    };
-
     const handleUseStoreFromSearch = async (store: KrogerLocationSearchResult) => {
         if (!user) return;
 
@@ -570,68 +545,56 @@ function AccountPageContent() {
         );
         if (existingStore) {
             showToast(`${store.name} is already in your saved stores.`, "error");
-            return;
+            throw new Error("Store already saved");
         }
 
-        try {
-            setSavingLocation(true);
+        const locCol = collection(db, "krogerLocations", user.uid, "locations");
 
-            const locCol = collection(db, "krogerLocations", user.uid, "locations");
+        const isFirstLocation = locations.length === 0;
 
-            const isFirstLocation = locations.length === 0;
+        const docRef = await addDoc(locCol, {
+            krogerLocationId: store.locationId,
+            name: store.name,
+            addressLine1: store.addressLine1 || null,
+            city: store.city || null,
+            state: store.state || null,
+            zip: store.zipCode || null,
+            isDefault: true,
+            createdAt: serverTimestamp(),
+        });
 
-            const docRef = await addDoc(locCol, {
-                krogerLocationId: store.locationId,
-                name: store.name,
-                addressLine1: store.addressLine1 || null,
-                city: store.city || null,
-                state: store.state || null,
-                zip: store.zipCode || null,
-                isDefault: true,
-                createdAt: serverTimestamp(),
-            });
+        const userRef = doc(db, "users", user.uid);
+        await updateDoc(userRef, {
+            defaultKrogerLocationId: store.locationId,
+        });
 
-            const userRef = doc(db, "users", user.uid);
-            await updateDoc(userRef, {
-                defaultKrogerLocationId: store.locationId,
-            });
+        const newLocation: UserLocation = {
+            id: docRef.id,
+            krogerLocationId: store.locationId,
+            name: store.name,
+            addressLine1: store.addressLine1 || undefined,
+            city: store.city || undefined,
+            state: store.state || undefined,
+            zip: store.zipCode || undefined,
+            isDefault: true,
+        };
 
-            const newLocation: UserLocation = {
-                id: docRef.id,
-                krogerLocationId: store.locationId,
-                name: store.name,
-                addressLine1: store.addressLine1 || undefined,
-                city: store.city || undefined,
-                state: store.state || undefined,
-                zip: store.zipCode || undefined,
-                isDefault: true,
-            };
+        setLocations((prev) => [
+            ...prev.map((loc) => ({ ...loc, isDefault: false })),
+            newLocation,
+        ]);
+        setUserDoc((prev) =>
+            prev
+                ? { ...prev, defaultKrogerLocationId: store.locationId }
+                : { defaultKrogerLocationId: store.locationId }
+        );
 
-            setLocations((prev) => [
-                ...prev.map((loc) => ({ ...loc, isDefault: false })),
-                newLocation,
-            ]);
-            setUserDoc((prev) =>
-                prev
-                    ? { ...prev, defaultKrogerLocationId: store.locationId }
-                    : { defaultKrogerLocationId: store.locationId }
-            );
-
-            setStoreResults([]);
-            setZipSearch("");
-
-            showToast(
-                isFirstLocation
-                    ? `${store.name} saved as your default store.`
-                    : `${store.name} saved and set as default.`,
-                "success"
-            );
-        } catch (err) {
-            console.error("Error saving location", err);
-            showToast("Something went wrong saving this location.", "error");
-        } finally {
-            setSavingLocation(false);
-        }
+        showToast(
+            isFirstLocation
+                ? `${store.name} saved as your default store.`
+                : `${store.name} saved and set as default.`,
+            "success"
+        );
     };
 
     const toggleAllergy = (item: string) => {
@@ -660,12 +623,31 @@ function AccountPageContent() {
         }
     };
 
+    const addCustomAllergy = () => {
+        const trimmed = customAllergy.trim();
+        if (trimmed && !selectedAllergies.includes(trimmed)) {
+            setSelectedAllergies((prev) => [...prev, trimmed]);
+            setCustomAllergy("");
+        }
+    };
+
+    const addCustomSensitivity = () => {
+        const trimmed = customSensitivity.trim();
+        if (trimmed && !selectedSensitivities.includes(trimmed)) {
+            setSelectedSensitivities((prev) => [...prev, trimmed]);
+            setCustomSensitivity("");
+        }
+    };
+
     const handleEditDietAllergies = () => {
         setSelectedDietType(userDoc?.dietType ?? "");
+        setSelectedCookingExperience(userDoc?.cookingExperience ?? "");
         setSelectedAllergies(userDoc?.allergiesAndSensitivities?.allergies ?? []);
         setSelectedSensitivities(userDoc?.allergiesAndSensitivities?.sensitivities ?? []);
         setSelectedDislikedFoods(userDoc?.dislikedFoods ?? []);
         setCustomDislikedFood("");
+        setCustomAllergy("");
+        setCustomSensitivity("");
         setEditingDietAllergies(true);
     };
 
@@ -684,6 +666,7 @@ function AccountPageContent() {
                 userRef,
                 {
                     dietType: selectedDietType || null,
+                    cookingExperience: selectedCookingExperience || null,
                     allergiesAndSensitivities: {
                         allergies: selectedAllergies,
                         sensitivities: selectedSensitivities,
@@ -696,6 +679,7 @@ function AccountPageContent() {
             setUserDoc((prev) => ({
                 ...prev,
                 dietType: selectedDietType || undefined,
+                cookingExperience: selectedCookingExperience || undefined,
                 allergiesAndSensitivities: {
                     allergies: selectedAllergies,
                     sensitivities: selectedSensitivities,
@@ -772,6 +756,8 @@ function AccountPageContent() {
         setMemberSensitivities([]);
         setMemberDislikedFoods([]);
         setMemberCustomDislikedFood("");
+        setMemberCustomAllergy("");
+        setMemberCustomSensitivity("");
     };
 
     const MAX_HOUSEHOLD_MEMBERS = 5;
@@ -794,6 +780,8 @@ function AccountPageContent() {
         setMemberSensitivities(member.allergiesAndSensitivities?.sensitivities ?? []);
         setMemberDislikedFoods(member.dislikedFoods ?? []);
         setMemberCustomDislikedFood("");
+        setMemberCustomAllergy("");
+        setMemberCustomSensitivity("");
         setShowAddMemberModal(true);
     };
 
@@ -963,6 +951,22 @@ function AccountPageContent() {
         }
     };
 
+    const addMemberCustomAllergy = () => {
+        const trimmed = memberCustomAllergy.trim();
+        if (trimmed && !memberAllergies.includes(trimmed)) {
+            setMemberAllergies((prev) => [...prev, trimmed]);
+            setMemberCustomAllergy("");
+        }
+    };
+
+    const addMemberCustomSensitivity = () => {
+        const trimmed = memberCustomSensitivity.trim();
+        if (trimmed && !memberSensitivities.includes(trimmed)) {
+            setMemberSensitivities((prev) => [...prev, trimmed]);
+            setMemberCustomSensitivity("");
+        }
+    };
+
     const handleLogout = async () => {
         await signOut(auth);
         router.push("/login");
@@ -1054,13 +1058,15 @@ function AccountPageContent() {
     const handleDeleteAccount = async () => {
         if (!user || !user.email) return;
 
+        // Verify email matches
+        if (deleteEmail.toLowerCase().trim() !== user.email.toLowerCase()) {
+            setDeleteError("Email does not match your account email.");
+            return;
+        }
+
         try {
             setDeletingAccount(true);
             setDeleteError(null);
-
-            // Re-authenticate the user first
-            const credential = EmailAuthProvider.credential(user.email, deletePassword);
-            await reauthenticateWithCredential(user, credential);
 
             // Delete user document from Firestore
             await deleteDoc(doc(db, "users", user.uid));
@@ -1071,9 +1077,7 @@ function AccountPageContent() {
             // Redirect to login
             router.push("/login");
         } catch (error: any) {
-            if (error.code === "auth/wrong-password" || error.code === "auth/invalid-credential") {
-                setDeleteError("Incorrect password. Please try again.");
-            } else if (error.code === "auth/requires-recent-login") {
+            if (error.code === "auth/requires-recent-login") {
                 setDeleteError("Please log out and log back in before deleting your account.");
             } else {
                 setDeleteError(error.message || "Failed to delete account.");
@@ -1086,6 +1090,12 @@ function AccountPageContent() {
     const getDietLabel = (value: string | undefined) => {
         if (!value) return null;
         const opt = DIET_OPTIONS.find((o) => o.value === value);
+        return opt?.label ?? value;
+    };
+
+    const getCookingExperienceLabel = (value: string | undefined) => {
+        if (!value) return null;
+        const opt = COOKING_EXPERIENCE_OPTIONS.find((o) => o.value === value);
         return opt?.label ?? value;
     };
 
@@ -1281,6 +1291,12 @@ function AccountPageContent() {
                                         </p>
                                     </div>
                                     <div>
+                                        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Cooking Experience</span>
+                                        <p className="text-sm text-gray-900 mt-0.5">
+                                            {getCookingExperienceLabel(userDoc?.cookingExperience) || "Not set"}
+                                        </p>
+                                    </div>
+                                    <div>
                                         <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Allergies</span>
                                         <p className="text-sm text-gray-900 mt-0.5">
                                             {userDoc?.allergiesAndSensitivities?.allergies?.length
@@ -1324,6 +1340,27 @@ function AccountPageContent() {
                                     </div>
 
                                     <div>
+                                        <label className="text-sm font-medium text-gray-700 mb-2 block">Cooking Experience</label>
+                                        <div className="space-y-2">
+                                            {COOKING_EXPERIENCE_OPTIONS.map((opt) => (
+                                                <button
+                                                    key={opt.value}
+                                                    type="button"
+                                                    onClick={() => setSelectedCookingExperience(opt.value)}
+                                                    className={`w-full p-3 rounded-xl border text-left transition-all ${
+                                                        selectedCookingExperience === opt.value
+                                                            ? "border-[#4A90E2] bg-blue-50"
+                                                            : "border-gray-200 bg-gray-50 hover:border-gray-300"
+                                                    }`}
+                                                >
+                                                    <span className="font-medium text-gray-900">{opt.label}</span>
+                                                    <p className="text-xs text-gray-500 mt-0.5">{opt.description}</p>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div>
                                         <label className="text-sm font-medium text-gray-700 mb-2 block">Allergies</label>
                                         <div className="flex flex-wrap gap-2">
                                             {ALLERGY_OPTIONS.map((item) => (
@@ -1341,6 +1378,50 @@ function AccountPageContent() {
                                                 </button>
                                             ))}
                                         </div>
+                                        {/* Custom allergy input */}
+                                        <div className="flex gap-2 mt-3">
+                                            <input
+                                                type="text"
+                                                value={customAllergy}
+                                                onChange={(e) => setCustomAllergy(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === "Enter") {
+                                                        e.preventDefault();
+                                                        addCustomAllergy();
+                                                    }
+                                                }}
+                                                placeholder="Add custom allergy..."
+                                                className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:border-[#4A90E2] focus:outline-none"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={addCustomAllergy}
+                                                disabled={!customAllergy.trim()}
+                                                className="px-3 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                Add
+                                            </button>
+                                        </div>
+                                        {/* Show custom selections */}
+                                        {selectedAllergies.filter(a => !ALLERGY_OPTIONS.includes(a)).length > 0 && (
+                                            <div className="mt-3">
+                                                <p className="text-xs text-gray-500 mb-2">Your additions:</p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {selectedAllergies
+                                                        .filter(a => !ALLERGY_OPTIONS.includes(a))
+                                                        .map((item) => (
+                                                            <button
+                                                                key={item}
+                                                                type="button"
+                                                                onClick={() => toggleAllergy(item)}
+                                                                className="px-3 py-1.5 rounded-lg text-sm bg-[#4A90E2] text-white"
+                                                            >
+                                                                {item}
+                                                            </button>
+                                                        ))}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
 
                                     <div>
@@ -1361,6 +1442,50 @@ function AccountPageContent() {
                                                 </button>
                                             ))}
                                         </div>
+                                        {/* Custom sensitivity input */}
+                                        <div className="flex gap-2 mt-3">
+                                            <input
+                                                type="text"
+                                                value={customSensitivity}
+                                                onChange={(e) => setCustomSensitivity(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === "Enter") {
+                                                        e.preventDefault();
+                                                        addCustomSensitivity();
+                                                    }
+                                                }}
+                                                placeholder="Add custom sensitivity..."
+                                                className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:border-[#4A90E2] focus:outline-none"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={addCustomSensitivity}
+                                                disabled={!customSensitivity.trim()}
+                                                className="px-3 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                Add
+                                            </button>
+                                        </div>
+                                        {/* Show custom selections */}
+                                        {selectedSensitivities.filter(s => !SENSITIVITY_OPTIONS.includes(s)).length > 0 && (
+                                            <div className="mt-3">
+                                                <p className="text-xs text-gray-500 mb-2">Your additions:</p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {selectedSensitivities
+                                                        .filter(s => !SENSITIVITY_OPTIONS.includes(s))
+                                                        .map((item) => (
+                                                            <button
+                                                                key={item}
+                                                                type="button"
+                                                                onClick={() => toggleSensitivity(item)}
+                                                                className="px-3 py-1.5 rounded-lg text-sm bg-[#4A90E2] text-white"
+                                                            >
+                                                                {item}
+                                                            </button>
+                                                        ))}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
 
                                     <div>
@@ -1544,10 +1669,10 @@ function AccountPageContent() {
                             <button
                                 onClick={handleOpenAddMember}
                                 disabled={familyMembers.length >= MAX_HOUSEHOLD_MEMBERS}
-                                className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="w-9 h-9 flex items-center justify-center rounded-xl bg-purple-500 hover:bg-purple-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 title={familyMembers.length >= MAX_HOUSEHOLD_MEMBERS ? `Maximum ${MAX_HOUSEHOLD_MEMBERS} members` : "Add member"}
                             >
-                                <Plus className="w-4 h-4 text-gray-400" />
+                                <Plus className="w-5 h-5 text-white" />
                             </button>
                         </div>
 
@@ -1611,7 +1736,7 @@ function AccountPageContent() {
                                                         </p>
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-1">
+                                                <div className="flex items-center gap-2">
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
@@ -1621,30 +1746,15 @@ function AccountPageContent() {
                                                         title={member.isActive ? "Exclude from meals" : "Include in meals"}
                                                     >
                                                         {member.isActive ? (
-                                                            <ToggleRight className="w-10 h-10 text-purple-500" />
+                                                            <ToggleRight className="w-8 h-8 text-purple-500" />
                                                         ) : (
-                                                            <ToggleLeft className="w-10 h-10 text-gray-300" />
-                                                        )}
-                                                    </button>
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleDeleteMember(member);
-                                                        }}
-                                                        disabled={deletingMemberId === member.id}
-                                                        className="inline-flex items-center justify-center w-8 h-8 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
-                                                        title="Remove member"
-                                                    >
-                                                        {deletingMemberId === member.id ? (
-                                                            <div className="w-4 h-4 border-2 border-gray-300 border-t-red-500 rounded-full animate-spin" />
-                                                        ) : (
-                                                            <Trash2 className="w-4 h-4" />
+                                                            <ToggleLeft className="w-8 h-8 text-gray-300" />
                                                         )}
                                                     </button>
                                                     {expandedMemberId === member.id ? (
-                                                        <ChevronUp className="w-4 h-4 text-gray-400" />
+                                                        <ChevronUp className="w-5 h-5 text-gray-400" />
                                                     ) : (
-                                                        <ChevronDown className="w-4 h-4 text-gray-400" />
+                                                        <ChevronDown className="w-5 h-5 text-gray-400" />
                                                     )}
                                                 </div>
                                             </div>
@@ -1688,18 +1798,30 @@ function AccountPageContent() {
                                                     </div>
                                                     <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-200">
                                                         <button
-                                                            onClick={() => handleOpenEditMember(member)}
-                                                            className="flex-1 py-2.5 px-4 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
-                                                        >
-                                                            <Edit3 className="w-4 h-4" />
-                                                            <span>Edit</span>
-                                                        </button>
-                                                        <button
                                                             onClick={() => router.push(`/diet-restrictions?member=${member.id}`)}
-                                                            className="flex-1 py-2.5 px-4 bg-purple-500 text-white rounded-xl text-sm font-medium hover:bg-purple-600 transition-colors flex items-center justify-center gap-2"
+                                                            className="flex-1 py-2 px-3 bg-purple-500 text-white rounded-xl text-sm font-medium hover:bg-purple-600 transition-colors flex items-center justify-center gap-2"
                                                         >
                                                             <FileText className="w-4 h-4" />
-                                                            <span>Upload Diet Instructions</span>
+                                                            <span>Diet Instructions</span>
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleOpenEditMember(member)}
+                                                            className="py-2 px-3 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
+                                                            title="Edit member"
+                                                        >
+                                                            <Edit3 className="w-4 h-4" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeleteMember(member)}
+                                                            disabled={deletingMemberId === member.id}
+                                                            className="py-2 px-3 bg-white border border-red-200 text-red-500 rounded-xl hover:bg-red-50 transition-colors disabled:opacity-50"
+                                                            title="Remove member"
+                                                        >
+                                                            {deletingMemberId === member.id ? (
+                                                                <div className="w-4 h-4 border-2 border-red-200 border-t-red-500 rounded-full animate-spin" />
+                                                            ) : (
+                                                                <Trash2 className="w-4 h-4" />
+                                                            )}
                                                         </button>
                                                     </div>
                                                 </div>
@@ -1711,7 +1833,7 @@ function AccountPageContent() {
                         </div>
                     </div>
 
-                    {/* Store & Account Card - Combined */}
+                    {/* Store & Account Card - Compact */}
                     {(() => {
                         const defaultLocation = locations.find(loc => loc.krogerLocationId === userDoc?.defaultKrogerLocationId);
                         const storeBrand = defaultLocation ? getStoreBrand(defaultLocation.name) : { displayName: "Kroger", tagline: "Kroger Family of Stores" };
@@ -1727,200 +1849,108 @@ function AccountPageContent() {
                                     <h2 className="font-medium text-gray-900">
                                         {isGenericKroger ? "Store & Account" : `${storeBrand.displayName} Store & Account`}
                                     </h2>
-                                    <p className="text-xs text-gray-500">Choose your store and connect your account to add items directly to your cart</p>
+                                    <p className="text-xs text-gray-500">Add items directly to your cart</p>
                                 </div>
                             </div>
                         </div>
 
-                        <div className="px-5 py-4 space-y-5">
-                            {/* Supported stores info when no store selected */}
-                            {locations.length === 0 && (
-                                <div className="p-3 bg-blue-50 rounded-xl border border-blue-100">
-                                    <p className="text-xs font-medium text-blue-800 mb-1">Kroger Family of Stores</p>
-                                    <p className="text-xs text-blue-700 leading-relaxed">
-                                        Kroger, Ralphs, Fred Meyer, King Soopers, Fry&apos;s, Smith&apos;s, Dillons, QFC, Harris Teeter, Pick &apos;n Save, Mariano&apos;s, Food 4 Less, City Market, Baker&apos;s, and more
-                                    </p>
-                                </div>
-                            )}
-
-                            {/* Step 1: Store Selection */}
-                            <div>
-                                <div className="flex items-center gap-2 mb-3">
+                        <div className="px-5 py-4 space-y-4">
+                            {/* Store Selection Row */}
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
                                     <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
-                                        locations.length > 0 ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
+                                        defaultLocation ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
                                     }`}>
-                                        {locations.length > 0 ? <CheckCircle className="w-4 h-4" /> : "1"}
+                                        {defaultLocation ? <CheckCircle className="w-4 h-4" /> : "1"}
                                     </div>
-                                    <span className="text-sm font-medium text-gray-900">Choose Your Store</span>
+                                    <div>
+                                        <span className="text-sm font-medium text-gray-900">Your Store</span>
+                                        {loadingLocations ? (
+                                            <p className="text-xs text-gray-500">Loading...</p>
+                                        ) : defaultLocation ? (
+                                            <p className="text-xs text-gray-500">{defaultLocation.name}{defaultLocation.city ? `, ${defaultLocation.city}` : ""}</p>
+                                        ) : (
+                                            <p className="text-xs text-gray-400">No store selected</p>
+                                        )}
+                                    </div>
                                 </div>
-
-                                {/* Existing locations */}
-                                {loadingLocations ? (
-                                    <p className="text-sm text-gray-500 ml-8">Loading locations...</p>
-                                ) : locations.length === 0 ? (
-                                    <p className="text-sm text-gray-500 ml-8">Search below to find and add your store.</p>
-                                ) : (
-                                    <div className="space-y-2 ml-8">
-                                        {locations.map((loc) => (
-                                            <div
-                                                key={loc.id}
-                                                className="flex items-center justify-between p-3 bg-gray-50 rounded-xl"
-                                            >
-                                                <div>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="font-medium text-gray-900 text-sm">{loc.name}</span>
-                                                        {loc.isDefault && (
-                                                            <span className="px-2 py-0.5 bg-[#4A90E2]/10 text-[#4A90E2] rounded text-xs font-medium">
-                                                                Default
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <p className="text-xs text-gray-500 mt-0.5">
-                                                        {loc.city && loc.state && `${loc.city}, ${loc.state}`}
-                                                    </p>
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    {!loc.isDefault && (
-                                                        <button
-                                                            onClick={() => void handleSetDefault(loc)}
-                                                            className="text-xs text-[#4A90E2] hover:underline"
-                                                        >
-                                                            Set default
-                                                        </button>
-                                                    )}
-                                                    <button
-                                                        onClick={() => void handleRemoveStore(loc)}
-                                                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                                        title="Remove store"
-                                                    >
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-
-                                {/* ZIP Search */}
-                                <div className="mt-3 ml-8">
-                                    <label className="text-sm font-medium text-gray-700 mb-2 block">
-                                        Find a store by ZIP
-                                    </label>
-                                    <div className="flex gap-2">
-                                        <input
-                                            value={zipSearch}
-                                            onChange={(e) => setZipSearch(e.target.value)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === "Enter") {
-                                                    e.preventDefault();
-                                                    void handleSearchStoresByZip();
-                                                }
-                                            }}
-                                            placeholder="Enter ZIP code"
-                                            className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 focus:border-[#4A90E2] focus:outline-none"
-                                        />
-                                        <button
-                                            onClick={() => void handleSearchStoresByZip()}
-                                            disabled={searchingStores}
-                                            className="p-2.5 bg-gray-900 text-white rounded-xl disabled:opacity-70 flex items-center justify-center flex-shrink-0"
-                                            aria-label="Search"
-                                        >
-                                            {searchingStores ? (
-                                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                            ) : (
-                                                <Search className="w-5 h-5" />
-                                            )}
-                                        </button>
-                                    </div>
-
-                                    {storeSearchError && (
-                                        <p className="text-sm text-red-500 mt-2">{storeSearchError}</p>
-                                    )}
-
-                                    {storeResults.length > 0 && (
-                                        <div className="mt-3 space-y-2">
-                                            {storeResults.map((store) => (
-                                                <div
-                                                    key={store.locationId}
-                                                    className="flex items-center justify-between p-3 border border-gray-200 rounded-xl"
-                                                >
-                                                    <div>
-                                                        <span className="font-medium text-gray-900 text-sm">{store.name}</span>
-                                                        <p className="text-xs text-gray-500 mt-0.5">
-                                                            {store.addressLine1}, {store.city}, {store.state}
-                                                        </p>
-                                                    </div>
-                                                    <button
-                                                        onClick={() => handleUseStoreFromSearch(store)}
-                                                        disabled={savingLocation}
-                                                        className="px-3 py-1.5 bg-[#4A90E2]/10 text-[#4A90E2] rounded-lg text-xs font-medium hover:bg-[#4A90E2]/20 transition-colors disabled:opacity-70"
-                                                    >
-                                                        {savingLocation ? "..." : "Use"}
-                                                    </button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-
+                                <button
+                                    onClick={() => setShowStoreSearchModal(true)}
+                                    className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200 transition-colors"
+                                >
+                                    {defaultLocation ? "Change" : "Find Store"}
+                                </button>
                             </div>
 
                             {/* Divider */}
                             <div className="border-t border-gray-100" />
 
-                            {/* Step 2: Account Linking */}
-                            <div>
-                                <div className="flex items-center gap-2 mb-3">
+                            {/* Account Connection Row */}
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
                                     <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
                                         userDoc?.krogerLinked ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
                                     }`}>
                                         {userDoc?.krogerLinked ? <CheckCircle className="w-4 h-4" /> : "2"}
                                     </div>
-                                    <span className="text-sm font-medium text-gray-900">Connect Your Account</span>
+                                    <div>
+                                        <span className="text-sm font-medium text-gray-900">
+                                            {defaultLocation ? `${storeBrand.displayName} Account` : "Store Account"}
+                                        </span>
+                                        {userDoc?.krogerLinked ? (
+                                            <p className="text-xs text-emerald-600">Connected</p>
+                                        ) : (
+                                            <p className="text-xs text-gray-400">Not connected</p>
+                                        )}
+                                    </div>
                                 </div>
-
-                                <div className="ml-8">
-                                    {userDoc?.krogerLinked ? (
-                                        <div className="space-y-3">
-                                            <div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-100 text-emerald-700 rounded-full">
-                                                <CheckCircle className="w-4 h-4" />
-                                                <span className="text-sm font-medium">
-                                                    {isGenericKroger ? "Store account linked" : `${storeBrand.displayName} account linked`}
-                                                </span>
-                                            </div>
-                                            <button
-                                                onClick={() => void handleUnlinkKroger()}
-                                                disabled={unlinkingKroger}
-                                                className="flex items-center gap-2 text-sm text-red-500 hover:text-red-600 transition-colors"
-                                            >
-                                                <X className="w-4 h-4" />
-                                                <span>{unlinkingKroger ? "Unlinking..." : `Unlink ${isGenericKroger ? "Store" : storeBrand.displayName} Account`}</span>
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-3">
-                                            <p className="text-sm text-gray-500">
-                                                Link your account to add items directly to your cart and see real prices.
-                                            </p>
-                                            <button
-                                                onClick={() => {
-                                                    if (user) {
-                                                        window.location.href = `/api/kroger/auth?userId=${user.uid}`;
-                                                    }
-                                                }}
-                                                className="flex items-center gap-2 px-4 py-2.5 bg-[#0056a3] text-white rounded-xl text-sm font-medium hover:bg-[#004080] transition-colors"
-                                            >
-                                                <ExternalLink className="w-4 h-4" />
-                                                <span>Link {isGenericKroger ? "Store" : storeBrand.displayName} Account</span>
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
+                                {userDoc?.krogerLinked ? (
+                                    <button
+                                        onClick={() => void handleUnlinkKroger()}
+                                        disabled={unlinkingKroger}
+                                        className="px-3 py-1.5 text-red-500 text-xs font-medium hover:bg-red-50 rounded-lg transition-colors disabled:opacity-70"
+                                    >
+                                        {unlinkingKroger ? "..." : "Unlink"}
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={() => {
+                                            if (user) {
+                                                window.location.href = `/api/kroger/auth?userId=${user.uid}`;
+                                            }
+                                        }}
+                                        className="px-3 py-1.5 bg-[#0056a3] text-white rounded-lg text-xs font-medium hover:bg-[#004080] transition-colors"
+                                    >
+                                        Connect
+                                    </button>
+                                )}
                             </div>
+
+                            {/* Info text when not fully set up */}
+                            {(!defaultLocation || !userDoc?.krogerLinked) && (
+                                <p className="text-xs text-gray-500 bg-gray-50 p-3 rounded-xl">
+                                    {!defaultLocation && !userDoc?.krogerLinked
+                                        ? "Select a store and connect your account to add items directly to your cart."
+                                        : !defaultLocation
+                                        ? "Select a store to see local prices and availability."
+                                        : "Connect your account to add items directly to your cart."}
+                                </p>
+                            )}
                         </div>
                     </div>
                         );
                     })()}
+
+                    {/* Store Search Modal */}
+                    <StoreSearchModal
+                        isOpen={showStoreSearchModal}
+                        onClose={() => setShowStoreSearchModal(false)}
+                        onSelectStore={handleUseStoreFromSearch}
+                        savedLocations={locations}
+                        defaultLocationId={userDoc?.defaultKrogerLocationId}
+                        onSetDefault={handleSetDefault}
+                        onRemoveStore={handleRemoveStore}
+                    />
 
                     {/* Password & Security Card */}
                     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
@@ -2100,7 +2130,7 @@ function AccountPageContent() {
                                     <button
                                         onClick={() => {
                                             setShowDeleteConfirm(true);
-                                            setDeletePassword("");
+                                            setDeleteEmail("");
                                             setDeleteError(null);
                                         }}
                                         className="px-4 py-2.5 bg-red-50 text-red-600 rounded-xl text-sm font-medium hover:bg-red-100 transition-colors"
@@ -2118,24 +2148,17 @@ function AccountPageContent() {
 
                                     <div>
                                         <label className="text-sm font-medium text-gray-700 mb-2 block">
-                                            Enter your password to confirm
+                                            Enter your email to confirm
                                         </label>
                                         <div className="relative">
-                                            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                             <input
-                                                type={showDeletePassword ? "text" : "password"}
-                                                value={deletePassword}
-                                                onChange={(e) => setDeletePassword(e.target.value)}
-                                                placeholder="Enter your password"
-                                                className="w-full pl-11 pr-11 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-red-400 focus:outline-none focus:bg-white transition-colors"
+                                                type="email"
+                                                value={deleteEmail}
+                                                onChange={(e) => setDeleteEmail(e.target.value)}
+                                                placeholder="Enter your email"
+                                                className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-red-400 focus:outline-none focus:bg-white transition-colors"
                                             />
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowDeletePassword(!showDeletePassword)}
-                                                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                                            >
-                                                {showDeletePassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                            </button>
                                         </div>
                                     </div>
 
@@ -2149,7 +2172,7 @@ function AccountPageContent() {
                                     <div className="flex gap-3">
                                         <button
                                             onClick={() => void handleDeleteAccount()}
-                                            disabled={deletingAccount || !deletePassword}
+                                            disabled={deletingAccount || !deleteEmail}
                                             className="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 hover:bg-red-700 transition-colors"
                                         >
                                             {deletingAccount ? (
@@ -2167,8 +2190,7 @@ function AccountPageContent() {
                                         <button
                                             onClick={() => {
                                                 setShowDeleteConfirm(false);
-                                                setDeletePassword("");
-                                                setShowDeletePassword(false);
+                                                setDeleteEmail("");
                                                 setDeleteError(null);
                                             }}
                                             className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
@@ -2193,246 +2215,327 @@ function AccountPageContent() {
             </div>
 
             {/* Add/Edit Household Member Modal */}
-            {showAddMemberModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-                        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white">
-                            <h2 className="text-lg font-semibold text-gray-900">
-                                {editingMember ? "Edit Household Member" : "Add Household Member"}
-                            </h2>
-                            <button
-                                onClick={handleCloseMemberModal}
-                                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors"
-                            >
-                                <X className="w-5 h-5 text-gray-400" />
-                            </button>
-                        </div>
-
-                        <div className="px-5 py-4 space-y-4">
-                            {/* Name */}
-                            <div>
-                                <label className="text-sm font-medium text-gray-700 mb-2 block">Name</label>
-                                <input
-                                    type="text"
-                                    value={memberName}
-                                    onChange={(e) => setMemberName(e.target.value)}
-                                    placeholder="Enter name"
-                                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-purple-500 focus:outline-none"
-                                />
-                            </div>
-
-                            {/* Diet Type */}
-                            <div>
-                                <label className="text-sm font-medium text-gray-700 mb-2 block">Diet Focus</label>
-                                <select
-                                    value={memberDietType}
-                                    onChange={(e) => setMemberDietType(e.target.value)}
-                                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:border-purple-500 focus:outline-none"
-                                >
-                                    <option value="">None</option>
-                                    {DIET_OPTIONS.map((opt) => (
-                                        <option key={opt.value} value={opt.value}>
-                                            {opt.label}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            {/* Allergies */}
-                            <div>
-                                <label className="text-sm font-medium text-gray-700 mb-2 block">Allergies</label>
-                                <div className="flex flex-wrap gap-2">
-                                    {ALLERGY_OPTIONS.map((item) => (
-                                        <button
-                                            key={item}
-                                            type="button"
-                                            onClick={() => toggleMemberAllergy(item)}
-                                            className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                                                memberAllergies.includes(item)
-                                                    ? "bg-purple-500 text-white"
-                                                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                                            }`}
-                                        >
-                                            {item}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Sensitivities */}
-                            <div>
-                                <label className="text-sm font-medium text-gray-700 mb-2 block">Sensitivities</label>
-                                <div className="flex flex-wrap gap-2">
-                                    {SENSITIVITY_OPTIONS.map((item) => (
-                                        <button
-                                            key={item}
-                                            type="button"
-                                            onClick={() => toggleMemberSensitivity(item)}
-                                            className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                                                memberSensitivities.includes(item)
-                                                    ? "bg-purple-500 text-white"
-                                                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                                            }`}
-                                        >
-                                            {item}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Disliked Foods */}
-                            <div>
-                                <label className="text-sm font-medium text-gray-700 mb-2 block">Food Dislikes</label>
-                                <div className="flex flex-wrap gap-2">
-                                    {COMMON_DISLIKED_FOODS.map((item) => (
-                                        <button
-                                            key={item}
-                                            type="button"
-                                            onClick={() => toggleMemberDislikedFood(item)}
-                                            className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                                                memberDislikedFoods.includes(item)
-                                                    ? "bg-purple-500 text-white"
-                                                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                                            }`}
-                                        >
-                                            {item}
-                                        </button>
-                                    ))}
-                                </div>
-                                {/* Custom food input */}
-                                <div className="flex gap-2 mt-3">
-                                    <input
-                                        type="text"
-                                        value={memberCustomDislikedFood}
-                                        onChange={(e) => setMemberCustomDislikedFood(e.target.value)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === "Enter") {
-                                                e.preventDefault();
-                                                addMemberCustomDislikedFood();
-                                            }
-                                        }}
-                                        placeholder="Add custom food..."
-                                        className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:border-purple-500 focus:outline-none"
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={addMemberCustomDislikedFood}
-                                        disabled={!memberCustomDislikedFood.trim()}
-                                        className="px-3 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        Add
-                                    </button>
-                                </div>
-                                {/* Show custom selections */}
-                                {memberDislikedFoods.filter(f => !COMMON_DISLIKED_FOODS.includes(f)).length > 0 && (
-                                    <div className="mt-3">
-                                        <p className="text-xs text-gray-500 mb-2">Custom additions:</p>
-                                        <div className="flex flex-wrap gap-2">
-                                            {memberDislikedFoods
-                                                .filter(f => !COMMON_DISLIKED_FOODS.includes(f))
-                                                .map((item) => (
-                                                    <button
-                                                        key={item}
-                                                        type="button"
-                                                        onClick={() => toggleMemberDislikedFood(item)}
-                                                        className="px-3 py-1.5 rounded-lg text-sm bg-purple-500 text-white"
-                                                    >
-                                                        {item}
-                                                    </button>
-                                                ))}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Diet Instructions link for existing members */}
-                            {editingMember && (
-                                <div className="pt-2">
-                                    <button
-                                        onClick={() => {
-                                            handleCloseMemberModal();
-                                            router.push(`/diet-restrictions?member=${editingMember.id}`);
-                                        }}
-                                        className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 transition-colors"
-                                    >
-                                        <FileText className="w-4 h-4" />
-                                        <span>
-                                            {editingMember.doctorDietInstructions?.hasActiveNote
-                                                ? "Update Diet Instructions"
-                                                : "Upload Diet Instructions"}
-                                        </span>
-                                    </button>
-                                </div>
+            <Modal
+                isOpen={showAddMemberModal}
+                onClose={handleCloseMemberModal}
+                title={editingMember ? "Edit Household Member" : "Add Household Member"}
+                subtitle="Set dietary preferences for this household member"
+                variant="bottom-sheet"
+                size="lg"
+                footer={
+                    <div className="flex gap-3">
+                        <button
+                            onClick={() => void handleSaveMember()}
+                            disabled={savingMember || !memberName.trim()}
+                            className="flex-1 py-3 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-xl font-medium disabled:opacity-70 flex items-center justify-center gap-2"
+                        >
+                            {savingMember ? (
+                                <>
+                                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    <span>Saving...</span>
+                                </>
+                            ) : (
+                                editingMember ? "Save Changes" : "Add Member"
                             )}
-                        </div>
-
-                        <div className="px-5 py-4 border-t border-gray-100 flex gap-3">
-                            <button
-                                onClick={() => void handleSaveMember()}
-                                disabled={savingMember || !memberName.trim()}
-                                className="flex-1 py-3 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-xl font-medium disabled:opacity-70 flex items-center justify-center gap-2"
-                            >
-                                {savingMember ? (
-                                    <>
-                                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                        <span>Saving...</span>
-                                    </>
-                                ) : (
-                                    editingMember ? "Save Changes" : "Add Household Member"
-                                )}
-                            </button>
-                            <button
-                                onClick={handleCloseMemberModal}
-                                className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
-                            >
-                                Cancel
-                            </button>
-                        </div>
+                        </button>
+                        <button
+                            onClick={handleCloseMemberModal}
+                            className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
+                        >
+                            Cancel
+                        </button>
                     </div>
+                }
+            >
+                <div className="space-y-4">
+                    {/* Name */}
+                    <div>
+                        <label className="text-sm font-medium text-gray-700 mb-2 block">Name</label>
+                        <input
+                            type="text"
+                            value={memberName}
+                            onChange={(e) => setMemberName(e.target.value)}
+                            placeholder="Enter name"
+                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-purple-500 focus:outline-none"
+                        />
+                    </div>
+
+                    {/* Diet Type */}
+                    <div>
+                        <label className="text-sm font-medium text-gray-700 mb-2 block">Diet Focus</label>
+                        <select
+                            value={memberDietType}
+                            onChange={(e) => setMemberDietType(e.target.value)}
+                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:border-purple-500 focus:outline-none"
+                        >
+                            <option value="">None</option>
+                            {DIET_OPTIONS.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Allergies */}
+                    <div>
+                        <label className="text-sm font-medium text-gray-700 mb-2 block">Allergies</label>
+                        <div className="flex flex-wrap gap-2">
+                            {ALLERGY_OPTIONS.map((item) => (
+                                <button
+                                    key={item}
+                                    type="button"
+                                    onClick={() => toggleMemberAllergy(item)}
+                                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                                        memberAllergies.includes(item)
+                                            ? "bg-purple-500 text-white"
+                                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                    }`}
+                                >
+                                    {item}
+                                </button>
+                            ))}
+                        </div>
+                        {/* Custom allergy input */}
+                        <div className="flex gap-2 mt-3">
+                            <input
+                                type="text"
+                                value={memberCustomAllergy}
+                                onChange={(e) => setMemberCustomAllergy(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        addMemberCustomAllergy();
+                                    }
+                                }}
+                                placeholder="Add custom allergy..."
+                                className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:border-purple-500 focus:outline-none"
+                            />
+                            <button
+                                type="button"
+                                onClick={addMemberCustomAllergy}
+                                disabled={!memberCustomAllergy.trim()}
+                                className="px-3 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Add
+                            </button>
+                        </div>
+                        {/* Show custom selections */}
+                        {memberAllergies.filter(a => !ALLERGY_OPTIONS.includes(a)).length > 0 && (
+                            <div className="mt-3">
+                                <p className="text-xs text-gray-500 mb-2">Custom additions:</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {memberAllergies
+                                        .filter(a => !ALLERGY_OPTIONS.includes(a))
+                                        .map((item) => (
+                                            <button
+                                                key={item}
+                                                type="button"
+                                                onClick={() => toggleMemberAllergy(item)}
+                                                className="px-3 py-1.5 rounded-lg text-sm bg-purple-500 text-white"
+                                            >
+                                                {item}
+                                            </button>
+                                        ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Sensitivities */}
+                    <div>
+                        <label className="text-sm font-medium text-gray-700 mb-2 block">Sensitivities</label>
+                        <div className="flex flex-wrap gap-2">
+                            {SENSITIVITY_OPTIONS.map((item) => (
+                                <button
+                                    key={item}
+                                    type="button"
+                                    onClick={() => toggleMemberSensitivity(item)}
+                                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                                        memberSensitivities.includes(item)
+                                            ? "bg-purple-500 text-white"
+                                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                    }`}
+                                >
+                                    {item}
+                                </button>
+                            ))}
+                        </div>
+                        {/* Custom sensitivity input */}
+                        <div className="flex gap-2 mt-3">
+                            <input
+                                type="text"
+                                value={memberCustomSensitivity}
+                                onChange={(e) => setMemberCustomSensitivity(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        addMemberCustomSensitivity();
+                                    }
+                                }}
+                                placeholder="Add custom sensitivity..."
+                                className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:border-purple-500 focus:outline-none"
+                            />
+                            <button
+                                type="button"
+                                onClick={addMemberCustomSensitivity}
+                                disabled={!memberCustomSensitivity.trim()}
+                                className="px-3 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Add
+                            </button>
+                        </div>
+                        {/* Show custom selections */}
+                        {memberSensitivities.filter(s => !SENSITIVITY_OPTIONS.includes(s)).length > 0 && (
+                            <div className="mt-3">
+                                <p className="text-xs text-gray-500 mb-2">Custom additions:</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {memberSensitivities
+                                        .filter(s => !SENSITIVITY_OPTIONS.includes(s))
+                                        .map((item) => (
+                                            <button
+                                                key={item}
+                                                type="button"
+                                                onClick={() => toggleMemberSensitivity(item)}
+                                                className="px-3 py-1.5 rounded-lg text-sm bg-purple-500 text-white"
+                                            >
+                                                {item}
+                                            </button>
+                                        ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Disliked Foods */}
+                    <div>
+                        <label className="text-sm font-medium text-gray-700 mb-2 block">Food Dislikes</label>
+                        <div className="flex flex-wrap gap-2">
+                            {COMMON_DISLIKED_FOODS.map((item) => (
+                                <button
+                                    key={item}
+                                    type="button"
+                                    onClick={() => toggleMemberDislikedFood(item)}
+                                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                                        memberDislikedFoods.includes(item)
+                                            ? "bg-purple-500 text-white"
+                                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                    }`}
+                                >
+                                    {item}
+                                </button>
+                            ))}
+                        </div>
+                        {/* Custom food input */}
+                        <div className="flex gap-2 mt-3">
+                            <input
+                                type="text"
+                                value={memberCustomDislikedFood}
+                                onChange={(e) => setMemberCustomDislikedFood(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        addMemberCustomDislikedFood();
+                                    }
+                                }}
+                                placeholder="Add custom food..."
+                                className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:border-purple-500 focus:outline-none"
+                            />
+                            <button
+                                type="button"
+                                onClick={addMemberCustomDislikedFood}
+                                disabled={!memberCustomDislikedFood.trim()}
+                                className="px-3 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Add
+                            </button>
+                        </div>
+                        {/* Show custom selections */}
+                        {memberDislikedFoods.filter(f => !COMMON_DISLIKED_FOODS.includes(f)).length > 0 && (
+                            <div className="mt-3">
+                                <p className="text-xs text-gray-500 mb-2">Custom additions:</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {memberDislikedFoods
+                                        .filter(f => !COMMON_DISLIKED_FOODS.includes(f))
+                                        .map((item) => (
+                                            <button
+                                                key={item}
+                                                type="button"
+                                                onClick={() => toggleMemberDislikedFood(item)}
+                                                className="px-3 py-1.5 rounded-lg text-sm bg-purple-500 text-white"
+                                            >
+                                                {item}
+                                            </button>
+                                        ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Diet Instructions link for existing members */}
+                    {editingMember && (
+                        <div className="pt-2">
+                            <button
+                                onClick={() => {
+                                    handleCloseMemberModal();
+                                    router.push(`/diet-restrictions?member=${editingMember.id}`);
+                                }}
+                                className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 transition-colors"
+                            >
+                                <FileText className="w-4 h-4" />
+                                <span>
+                                    {editingMember.doctorDietInstructions?.hasActiveNote
+                                        ? "Update Diet Instructions"
+                                        : "Upload Diet Instructions"}
+                                </span>
+                            </button>
+                        </div>
+                    )}
                 </div>
-            )}
+            </Modal>
 
             {/* Delete Member Confirmation Modal */}
-            {memberToDelete && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden">
-                        <div className="px-5 py-4 border-b border-gray-100">
-                            <h2 className="text-lg font-semibold text-gray-900">Remove Member</h2>
-                        </div>
-                        <div className="px-5 py-4">
-                            <p className="text-gray-600">
-                                Are you sure you want to remove <span className="font-medium text-gray-900">{memberToDelete.name}</span> from your household?
-                            </p>
-                            <p className="text-sm text-gray-500 mt-2">
-                                Their dietary preferences and restrictions will no longer be considered when generating meals.
-                            </p>
-                        </div>
-                        <div className="px-5 py-4 border-t border-gray-100 flex gap-3">
-                            <button
-                                onClick={() => void confirmDeleteMember()}
-                                disabled={deletingMemberId === memberToDelete.id}
-                                className="flex-1 py-3 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                            >
-                                {deletingMemberId === memberToDelete.id ? (
-                                    <>
-                                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                        <span>Removing...</span>
-                                    </>
-                                ) : (
-                                    "Remove"
-                                )}
-                            </button>
-                            <button
-                                onClick={() => setMemberToDelete(null)}
-                                disabled={deletingMemberId === memberToDelete.id}
-                                className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
-                            >
-                                Cancel
-                            </button>
-                        </div>
+            <Modal
+                isOpen={!!memberToDelete}
+                onClose={() => setMemberToDelete(null)}
+                title="Remove Member"
+                size="sm"
+                showCloseButton={false}
+                footer={
+                    <div className="flex gap-3">
+                        <button
+                            onClick={() => void confirmDeleteMember()}
+                            disabled={deletingMemberId === memberToDelete?.id}
+                            className="flex-1 py-3 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                            {deletingMemberId === memberToDelete?.id ? (
+                                <>
+                                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    <span>Removing...</span>
+                                </>
+                            ) : (
+                                "Remove"
+                            )}
+                        </button>
+                        <button
+                            onClick={() => setMemberToDelete(null)}
+                            disabled={deletingMemberId === memberToDelete?.id}
+                            className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
+                        >
+                            Cancel
+                        </button>
                     </div>
+                }
+            >
+                <div>
+                    <p className="text-gray-600">
+                        Are you sure you want to remove <span className="font-medium text-gray-900">{memberToDelete?.name}</span> from your household?
+                    </p>
+                    <p className="text-sm text-gray-500 mt-2">
+                        Their dietary preferences and restrictions will no longer be considered when generating meals.
+                    </p>
                 </div>
-            )}
+            </Modal>
         </div>
     );
 }

@@ -67,6 +67,12 @@ const DIET_OPTIONS = [
     { value: "dairy_free", label: "Dairy free" },
 ];
 
+const COOKING_EXPERIENCE_OPTIONS = [
+    { value: "beginner", label: "Beginner", description: "New to cooking, prefer simple recipes" },
+    { value: "intermediate", label: "Intermediate", description: "Comfortable with most recipes" },
+    { value: "advanced", label: "Advanced", description: "Enjoy complex techniques and recipes" },
+];
+
 type KrogerLocationSearchResult = {
     locationId: string;
     name: string;
@@ -88,10 +94,13 @@ function SetupPageContent() {
     const [step, setStep] = useState(1);
     const [name, setName] = useState("");
     const [dietType, setDietType] = useState("");
+    const [cookingExperience, setCookingExperience] = useState("");
     const [selectedAllergies, setSelectedAllergies] = useState<string[]>([]);
     const [selectedSensitivities, setSelectedSensitivities] = useState<string[]>([]);
     const [selectedDislikedFoods, setSelectedDislikedFoods] = useState<string[]>([]);
     const [customDislikedFood, setCustomDislikedFood] = useState("");
+    const [customAllergy, setCustomAllergy] = useState("");
+    const [customSensitivity, setCustomSensitivity] = useState("");
     const [saving, setSaving] = useState(false);
     const [accentColor, setAccentColor] = useState<AccentColor>({ primary: "#3b82f6", dark: "#2563eb" });
 
@@ -116,6 +125,7 @@ function SetupPageContent() {
                 const data = JSON.parse(savedFormData);
                 if (data.name) setName(data.name);
                 if (data.dietType) setDietType(data.dietType);
+                if (data.cookingExperience) setCookingExperience(data.cookingExperience);
                 if (data.selectedAllergies) setSelectedAllergies(data.selectedAllergies);
                 if (data.selectedSensitivities) setSelectedSensitivities(data.selectedSensitivities);
                 if (data.selectedDislikedFoods) setSelectedDislikedFoods(data.selectedDislikedFoods);
@@ -131,12 +141,13 @@ function SetupPageContent() {
         const formData = {
             name,
             dietType,
+            cookingExperience,
             selectedAllergies,
             selectedSensitivities,
             selectedDislikedFoods,
         };
         localStorage.setItem("setupFormData", JSON.stringify(formData));
-    }, [name, dietType, selectedAllergies, selectedSensitivities, selectedDislikedFoods]);
+    }, [name, dietType, cookingExperience, selectedAllergies, selectedSensitivities, selectedDislikedFoods]);
 
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -241,6 +252,22 @@ function SetupPageContent() {
         }
     };
 
+    const addCustomAllergy = () => {
+        const trimmed = customAllergy.trim();
+        if (trimmed && !selectedAllergies.includes(trimmed)) {
+            setSelectedAllergies((prev) => [...prev, trimmed]);
+            setCustomAllergy("");
+        }
+    };
+
+    const addCustomSensitivity = () => {
+        const trimmed = customSensitivity.trim();
+        if (trimmed && !selectedSensitivities.includes(trimmed)) {
+            setSelectedSensitivities((prev) => [...prev, trimmed]);
+            setCustomSensitivity("");
+        }
+    };
+
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
         if (!user) return;
@@ -253,6 +280,7 @@ function SetupPageContent() {
                 {
                     name: name.trim(),
                     dietType,
+                    cookingExperience,
                     allergiesAndSensitivities: {
                         allergies: selectedAllergies,
                         sensitivities: selectedSensitivities,
@@ -292,6 +320,7 @@ function SetupPageContent() {
             const dataToSave = {
                 name: name.trim(),
                 dietType,
+                cookingExperience,
                 allergiesAndSensitivities: {
                     allergies: selectedAllergies,
                     sensitivities: selectedSensitivities,
@@ -414,6 +443,7 @@ function SetupPageContent() {
         const dataToSave = {
             name: name.trim(),
             dietType,
+            cookingExperience,
             allergiesAndSensitivities: {
                 allergies: selectedAllergies,
                 sensitivities: selectedSensitivities,
@@ -523,6 +553,29 @@ function SetupPageContent() {
                                             ))}
                                         </select>
                                     </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Cooking Experience
+                                        </label>
+                                        <div className="space-y-2">
+                                            {COOKING_EXPERIENCE_OPTIONS.map((opt) => (
+                                                <button
+                                                    key={opt.value}
+                                                    type="button"
+                                                    onClick={() => setCookingExperience(opt.value)}
+                                                    className={`w-full p-3 rounded-lg border text-left transition-all ${
+                                                        cookingExperience === opt.value
+                                                            ? "border-gray-900 bg-gray-50"
+                                                            : "border-gray-200 hover:border-gray-300"
+                                                    }`}
+                                                >
+                                                    <span className="font-medium text-gray-900">{opt.label}</span>
+                                                    <p className="text-sm text-gray-500 mt-0.5">{opt.description}</p>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
                                 </div>
                             )}
 
@@ -550,6 +603,57 @@ function SetupPageContent() {
                                             </button>
                                         ))}
                                     </div>
+
+                                    {/* Custom allergy input */}
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Add your own
+                                        </label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                value={customAllergy}
+                                                onChange={(e) => setCustomAllergy(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === "Enter") {
+                                                        e.preventDefault();
+                                                        addCustomAllergy();
+                                                    }
+                                                }}
+                                                placeholder="e.g., Sunflower seeds"
+                                                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:border-gray-900 focus:ring-1 focus:ring-gray-900 focus:outline-none transition-colors"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={addCustomAllergy}
+                                                disabled={!customAllergy.trim()}
+                                                className="px-4 py-2.5 bg-gray-900 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                Add
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Show custom selections */}
+                                    {selectedAllergies.filter(a => !ALLERGY_OPTIONS.includes(a)).length > 0 && (
+                                        <div>
+                                            <p className="text-xs text-gray-500 mb-2">Your additions:</p>
+                                            <div className="flex flex-wrap gap-2">
+                                                {selectedAllergies
+                                                    .filter(a => !ALLERGY_OPTIONS.includes(a))
+                                                    .map((item) => (
+                                                        <button
+                                                            key={item}
+                                                            type="button"
+                                                            onClick={() => toggleAllergy(item)}
+                                                            className="px-4 py-2.5 rounded-full text-sm font-medium bg-gray-900 text-white"
+                                                        >
+                                                            {item}
+                                                        </button>
+                                                    ))}
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {selectedAllergies.length === 0 && (
                                         <p className="text-sm text-gray-400">
@@ -583,6 +687,57 @@ function SetupPageContent() {
                                             </button>
                                         ))}
                                     </div>
+
+                                    {/* Custom sensitivity input */}
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Add your own
+                                        </label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                value={customSensitivity}
+                                                onChange={(e) => setCustomSensitivity(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === "Enter") {
+                                                        e.preventDefault();
+                                                        addCustomSensitivity();
+                                                    }
+                                                }}
+                                                placeholder="e.g., Caffeine"
+                                                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:border-gray-900 focus:ring-1 focus:ring-gray-900 focus:outline-none transition-colors"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={addCustomSensitivity}
+                                                disabled={!customSensitivity.trim()}
+                                                className="px-4 py-2.5 bg-gray-900 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                Add
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Show custom selections */}
+                                    {selectedSensitivities.filter(s => !SENSITIVITY_OPTIONS.includes(s)).length > 0 && (
+                                        <div>
+                                            <p className="text-xs text-gray-500 mb-2">Your additions:</p>
+                                            <div className="flex flex-wrap gap-2">
+                                                {selectedSensitivities
+                                                    .filter(s => !SENSITIVITY_OPTIONS.includes(s))
+                                                    .map((item) => (
+                                                        <button
+                                                            key={item}
+                                                            type="button"
+                                                            onClick={() => toggleSensitivity(item)}
+                                                            className="px-4 py-2.5 rounded-full text-sm font-medium bg-gray-900 text-white"
+                                                        >
+                                                            {item}
+                                                        </button>
+                                                    ))}
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {selectedSensitivities.length === 0 && (
                                         <p className="text-sm text-gray-400">

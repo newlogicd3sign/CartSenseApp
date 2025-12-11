@@ -19,6 +19,7 @@ import {
     isSameIngredient,
     isExcludedIngredient,
 } from "@/lib/utils";
+import { getIngredientCategory } from "@/lib/ingredientQualityRules";
 import {
     ArrowLeft,
     Flame,
@@ -38,10 +39,19 @@ import {
     X,
     RefreshCw,
     PencilRuler,
+    Drumstick,
+    Milk,
+    Leaf,
+    Cookie,
+    Package,
+    Bean,
+    FlaskConical,
+    Apple,
 } from "lucide-react";
 import { logUserEvent } from "@/lib/logUserEvent";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { useToast } from "@/components/Toast";
 
 type Ingredient = {
     name: string;
@@ -69,6 +79,7 @@ type SavedMeal = {
         calories: number;
         protein: number;
         carbs: number;
+        fiber: number;
         fat: number;
     };
     ingredients: Ingredient[];
@@ -107,6 +118,7 @@ export default function SavedMealDetailPage() {
     const router = useRouter();
     const params = useParams();
     const mealId = params.mealId as string;
+    const { showToast } = useToast();
 
     const [user, setUser] = useState<User | null>(null);
     const [loadingUser, setLoadingUser] = useState(true);
@@ -115,7 +127,6 @@ export default function SavedMealDetailPage() {
     const [loadingMeal, setLoadingMeal] = useState(true);
 
     const [addingToList, setAddingToList] = useState(false);
-    const [addMessage, setAddMessage] = useState<string | null>(null);
     const [selectedIngredients, setSelectedIngredients] = useState<Set<number>>(new Set());
     const [krogerConnected, setKrogerConnected] = useState(false);
     const [krogerStoreSet, setKrogerStoreSet] = useState(false);
@@ -288,13 +299,12 @@ export default function SavedMealDetailPage() {
     const handleAddToShoppingList = async () => {
         if (!user || !meal) return;
         if (selectedIngredients.size === 0) {
-            setAddMessage("Please select at least one ingredient to add.");
+            showToast("Please select at least one ingredient to add.", "error");
             return;
         }
 
         try {
             setAddingToList(true);
-            setAddMessage(null);
 
             const itemsCol = collection(db, "shoppingLists", user.uid, "items");
             const ingredientsToAdd = meal.ingredients.filter((_, idx) => selectedIngredients.has(idx));
@@ -382,19 +392,19 @@ export default function SavedMealDetailPage() {
             const updatedCount = itemsToUpdate.length;
 
             if (addedCount > 0 && updatedCount > 0) {
-                setAddMessage(`Added ${addedCount} item${addedCount !== 1 ? "s" : ""}, updated ${updatedCount} item${updatedCount !== 1 ? "s" : ""}.`);
+                showToast(`Added ${addedCount} item${addedCount !== 1 ? "s" : ""}, updated ${updatedCount} item${updatedCount !== 1 ? "s" : ""}.`, "success");
             } else if (addedCount > 0 && skippedStaples > 0) {
-                setAddMessage(`Added ${addedCount} item${addedCount !== 1 ? "s" : ""}, skipped ${skippedStaples} already in list.`);
+                showToast(`Added ${addedCount} item${addedCount !== 1 ? "s" : ""}, skipped ${skippedStaples} already in list.`, "success");
             } else if (addedCount > 0) {
-                setAddMessage(`Added ${addedCount} item${addedCount !== 1 ? "s" : ""} to your shopping list.`);
+                showToast(`Added ${addedCount} item${addedCount !== 1 ? "s" : ""} to your shopping list.`, "success");
             } else if (updatedCount > 0) {
-                setAddMessage(`Updated quantities for ${updatedCount} item${updatedCount !== 1 ? "s" : ""}.`);
+                showToast(`Updated quantities for ${updatedCount} item${updatedCount !== 1 ? "s" : ""}.`, "success");
             } else if (skippedStaples > 0) {
-                setAddMessage(`All items already in your shopping list.`);
+                showToast(`All items already in your shopping list.`, "info");
             }
         } catch (err) {
             console.error("Error adding to shopping list", err);
-            setAddMessage("Something went wrong adding items to your list.");
+            showToast("Something went wrong adding items to your list.", "error");
         } finally {
             setAddingToList(false);
         }
@@ -523,7 +533,7 @@ export default function SavedMealDetailPage() {
 
         // Check if Kroger is connected
         if (!krogerConnected || !krogerStoreSet) {
-            setAddMessage("Connect your Kroger account to swap products.");
+            showToast("Connect your Kroger account to swap products.", "error");
             return;
         }
 
@@ -549,7 +559,7 @@ export default function SavedMealDetailPage() {
 
             if (!res.ok) {
                 if (data.error === "NOT_LINKED" || data.error === "NO_STORE") {
-                    setAddMessage(data.message);
+                    showToast(data.message, "error");
                     return;
                 }
                 throw new Error(data.message || "Failed to get swap suggestions");
@@ -559,11 +569,11 @@ export default function SavedMealDetailPage() {
                 setSwapAlternatives(data.alternatives);
                 setShowSwapOptions(true);
             } else {
-                setAddMessage("No alternative products found.");
+                showToast("No alternative products found.", "info");
             }
         } catch (err) {
             console.error("Error getting swap suggestions:", err);
-            setAddMessage("Something went wrong getting swap options.");
+            showToast("Something went wrong getting swap options.", "error");
         } finally {
             setLoadingSwapSuggestions(false);
         }
@@ -615,7 +625,7 @@ export default function SavedMealDetailPage() {
             console.error("Error persisting swapped meal:", err);
         }
 
-        setAddMessage(`Swapped to ${product.name}!`);
+        showToast(`Swapped to ${product.name}!`, "success");
 
         // Log the swap event
         logUserEvent(user.uid, {
@@ -752,12 +762,12 @@ export default function SavedMealDetailPage() {
                                 <div className="text-lg font-medium text-gray-900">{meal.macros.protein}g</div>
                                 <div className="text-xs text-gray-500">Protein</div>
                             </div>
-                            <div className="text-center">
+                            <div className="text-center" title={`${meal.macros.carbs}g total carbs - ${meal.macros.fiber ?? 0}g fiber`}>
                                 <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-2">
                                     <Wheat className="w-6 h-6 text-amber-500" />
                                 </div>
-                                <div className="text-lg font-medium text-gray-900">{meal.macros.carbs}g</div>
-                                <div className="text-xs text-gray-500">Carbs</div>
+                                <div className="text-lg font-medium text-gray-900">{Math.max(0, meal.macros.carbs - (meal.macros.fiber ?? 0))}g</div>
+                                <div className="text-xs text-gray-500">Net Carbs</div>
                             </div>
                             <div className="text-center">
                                 <div className="w-12 h-12 bg-purple-50 rounded-full flex items-center justify-center mx-auto mb-2">
@@ -871,7 +881,9 @@ export default function SavedMealDetailPage() {
                                 {selectedIngredients.size === meal.ingredients.length ? "Deselect all" : "Select all"}
                             </button>
                         </div>
-                        <p className="text-xs text-gray-500 mb-4">Tap an ingredient to view details or swap it</p>
+                        {krogerConnected && (
+                            <p className="text-xs text-gray-500 mb-4">Tap an ingredient to view details or swap it</p>
+                        )}
                         <ul className="space-y-3">
                             {meal.ingredients.map((ing, idx) => (
                                 <li
@@ -880,10 +892,10 @@ export default function SavedMealDetailPage() {
                                         !selectedIngredients.has(idx) ? "opacity-50" : ""
                                     }`}
                                 >
-                                    {/* Clickable area for opening modal */}
+                                    {/* Clickable area for opening modal - only when Kroger is connected */}
                                     <div
-                                        onClick={() => setSelectedIngredientIndex(idx)}
-                                        className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+                                        onClick={() => krogerConnected && setSelectedIngredientIndex(idx)}
+                                        className={`flex items-center gap-3 flex-1 min-w-0 ${krogerConnected ? "cursor-pointer" : ""}`}
                                     >
                                         {krogerConnected && ing.productImageUrl ? (
                                             <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
@@ -894,7 +906,35 @@ export default function SavedMealDetailPage() {
                                                     className="w-full h-full object-cover"
                                                 />
                                             </div>
-                                        ) : null}
+                                        ) : (
+                                            <div className="w-12 h-12 rounded-lg bg-gray-100 flex-shrink-0 flex items-center justify-center">
+                                                {(() => {
+                                                    const category = getIngredientCategory(ing.name);
+                                                    switch (category) {
+                                                        case 'protein':
+                                                            return <Drumstick className="w-6 h-6 text-red-400" />;
+                                                        case 'dairy':
+                                                            return <Milk className="w-6 h-6 text-blue-400" />;
+                                                        case 'produce':
+                                                            return <Leaf className="w-6 h-6 text-green-500" />;
+                                                        case 'carb':
+                                                            return <Wheat className="w-6 h-6 text-amber-500" />;
+                                                        case 'fats_oils':
+                                                            return <Droplet className="w-6 h-6 text-yellow-500" />;
+                                                        case 'snacks':
+                                                            return <Cookie className="w-6 h-6 text-orange-400" />;
+                                                        case 'beans':
+                                                            return <Bean className="w-6 h-6 text-amber-600" />;
+                                                        case 'pantry':
+                                                            return <FlaskConical className="w-6 h-6 text-stone-500" />;
+                                                        case 'fruits':
+                                                            return <Apple className="w-6 h-6 text-red-500" />;
+                                                        default:
+                                                            return <Package className="w-6 h-6 text-gray-400" />;
+                                                    }
+                                                })()}
+                                            </div>
+                                        )}
                                         <div className="flex-1 min-w-0">
                                             <div>
                                                 <span className={`font-medium ${selectedIngredients.has(idx) ? "text-gray-900" : "text-gray-500 line-through"}`}>{ing.name}</span>
@@ -995,13 +1035,6 @@ export default function SavedMealDetailPage() {
                         )}
                     </button>
 
-                    {/* Success Message */}
-                    {addMessage && (
-                        <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
-                            <CheckCircle className="w-5 h-5 text-emerald-500" />
-                            <span className="text-sm text-emerald-700">{addMessage}</span>
-                        </div>
-                    )}
                 </div>
             </div>
 
@@ -1010,6 +1043,7 @@ export default function SavedMealDetailPage() {
                 <UpgradePrompt
                     feature="meal_chat"
                     onClose={() => setShowUpgradePrompt(false)}
+                    reason="voluntary"
                 />
             )}
 
@@ -1051,7 +1085,31 @@ export default function SavedMealDetailPage() {
                                             </div>
                                         ) : (
                                             <div className="w-full aspect-square max-w-[200px] mx-auto rounded-xl bg-gray-100 flex items-center justify-center">
-                                                <ShoppingCart className="w-16 h-16 text-gray-300" />
+                                                {(() => {
+                                                    const category = getIngredientCategory(ing.name);
+                                                    switch (category) {
+                                                        case 'protein':
+                                                            return <Drumstick className="w-16 h-16 text-red-400" />;
+                                                        case 'dairy':
+                                                            return <Milk className="w-16 h-16 text-blue-400" />;
+                                                        case 'produce':
+                                                            return <Leaf className="w-16 h-16 text-green-500" />;
+                                                        case 'carb':
+                                                            return <Wheat className="w-16 h-16 text-amber-500" />;
+                                                        case 'fats_oils':
+                                                            return <Droplet className="w-16 h-16 text-yellow-500" />;
+                                                        case 'snacks':
+                                                            return <Cookie className="w-16 h-16 text-orange-400" />;
+                                                        case 'beans':
+                                                            return <Bean className="w-16 h-16 text-amber-600" />;
+                                                        case 'pantry':
+                                                            return <FlaskConical className="w-16 h-16 text-stone-500" />;
+                                                        case 'fruits':
+                                                            return <Apple className="w-16 h-16 text-red-500" />;
+                                                        default:
+                                                            return <Package className="w-16 h-16 text-gray-400" />;
+                                                    }
+                                                })()}
                                             </div>
                                         )}
 
