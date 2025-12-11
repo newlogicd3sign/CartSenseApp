@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
 import { applyActionCode, checkActionCode } from "firebase/auth";
@@ -12,7 +12,7 @@ import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { IconBox } from "@/components/IconBox";
 
-export default function AuthActionPage() {
+function AuthActionContent() {
     const searchParams = useSearchParams();
     const router = useRouter();
     const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
@@ -151,5 +151,37 @@ export default function AuthActionPage() {
                 </div>
             </div>
         </div>
+    );
+}
+
+function LoadingFallback() {
+    return (
+        <div className="min-h-screen bg-[#f8fafb] flex flex-col">
+            <div className="flex-1 px-6 pt-12 lg:pt-16">
+                <div className="max-w-[428px] mx-auto">
+                    <div className="text-center mb-8">
+                        <Image src={CartSenseLogo} alt="CartSense" className="h-12 w-auto mx-auto mb-6" />
+                    </div>
+                    <Card padding="lg" className="shadow-lg">
+                        <div className="text-center py-8">
+                            <IconBox size="lg" variant="primary" className="w-20 h-20 rounded-full mx-auto mb-6">
+                                <Loader2 className="w-10 h-10 animate-spin" />
+                            </IconBox>
+                            <h1 className="text-xl font-medium text-gray-900 mb-2">
+                                Loading...
+                            </h1>
+                        </div>
+                    </Card>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+export default function AuthActionPage() {
+    return (
+        <Suspense fallback={<LoadingFallback />}>
+            <AuthActionContent />
+        </Suspense>
     );
 }
