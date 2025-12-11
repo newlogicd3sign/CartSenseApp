@@ -40,6 +40,16 @@ export const CATEGORY_QUALITY_RULES = {
     avoidKeywords: ["candy", "chocolate coated", "frosted", "deep fried", "honey roasted", "glazed"],
     maxSugarPerServing: 10,
     maxSodiumPerServing: 250
+  },
+  beans: {
+    preferKeywords: ["no salt added", "low sodium", "dried", "organic"],
+    avoidKeywords: ["baked beans", "with pork", "with bacon", "bbq", "brown sugar"],
+    maxSodiumPerServing: 300
+  },
+  fruits: {
+    preferKeywords: ["fresh", "organic", "whole"],
+    avoidKeywords: ["in syrup", "candied", "sweetened", "dried sweetened", "juice"],
+    notes: "Fresh or frozen, no added sugar"
   }
 } as const;
 
@@ -205,7 +215,7 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
   {
     id: "banana",
     canonicalName: "Banana, Fresh",
-    category: "produce",
+    category: "fruits",
     krogerDeptHint: "Produce",
     matchKeywords: ["banana", "bananas"],
     avoidKeywords: ["bread", "chips", "pudding", "cereal", "flavor", "nut muffin", "dried", "freeze dried"],
@@ -332,7 +342,7 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
   {
     id: "lemon",
     canonicalName: "Lemon",
-    category: "produce",
+    category: "fruits",
     krogerDeptHint: "Produce",
     matchKeywords: ["lemon", "lemons"],
     avoidKeywords: ["lemonade", "lemon curd", "lemon bars", "lemon cake", "lemon juice bottle"],
@@ -341,7 +351,7 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
   {
     id: "lime",
     canonicalName: "Lime",
-    category: "produce",
+    category: "fruits",
     krogerDeptHint: "Produce",
     matchKeywords: ["lime", "limes"],
     avoidKeywords: ["limeade", "key lime pie", "lime juice bottle"],
@@ -350,7 +360,7 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
   {
     id: "apple",
     canonicalName: "Apple",
-    category: "produce",
+    category: "fruits",
     krogerDeptHint: "Produce",
     matchKeywords: ["apple", "apples", "gala apple", "fuji apple", "honeycrisp"],
     avoidKeywords: ["apple pie", "apple sauce sweetened", "apple juice", "caramel apple", "apple chips"],
@@ -788,7 +798,7 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
   {
     id: "black_beans",
     canonicalName: "Black Beans",
-    category: "protein",
+    category: "beans",
     krogerDeptHint: "Canned Goods",
     matchKeywords: ["black beans", "canned black beans"],
     avoidKeywords: ["refried", "seasoned", "cuban style", "with bacon"],
@@ -800,7 +810,7 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
   {
     id: "chickpeas",
     canonicalName: "Chickpeas / Garbanzo Beans",
-    category: "protein",
+    category: "beans",
     krogerDeptHint: "Canned Goods",
     matchKeywords: ["chickpeas", "garbanzo beans"],
     avoidKeywords: ["hummus", "falafel mix", "roasted flavored"],
@@ -809,7 +819,7 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
   {
     id: "kidney_beans",
     canonicalName: "Kidney Beans",
-    category: "protein",
+    category: "beans",
     krogerDeptHint: "Canned Goods",
     matchKeywords: ["kidney beans", "red kidney beans"],
     avoidKeywords: ["chili beans seasoned", "with meat"],
@@ -818,7 +828,7 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
   {
     id: "lentils",
     canonicalName: "Lentils",
-    category: "protein",
+    category: "beans",
     krogerDeptHint: "Canned Goods",
     matchKeywords: ["lentils", "green lentils", "red lentils"],
     avoidKeywords: ["soup", "with bacon"],
@@ -905,7 +915,9 @@ export function findIngredientRule(ingredientName: string): IngredientQualityRul
 
   for (const rule of INGREDIENT_QUALITY_RULES) {
     for (const keyword of rule.matchKeywords) {
-      if (normalized.includes(keyword) || keyword.includes(normalized)) {
+      // Only match if ingredient contains keyword, or if keyword exactly equals ingredient
+      // Avoid matching "salt" to "salted butter" just because keyword contains the word
+      if (normalized.includes(keyword) || normalized === keyword) {
         return rule;
       }
     }
@@ -1033,4 +1045,78 @@ export function getQualityPenalty(
   }
 
   return penalty;
+}
+
+/**
+ * Get category for an ingredient name
+ * Returns a category type for icon mapping
+ */
+export function getIngredientCategory(ingredientName: string): CategoryType | "pantry" {
+  const normalized = ingredientName.toLowerCase().trim();
+
+  // First try to find a specific rule
+  const rule = findIngredientRule(ingredientName);
+  if (rule) {
+    return rule.category;
+  }
+
+  // Check for pantry/spice items FIRST (before produce, since garlic powder != fresh garlic)
+  const pantryKeywords = [
+    // Spices and seasonings
+    'powder', 'ground', 'dried', 'seasoning', 'spice', 'extract', 'flakes',
+    'salt', 'pepper', 'paprika', 'cumin', 'coriander', 'turmeric', 'cinnamon',
+    'nutmeg', 'oregano', 'thyme', 'rosemary', 'bay leaf', 'chili powder',
+    'curry', 'cayenne', 'black pepper', 'white pepper', 'red pepper flakes',
+    'italian seasoning', 'garlic powder', 'onion powder', 'garlic salt',
+    'seasoned salt', 'old bay', 'taco seasoning', 'ranch seasoning',
+    // Baking
+    'baking soda', 'baking powder', 'yeast', 'cornstarch', 'vanilla',
+    // Canned/jarred pantry
+    'minced garlic', 'crushed garlic', 'garlic paste', 'tomato paste',
+    'broth', 'stock', 'bouillon',
+    // Sweeteners
+    'sugar', 'honey', 'maple syrup', 'agave', 'stevia', 'molasses'
+  ];
+
+  for (const keyword of pantryKeywords) {
+    if (normalized.includes(keyword)) return 'pantry';
+  }
+
+  // Fallback keyword matching for common items not in rules
+  const proteinKeywords = ['chicken', 'beef', 'pork', 'turkey', 'fish', 'salmon', 'tuna', 'shrimp', 'meat', 'steak', 'bacon', 'sausage', 'lamb', 'duck', 'tofu', 'tempeh', 'seitan', 'egg'];
+  const dairyKeywords = ['milk', 'cheese', 'yogurt', 'cream', 'butter', 'sour cream', 'cottage', 'ricotta', 'mozzarella', 'cheddar', 'parmesan'];
+  const produceKeywords = ['lettuce', 'spinach', 'kale', 'tomato', 'onion', 'garlic', 'pepper', 'carrot', 'celery', 'broccoli', 'cauliflower', 'cucumber', 'zucchini', 'squash', 'potato', 'sweet potato', 'mushroom', 'avocado', 'cabbage', 'asparagus', 'corn', 'basil', 'cilantro', 'parsley', 'mint', 'ginger', 'jalapeno', 'salad', 'greens', 'arugula', 'chard'];
+  const fruitsKeywords = ['lemon', 'lime', 'orange', 'apple', 'banana', 'berry', 'berries', 'strawberry', 'blueberry', 'raspberry', 'grape', 'melon', 'watermelon', 'cantaloupe', 'mango', 'pineapple', 'peach', 'pear', 'plum', 'cherry', 'kiwi', 'papaya', 'fruit'];
+  const carbKeywords = ['rice', 'pasta', 'bread', 'tortilla', 'noodle', 'oat', 'quinoa', 'couscous', 'barley', 'flour', 'cereal', 'cracker', 'bagel', 'roll', 'bun', 'pita', 'wrap', 'grain'];
+  const fatsOilsKeywords = ['oil', 'olive oil', 'vegetable oil', 'coconut oil', 'sesame oil', 'vinegar', 'mayo', 'mayonnaise', 'dressing', 'sauce', 'mustard', 'ketchup', 'soy sauce', 'sriracha', 'hot sauce'];
+  const snacksKeywords = ['nut', 'almond', 'walnut', 'cashew', 'pecan', 'pistachio', 'peanut', 'seed', 'chia', 'flax', 'sunflower', 'pumpkin seed', 'dried fruit', 'raisin', 'cranberry', 'chip', 'pretzel', 'popcorn'];
+  const beansKeywords = ['bean', 'beans', 'lentil', 'lentils', 'chickpea', 'chickpeas', 'black bean', 'kidney bean', 'pinto bean', 'cannellini', 'navy bean', 'garbanzo', 'edamame', 'pea', 'peas', 'split pea'];
+
+  for (const keyword of proteinKeywords) {
+    if (normalized.includes(keyword)) return 'protein';
+  }
+  for (const keyword of dairyKeywords) {
+    if (normalized.includes(keyword)) return 'dairy';
+  }
+  for (const keyword of beansKeywords) {
+    if (normalized.includes(keyword)) return 'beans';
+  }
+  for (const keyword of fruitsKeywords) {
+    if (normalized.includes(keyword)) return 'fruits';
+  }
+  for (const keyword of produceKeywords) {
+    if (normalized.includes(keyword)) return 'produce';
+  }
+  for (const keyword of carbKeywords) {
+    if (normalized.includes(keyword)) return 'carb';
+  }
+  for (const keyword of fatsOilsKeywords) {
+    if (normalized.includes(keyword)) return 'fats_oils';
+  }
+  for (const keyword of snacksKeywords) {
+    if (normalized.includes(keyword)) return 'snacks';
+  }
+
+  // Default to pantry for anything else
+  return 'pantry';
 }

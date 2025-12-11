@@ -31,8 +31,19 @@ import {
     Search,
     CheckCircle,
     ShoppingCart,
+    Drumstick,
+    Milk,
+    Leaf,
+    Wheat,
+    Droplet,
+    Cookie,
+    Package,
+    Bean,
+    FlaskConical,
+    Apple,
 } from "lucide-react";
 import { getRandomAccentColor, getStoreBrand, type AccentColor, type StoreBrandInfo } from "@/lib/utils";
+import { getIngredientCategory } from "@/lib/ingredientQualityRules";
 import { useToast } from "@/components/Toast";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { EmptyState } from "@/components/EmptyState";
@@ -768,8 +779,8 @@ export default function ShoppingListPage() {
                                                             onClick={() => krogerLinkStatus === "linked" && handleOpenItemDetail(item)}
                                                             className={`flex items-start gap-3 pr-10 ${krogerLinkStatus === "linked" ? "cursor-pointer" : ""}`}
                                                         >
-                                                            {/* Product Image - only show when Kroger is linked */}
-                                                            {hasProductImage && (
+                                                            {/* Product Image or Category Icon */}
+                                                            {hasProductImage ? (
                                                                 <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
                                                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                                                     <img
@@ -777,6 +788,34 @@ export default function ShoppingListPage() {
                                                                         alt={item.productName || item.name}
                                                                         className="w-full h-full object-cover"
                                                                     />
+                                                                </div>
+                                                            ) : (
+                                                                <div className="w-12 h-12 rounded-lg bg-gray-100 flex-shrink-0 flex items-center justify-center">
+                                                                    {(() => {
+                                                                        const category = getIngredientCategory(item.name);
+                                                                        switch (category) {
+                                                                            case 'protein':
+                                                                                return <Drumstick className="w-6 h-6 text-red-400" />;
+                                                                            case 'dairy':
+                                                                                return <Milk className="w-6 h-6 text-blue-400" />;
+                                                                            case 'produce':
+                                                                                return <Leaf className="w-6 h-6 text-green-500" />;
+                                                                            case 'carb':
+                                                                                return <Wheat className="w-6 h-6 text-amber-500" />;
+                                                                            case 'fats_oils':
+                                                                                return <Droplet className="w-6 h-6 text-yellow-500" />;
+                                                                            case 'snacks':
+                                                                                return <Cookie className="w-6 h-6 text-orange-400" />;
+                                                                            case 'beans':
+                                                                                return <Bean className="w-6 h-6 text-amber-600" />;
+                                                                            case 'pantry':
+                                                                                return <FlaskConical className="w-6 h-6 text-stone-500" />;
+                                                                            case 'fruits':
+                                                                                return <Apple className="w-6 h-6 text-red-500" />;
+                                                                            default:
+                                                                                return <Package className="w-6 h-6 text-gray-400" />;
+                                                                        }
+                                                                    })()}
                                                                 </div>
                                                             )}
                                                             <div className="flex-1">
@@ -1020,7 +1059,31 @@ export default function ShoppingListPage() {
                                     </div>
                                 ) : (
                                     <div className="w-full aspect-square max-w-[200px] mx-auto rounded-xl bg-gray-100 flex items-center justify-center">
-                                        <ChefHat className="w-16 h-16 text-gray-300" />
+                                        {(() => {
+                                            const category = getIngredientCategory(selectedItem.name);
+                                            switch (category) {
+                                                case 'protein':
+                                                    return <Drumstick className="w-16 h-16 text-red-400" />;
+                                                case 'dairy':
+                                                    return <Milk className="w-16 h-16 text-blue-400" />;
+                                                case 'produce':
+                                                    return <Leaf className="w-16 h-16 text-green-500" />;
+                                                case 'carb':
+                                                    return <Wheat className="w-16 h-16 text-amber-500" />;
+                                                case 'fats_oils':
+                                                    return <Droplet className="w-16 h-16 text-yellow-500" />;
+                                                case 'snacks':
+                                                    return <Cookie className="w-16 h-16 text-orange-400" />;
+                                                case 'beans':
+                                                    return <Bean className="w-16 h-16 text-amber-600" />;
+                                                case 'pantry':
+                                                    return <FlaskConical className="w-16 h-16 text-stone-500" />;
+                                                case 'fruits':
+                                                    return <Apple className="w-16 h-16 text-red-500" />;
+                                                default:
+                                                    return <Package className="w-16 h-16 text-gray-400" />;
+                                            }
+                                        })()}
                                     </div>
                                 )}
 

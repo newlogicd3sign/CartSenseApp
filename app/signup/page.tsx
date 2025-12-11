@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { auth, db } from "@/lib/firebaseClient";
-import { createUserWithEmailAndPassword, sendEmailVerification } from "firebase/auth";
+import { createUserWithEmailAndPassword, sendEmailVerification, ActionCodeSettings } from "firebase/auth";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -40,8 +40,14 @@ export default function SignupPage() {
         try {
             const cred = await createUserWithEmailAndPassword(auth, email, password);
 
-            // Send email verification
-            await sendEmailVerification(cred.user);
+            // Configure action code settings to redirect back to the app
+            const actionCodeSettings: ActionCodeSettings = {
+                url: `${window.location.origin}/auth/action`,
+                handleCodeInApp: true,
+            };
+
+            // Send email verification with redirect settings
+            await sendEmailVerification(cred.user, actionCodeSettings);
 
             // Create a Firestore user doc
             await setDoc(doc(db, "users", cred.user.uid), {
