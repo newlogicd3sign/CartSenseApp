@@ -10,43 +10,50 @@ type UpgradePromptProps = {
     feature: FeatureType;
     onClose?: () => void;
     variant?: VariantType;
+    reason?: "limit_reached" | "voluntary"; // voluntary = user clicked to upgrade proactively
 };
 
 const featureConfig: Record<FeatureType, {
     title: string;
-    description: string;
+    limitDescription: string; // shown when limit is reached
+    voluntaryDescription: string; // shown when user chooses to upgrade
     icon: typeof MessageSquare;
     benefit: string;
 }> = {
     meal_chat: {
         title: "Unlock Unlimited Meal Customization",
-        description: "You've used all 6 free chat messages this month.",
+        limitDescription: "You've used all 6 free chat messages this month.",
+        voluntaryDescription: "Get unlimited AI chat to customize any meal exactly how you want it.",
         icon: MessageSquare,
         benefit: "Premium users get unlimited AI chat messages",
     },
     diet_photo: {
         title: "Unlock Diet Instructions",
-        description: "Upload and apply diet restrictions to filter meal suggestions.",
+        limitDescription: "Upload and apply diet restrictions to filter meal suggestions.",
+        voluntaryDescription: "Upload and apply diet restrictions to filter meal suggestions.",
         icon: Camera,
         benefit: "Premium users can upload diet instructions from photos",
     },
     saved_meals: {
         title: "Save More Meals",
-        description: "You've reached the free tier limit of 4 saved meals.",
+        limitDescription: "You've reached the free tier limit of 4 saved meals.",
+        voluntaryDescription: "Save unlimited meals to build your personal recipe collection.",
         icon: Bookmark,
         benefit: "Premium users get unlimited saved meals",
     },
     shopping_lists: {
         title: "More Shopping Flexibility",
-        description: "You've reached the free tier limit of 2 shopping sessions.",
+        limitDescription: "You've reached the free tier limit of 2 shopping sessions.",
+        voluntaryDescription: "Create unlimited shopping lists for all your meal planning needs.",
         icon: ShoppingCart,
         benefit: "Premium users get unlimited shopping lists",
     },
 };
 
-export function UpgradePrompt({ feature, onClose, variant = "modal" }: UpgradePromptProps) {
+export function UpgradePrompt({ feature, onClose, variant = "modal", reason = "limit_reached" }: UpgradePromptProps) {
     const router = useRouter();
     const config = featureConfig[feature];
+    const description = reason === "voluntary" ? config.voluntaryDescription : config.limitDescription;
     const Icon = config.icon;
 
     const handleUpgrade = () => {
@@ -62,7 +69,7 @@ export function UpgradePrompt({ feature, onClose, variant = "modal" }: UpgradePr
                     </div>
                     <div className="flex-1">
                         <h4 className="font-semibold text-gray-900">{config.title}</h4>
-                        <p className="text-sm text-gray-600 mt-1">{config.description}</p>
+                        <p className="text-sm text-gray-600 mt-1">{description}</p>
                         <button
                             onClick={handleUpgrade}
                             className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 transition-colors"
@@ -84,7 +91,7 @@ export function UpgradePrompt({ feature, onClose, variant = "modal" }: UpgradePr
                         <Icon className="w-12 h-12 text-violet-600" />
                     </div>
                     <h1 className="text-2xl font-bold text-gray-900 mb-3">{config.title}</h1>
-                    <p className="text-gray-600 mb-2">{config.description}</p>
+                    <p className="text-gray-600 mb-2">{description}</p>
                     <p className="text-sm text-violet-600 font-medium mb-8">{config.benefit}</p>
                     <button
                         onClick={handleUpgrade}
@@ -124,7 +131,7 @@ export function UpgradePrompt({ feature, onClose, variant = "modal" }: UpgradePr
                             <Icon className="w-8 h-8 text-violet-600" />
                         </div>
                         <h2 className="text-xl font-bold text-gray-900 mb-2">{config.title}</h2>
-                        <p className="text-gray-600 mb-2">{config.description}</p>
+                        <p className="text-gray-600 mb-2">{description}</p>
                         <p className="text-sm text-violet-600 font-medium mb-6">{config.benefit}</p>
                         <button
                             onClick={handleUpgrade}

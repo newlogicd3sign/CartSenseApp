@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { auth, db } from "@/lib/firebaseClient";
-import { onAuthStateChanged, sendEmailVerification, signOut, type User } from "firebase/auth";
-import { doc, updateDoc } from "firebase/firestore";
+import { onAuthStateChanged, sendEmailVerification, signOut, type User, ActionCodeSettings } from "firebase/auth";
+import { doc, setDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Mail, RefreshCw, CheckCircle, LogOut } from "lucide-react";
@@ -33,9 +33,9 @@ export default function VerifyEmailPage() {
             // If already verified, redirect to setup
             if (firebaseUser.emailVerified) {
                 // Update Firestore
-                updateDoc(doc(db, "users", firebaseUser.uid), {
+                setDoc(doc(db, "users", firebaseUser.uid), {
                     emailVerified: true,
-                }).catch(console.error);
+                }, { merge: true }).catch(console.error);
 
                 router.push("/setup");
                 return;
@@ -54,7 +54,13 @@ export default function VerifyEmailPage() {
         setResending(true);
 
         try {
-            await sendEmailVerification(user);
+            // Configure action code settings to redirect back to the app
+            const actionCodeSettings: ActionCodeSettings = {
+                url: `${window.location.origin}/auth/action`,
+                handleCodeInApp: true,
+            };
+
+            await sendEmailVerification(user, actionCodeSettings);
             showToast("Verification email sent! Check your inbox.", "success");
         } catch (error: any) {
             if (error.code === "auth/too-many-requests") {
@@ -85,9 +91,9 @@ export default function VerifyEmailPage() {
                 await currentUser.getIdToken(true);
 
                 // Update Firestore
-                await updateDoc(doc(db, "users", currentUser.uid), {
+                await setDoc(doc(db, "users", currentUser.uid), {
                     emailVerified: true,
-                });
+                }, { merge: true });
 
                 showToast("Email verified! Redirecting...", "success");
 

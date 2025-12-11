@@ -50,6 +50,7 @@ type Meal = {
         calories: number;
         protein: number;
         carbs: number;
+        fiber: number;
         fat: number;
     };
     ingredients: Ingredient[];
@@ -59,6 +60,7 @@ type Meal = {
 
 type UserPrefs = {
     dietType?: string;
+    cookingExperience?: string;
     allergiesAndSensitivities?: {
         allergies?: string[];
         sensitivities?: string[];
@@ -197,6 +199,7 @@ function normalizeMeal(raw: unknown): Meal {
             calories: normalizeNumber(macros.calories, 0),
             protein: normalizeNumber(macros.protein, 0),
             carbs: normalizeNumber(macros.carbs, 0),
+            fiber: normalizeNumber(macros.fiber, 0),
             fat: normalizeNumber(macros.fat, 0),
         },
         ingredients: ingredientsArray.map((ing) => normalizeIngredient(ing)),
@@ -396,10 +399,11 @@ type CombinedDietaryRestrictions = {
     combinedDoctorBlockedIngredients: string[];
     combinedDoctorBlockedGroups: string[];
     dietTypes: string[];
+    cookingExperience?: string;
 };
 
 function combineFamilyRestrictions(
-    userDoc: { name?: string; dietType?: string; allergiesAndSensitivities?: { allergies?: string[]; sensitivities?: string[] }; dislikedFoods?: string[] } | null,
+    userDoc: { name?: string; dietType?: string; cookingExperience?: string; allergiesAndSensitivities?: { allergies?: string[]; sensitivities?: string[] }; dislikedFoods?: string[] } | null,
     userDoctorContext: DoctorContextForModel | null,
     familyMembers: FamilyMemberData[]
 ): CombinedDietaryRestrictions {
@@ -476,6 +480,7 @@ function combineFamilyRestrictions(
         combinedDoctorBlockedIngredients: Array.from(allDoctorBlockedIngredients),
         combinedDoctorBlockedGroups: Array.from(allDoctorBlockedGroups),
         dietTypes: Array.from(dietTypes),
+        cookingExperience: userDoc?.cookingExperience,
     };
 }
 
@@ -538,6 +543,16 @@ function buildSystemPrompt(prompt: string, restrictions: CombinedDietaryRestrict
         ? `\nHousehold (${restrictions.householdMembers.length}): ${restrictions.householdMembers.map(m => `${m.name}${m.dietType ? ` (${m.dietType})` : ""}`).join(", ")}`
         : "";
 
+    // Build cooking experience guidance
+    let cookingGuidance = "";
+    if (restrictions.cookingExperience === "beginner") {
+        cookingGuidance = "\nCOOKING LEVEL: Beginner - Use simple techniques (boiling, baking, pan-frying). Keep recipes to 5-7 ingredients max. Avoid complex knife work or timing multiple components. Include clear, detailed steps.";
+    } else if (restrictions.cookingExperience === "intermediate") {
+        cookingGuidance = "\nCOOKING LEVEL: Intermediate - Can handle most techniques including sautéing, roasting, and making sauces. Comfortable with 8-12 ingredients and multi-step recipes.";
+    } else if (restrictions.cookingExperience === "advanced") {
+        cookingGuidance = "\nCOOKING LEVEL: Advanced - Comfortable with complex techniques like braising, reduction sauces, and precise timing. Can handle intricate recipes with many components.";
+    }
+
     // Build restrictions - only include non-empty sections
     const restrictionParts: string[] = [];
     if (restrictions.combinedAllergies.length) restrictionParts.push(`ALLERGIES (STRICT): ${restrictions.combinedAllergies.join(", ")}`);
@@ -559,17 +574,17 @@ function buildSystemPrompt(prompt: string, restrictions: CombinedDietaryRestrict
             ? `EXACT OUTPUT: 2 breakfast (mealType:"breakfast"), 2 lunch (mealType:"lunch"), 2 dinner (mealType:"dinner"), 1 snack (mealType:"snack"). Total: 7 meals. You MUST include all meal types.`
             : `EXACT OUTPUT: 1 breakfast (mealType:"breakfast"), 1 lunch (mealType:"lunch"), 1 dinner (mealType:"dinner"), 1 snack (mealType:"snack"). Total: 4 meals. You MUST include all meal types.`;
     } else {
-        mealCountInstruction = `Return 3-4 recipe options matching the request (can all be same meal type).`;
+        mealCountInstruction = `Return 3-4 recipe options matching the request. All recipes should match the meal type the user requested (e.g., if they ask for dinner, return only dinner recipes). If no specific meal type is mentioned, infer the appropriate type from context.`;
     }
 
     return `You are CartSense, an AI meal planner. Be concise.
 
 RULES: Respect allergies/doctor restrictions (STRICT). Heart-conscious by default. U.S. grocery ingredients.
-
+${cookingGuidance}
 ${restrictionsText}
 
 JSON output:
-{"meals":[{"mealType":"breakfast|lunch|dinner|snack","name":"","description":"","servings":N,"macros":{"calories":N,"protein":N,"carbs":N,"fat":N},"ingredients":[{"name":"display name","quantity":"","grocerySearchTerm":"raw product","preparation":""}],"steps":[""]}]}
+{"meals":[{"mealType":"breakfast|lunch|dinner|snack","name":"","description":"","servings":N,"macros":{"calories":N,"protein":N,"carbs":N,"fiber":N,"fat":N},"ingredients":[{"name":"display name","quantity":"","grocerySearchTerm":"raw product","preparation":""}],"steps":[""]}]}
 
 KEY RULES:
 - macros = PER SERVING, not total
@@ -579,8 +594,7 @@ KEY RULES:
 - steps: 5-7 steps, written in a warm food blogger style. Be conversational and enthusiastic! Include specific seasoning tips (e.g., "season generously with salt and pepper", "add a pinch of red pepper flakes for heat"). Explain WHY certain techniques matter (e.g., "let the onions caramelize until golden - this builds amazing flavor"). Share little tips like "taste and adjust seasoning as you go!"
 
 CRITICAL - MEAL TYPE DISTRIBUTION:
-${mealCountInstruction}
-Do NOT return all the same mealType. You must vary the mealType field across meals.`;
+${mealCountInstruction}${isBroadRequest ? `\nDo NOT return all the same mealType. You must vary the mealType field across meals.` : ``}`;
 }
 
 // ---------- Route handler ----------
@@ -729,11 +743,10 @@ export async function POST(request: Request) {
                 await writer.write(sendEvent({ type: "meal", meal: meals[i], index: i }));
             }
 
-            // Generate images in parallel for first 3 meals, then update
+            // Generate images in parallel for all meals, then update
             await writer.write(sendEvent({ type: "status", message: "Creating meal images..." }));
 
-            const mealsToEnhance = meals.slice(0, 3);
-            const imagePromises = mealsToEnhance.map(async (meal, index) => {
+            const imagePromises = meals.map(async (meal, index) => {
                 const imageUrl = await getOrGenerateImage(meal);
                 const updatedMeal = { ...meal, imageUrl };
                 meals[index] = updatedMeal;

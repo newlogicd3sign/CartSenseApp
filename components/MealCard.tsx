@@ -7,6 +7,7 @@ interface Macros {
     calories: number;
     protein: number;
     carbs: number;
+    fiber: number;
     fat: number;
 }
 
@@ -77,11 +78,11 @@ export function MealCard({
                 </div>
                 <h2
                     onClick={onClick}
-                    className="text-base font-medium text-gray-900 mb-1 line-clamp-1 cursor-pointer hover:text-[#4A90E2] transition-colors"
+                    className="text-base font-medium text-gray-900 mb-1 cursor-pointer hover:text-[#4A90E2] transition-colors"
                 >
                     {name}
                 </h2>
-                <p className="text-sm text-gray-500 line-clamp-1 mb-2">
+                <p className="text-sm text-gray-500 mb-2">
                     {description}
                 </p>
 
@@ -95,9 +96,9 @@ export function MealCard({
                         <Beef className="w-3 h-3 text-blue-500" />
                         <span>{macros.protein}g</span>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1" title={`${macros.carbs}g total carbs - ${macros.fiber ?? 0}g fiber`}>
                         <Wheat className="w-3 h-3 text-amber-500" />
-                        <span>{macros.carbs}g</span>
+                        <span>{Math.max(0, macros.carbs - (macros.fiber ?? 0))}g net</span>
                     </div>
                     <div className="flex items-center gap-1">
                         <Droplet className="w-3 h-3 text-purple-500" />
