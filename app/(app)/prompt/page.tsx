@@ -6,7 +6,7 @@ import { auth, db } from "@/lib/firebaseClient";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc, collection, getDocs, query, where } from "firebase/firestore";
 import { getRandomAccentColor, getRandomAccentColorExcluding, type AccentColor } from "@/lib/utils";
-import { Sparkles, UtensilsCrossed, ChefHat, Soup, Pizza, Salad, Sandwich, Croissant, Apple, Carrot, Beef, Fish, Citrus, Drumstick, Wheat, Ham, CookingPot, Hamburger, ShieldCheck, HeartPulse, Users, ChevronRight } from "lucide-react";
+import { Sparkles, UtensilsCrossed, ChefHat, Soup, Pizza, Salad, Sandwich, Croissant, Apple, Carrot, Beef, Fish, Citrus, Drumstick, Wheat, Ham, CookingPot, Hamburger, ShieldCheck, HeartPulse, Users, ChevronRight, Clock, Wallet, Baby, CalendarDays } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { loadGeneratedMeals } from "@/lib/mealStorage";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -71,6 +71,15 @@ const placeholderPrompts = [
 function getRandomPlaceholder() {
     return placeholderPrompts[Math.floor(Math.random() * placeholderPrompts.length)];
 }
+
+const quickPrompts = [
+    { label: "Quick weeknight dinners", icon: Clock, prompt: "Quick weeknight dinners under 30 minutes" },
+    { label: "High protein meals", icon: Beef, prompt: "High protein meals for muscle building" },
+    { label: "Budget-friendly", icon: Wallet, prompt: "Budget-friendly meals using pantry staples" },
+    { label: "Healthy lunch ideas", icon: Salad, prompt: "Healthy lunch ideas that are filling" },
+    { label: "Meal prep Sunday", icon: CalendarDays, prompt: "Meal prep recipes for the week" },
+    { label: "Kid-friendly", icon: Baby, prompt: "Kid-friendly meals the whole family will love" },
+];
 
 export default function PromptPage() {
     const router = useRouter();
@@ -353,6 +362,22 @@ export default function PromptPage() {
                                 </li>
                             ))}
                         </ul>
+                    </div>
+
+                    {/* Quick Prompt Chips */}
+                    <div className={`grid grid-cols-2 gap-2 mt-4 ${animateFromSetup ? "animate-content-after-greeting" : ""}`}>
+                        {quickPrompts.map((qp) => (
+                            <button
+                                key={qp.label}
+                                onClick={() => {
+                                    router.push(`/meals?prompt=${encodeURIComponent(qp.prompt)}&stream=true`);
+                                }}
+                                className="flex items-center gap-2 p-3 bg-white border border-gray-200 rounded-xl hover:border-[#4A90E2] hover:bg-[#4A90E2]/5 transition-all text-left"
+                            >
+                                <qp.icon className="w-4 h-4 text-[#4A90E2] flex-shrink-0" />
+                                <span className="text-sm font-medium text-gray-700">{qp.label}</span>
+                            </button>
+                        ))}
                     </div>
 
                     {/* Prompt Counter - Free Tier */}

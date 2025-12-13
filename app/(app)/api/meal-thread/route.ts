@@ -39,6 +39,10 @@ type Meal = {
     };
     ingredients: Ingredient[];
     steps: string[];
+    cookTimeRange?: {
+        min: number;
+        max: number;
+    };
 };
 
 type UserPrefs = {
@@ -85,10 +89,11 @@ JSON response:
 {"reply":"explanation","action":"no_change|update_meal|new_meal_variant","updatedMeal":{...if action != no_change}}
 
 updatedMeal shape:
-{"id":"","mealType":"breakfast|lunch|dinner|snack","name":"","description":"","servings":N,"macros":{"calories":N,"protein":N,"carbs":N,"fiber":N,"fat":N},"ingredients":[{"name":"display","quantity":"","grocerySearchTerm":"raw product","preparation":""}],"steps":[""]}
+{"id":"","mealType":"breakfast|lunch|dinner|snack","name":"","description":"","servings":N,"macros":{"calories":N,"protein":N,"carbs":N,"fiber":N,"fat":N},"cookTimeRange":{"min":N,"max":N},"ingredients":[{"name":"display","quantity":"","grocerySearchTerm":"raw product","preparation":""}],"steps":[""]}
 
 KEY RULES:
 - macros = PER SERVING
+- cookTimeRange = estimated cook time in minutes as a range (min to max) accounting for skill variance
 - grocerySearchTerm = raw product (no prep words). "diced onion" → "yellow onion"
 - Include all seasonings with measurements
 - Steps: detailed, food-blogger style`;

@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode } from "react";
-import { Flame, Beef, Wheat, Droplet, ChevronRight } from "lucide-react";
+import { Flame, Beef, Wheat, Droplet, ChevronRight, Clock } from "lucide-react";
 
 interface Macros {
     calories: number;
@@ -18,6 +18,10 @@ interface MealCardProps {
     mealType: string;
     macros: Macros;
     imageUrl?: string;
+    cookTimeRange?: {
+        min: number;
+        max: number;
+    };
     onClick: () => void;
     badge?: ReactNode;
     actionButton?: ReactNode;
@@ -31,6 +35,7 @@ export function MealCard({
     mealType,
     macros,
     imageUrl,
+    cookTimeRange,
     onClick,
     badge,
     actionButton,
@@ -55,17 +60,25 @@ export function MealCard({
                 </div>
             )}
 
-            {/* Thumbnail - Left */}
-            <div
-                onClick={onClick}
-                className="w-20 h-20 flex-shrink-0 bg-gray-100 rounded-xl overflow-hidden cursor-pointer"
-            >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                    src={thumbSrc}
-                    alt={name}
-                    className="w-full h-full object-cover transition-opacity duration-300"
-                />
+            {/* Thumbnail + Cook Time - Left */}
+            <div className="flex flex-col items-center flex-shrink-0">
+                <div
+                    onClick={onClick}
+                    className="w-20 h-20 bg-gray-100 rounded-xl overflow-hidden cursor-pointer"
+                >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                        src={thumbSrc}
+                        alt={name}
+                        className="w-full h-full object-cover transition-opacity duration-300"
+                    />
+                </div>
+                {cookTimeRange && (
+                    <div className="flex items-center gap-1 mt-2 px-2 py-0.5 bg-sky-50 border border-sky-200 rounded-full">
+                        <Clock className="w-3 h-3 text-sky-600" />
+                        <span className="text-[10px] font-medium text-sky-700">{cookTimeRange.min}-{cookTimeRange.max}m</span>
+                    </div>
+                )}
             </div>
 
             {/* Content - Right */}

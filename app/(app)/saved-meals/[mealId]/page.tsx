@@ -88,6 +88,10 @@ type SavedMeal = {
     prompt?: string | null;
     savedAt?: any;
     imageUrl?: string;
+    cookTimeRange?: {
+        min: number;
+        max: number;
+    };
 };
 
 type UserPrefs = {
@@ -744,9 +748,17 @@ export default function SavedMealDetailPage() {
 
                     {/* Macros Card */}
                     <div className="bg-white rounded-2xl border border-gray-100 p-5">
-                        <div className="flex items-center gap-2 mb-4">
-                            <Users className="w-5 h-5 text-gray-400" />
-                            <span className="text-sm text-gray-500">{meal.servings} servings</span>
+                        <div className="flex items-center gap-4 mb-4">
+                            <div className="flex items-center gap-2">
+                                <Users className="w-5 h-5 text-gray-400" />
+                                <span className="text-sm text-gray-500">{meal.servings} servings</span>
+                            </div>
+                            {meal.cookTimeRange && (
+                                <div className="flex items-center gap-1.5 px-3 py-1 bg-sky-50 border border-sky-200 rounded-full">
+                                    <Clock className="w-4 h-4 text-sky-600" />
+                                    <span className="text-sm font-medium text-sky-700">{meal.cookTimeRange.min}-{meal.cookTimeRange.max} min</span>
+                                </div>
+                            )}
                         </div>
                         <div className="grid grid-cols-4 gap-4">
                             <div className="text-center">

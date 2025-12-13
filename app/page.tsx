@@ -24,7 +24,10 @@ import {
   Beef,
   Wheat,
   Droplet,
-  ChefHat
+  ChefHat,
+  UserPlus,
+  Ban,
+  Leaf
 } from "lucide-react";
 
 const jsonLd = {
@@ -112,7 +115,7 @@ export default function Home() {
                 <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2 sm:gap-3 mb-6 sm:mb-8">
                   <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-full text-xs sm:text-sm text-gray-700">
                     <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
-                    Personalized to your diet
+                    Personalized to your tastes
                   </span>
                   <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-full text-xs sm:text-sm text-gray-700">
                     <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
@@ -270,9 +273,12 @@ export default function Home() {
         {/* How It Works */}
         <section id="how-it-works" className="px-4 sm:px-6 py-12 sm:py-20 bg-[#f8fafb]">
           <div className="max-w-6xl mx-auto">
-            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 mb-8 sm:mb-12 text-center">
-              How It Works
+            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 mb-3 sm:mb-4 text-center">
+              Four steps. Zero stress.
             </h2>
+            <p className="text-base sm:text-lg text-gray-600 text-center mb-8 sm:mb-12">
+              From &quot;what&apos;s for dinner?&quot; to groceries in your cart.
+            </p>
 
             <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5 sm:gap-6 mb-10 sm:mb-12">
               {/* Step 1 */}
@@ -396,11 +402,11 @@ export default function Home() {
           <div className="max-w-6xl mx-auto">
             <div className="text-center mb-8 sm:mb-12">
               <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
-                A better way to plan meals
+                Finally, meal planning that actually plans.
               </h2>
               <p className="text-base sm:text-lg text-gray-600">
-                Most apps give you ideas.<br />
-                <span className="font-semibold text-gray-900">CartSense gives you groceries.</span>
+                Most apps stop at recipes.<br />
+                <span className="font-semibold text-gray-900">CartSense goes all the way to your cart.</span>
               </p>
             </div>
 
@@ -412,10 +418,10 @@ export default function Home() {
                   <h3 className="text-lg font-semibold text-gray-500 mb-4">Other Apps</h3>
                   <ul className="space-y-3">
                     {[
-                      "Suggest recipes",
+                      "Give you recipe ideas",
                       "Leave you to figure out ingredients",
                       "No connection to real stores",
-                      "Lots of effort",
+                      "Still feels like work",
                     ].map((item, i) => (
                       <li key={i} className="flex items-start gap-3 text-gray-600 text-sm sm:text-base">
                         <XCircle className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
@@ -430,10 +436,10 @@ export default function Home() {
                   <h3 className="text-lg font-semibold text-green-700 mb-4">CartSense</h3>
                   <ul className="space-y-3">
                     {[
-                      "Generates meals",
-                      "Finds real products",
-                      "Adds everything to your store cart",
-                      "Zero decision-making required",
+                      "Generates meals you'll love",
+                      "Matches ingredients to real products",
+                      "Adds everything to your grocery cart",
+                      "Actually saves you time",
                     ].map((item, i) => (
                       <li key={i} className="flex items-start gap-3 text-gray-700 text-sm sm:text-base">
                         <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
@@ -448,7 +454,7 @@ export default function Home() {
                     href="/signup"
                     className="inline-flex items-center gap-2 text-[#4A90E2] font-semibold hover:underline text-sm sm:text-base"
                   >
-                    Stop planning manually. Let CartSense do the work.
+                    Get your time back
                     <ArrowRight className="w-4 h-4" />
                   </Link>
                 </div>
@@ -554,11 +560,17 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Add to Cart Button */}
-                <button className="w-full py-2.5 sm:py-3 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white text-xs sm:text-sm font-medium rounded-xl flex items-center justify-center gap-2">
-                  <ShoppingCart className="w-4 h-4" />
-                  Add to Shopping List
-                </button>
+                {/* Action Buttons */}
+                <div className="space-y-2">
+                  <button className="w-full py-2.5 sm:py-3 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white text-xs sm:text-sm font-medium rounded-xl flex items-center justify-center gap-2">
+                    <List className="w-4 h-4" />
+                    Add to Shopping List
+                  </button>
+                  <button className="w-full py-2.5 sm:py-3 bg-[#0056a3] text-white text-xs sm:text-sm font-medium rounded-xl flex items-center justify-center gap-2">
+                    <ShoppingCart className="w-4 h-4" />
+                    Add to Kroger Cart
+                  </button>
+                </div>
 
                 {/* Floating badge */}
                 <div className="absolute -bottom-3 -right-2 sm:-bottom-4 sm:-right-4 bg-white rounded-xl shadow-lg px-3 sm:px-4 py-1.5 sm:py-2 border border-gray-100">
@@ -580,18 +592,21 @@ export default function Home() {
         {/* Features Section */}
         <section id="features" className="px-4 sm:px-6 py-12 sm:py-20 bg-gradient-to-br from-[#4A90E2]/5 to-[#357ABD]/5">
           <div className="max-w-6xl mx-auto">
-            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 mb-8 sm:mb-12 text-center">
-              Built for real life
+            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 mb-3 sm:mb-4 text-center">
+              Less thinking. More eating.
             </h2>
+            <p className="text-base sm:text-lg text-gray-600 text-center mb-8 sm:mb-12">
+              Meals planned. Groceries added. Done.
+            </p>
 
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
               <div className="bg-gray-50 rounded-2xl p-5 sm:p-6">
                 <div className="w-10 h-10 sm:w-12 sm:h-12 bg-[#4A90E2]/10 rounded-xl flex items-center justify-center mb-4">
                   <Target className="w-5 h-5 sm:w-6 sm:h-6 text-[#4A90E2]" />
                 </div>
-                <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">Personalized to your tastes</h3>
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">Knows what you like</h3>
                 <p className="text-sm sm:text-base text-gray-600">
-                  Simple preferences: dislikes, must-haves, cuisines, cooking time.
+                  Set your preferences once. Get meals you&apos;ll actually want to eat.
                 </p>
               </div>
 
@@ -599,9 +614,9 @@ export default function Home() {
                 <div className="w-10 h-10 sm:w-12 sm:h-12 bg-[#8B5CF6]/10 rounded-xl flex items-center justify-center mb-4">
                   <Users className="w-5 h-5 sm:w-6 sm:h-6 text-[#8B5CF6]" />
                 </div>
-                <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">Family-friendly</h3>
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">Works for everyone</h3>
                 <p className="text-sm sm:text-base text-gray-600">
-                  Create up to 5 profiles and get meals everyone can enjoy. One unified shopping list.
+                  Multiple people, different tastes? One list that keeps everyone happy.
                 </p>
               </div>
 
@@ -609,9 +624,9 @@ export default function Home() {
                 <div className="w-10 h-10 sm:w-12 sm:h-12 bg-[#F59E0B]/10 rounded-xl flex items-center justify-center mb-4">
                   <List className="w-5 h-5 sm:w-6 sm:h-6 text-[#F59E0B]" />
                 </div>
-                <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">Smart shopping lists</h3>
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">No list-making</h3>
                 <p className="text-sm sm:text-base text-gray-600">
-                  Every ingredient organized perfectly — no more messy notes.
+                  Ingredients go straight to your cart. Nothing to write down or forget.
                 </p>
               </div>
 
@@ -619,9 +634,9 @@ export default function Home() {
                 <div className="w-10 h-10 sm:w-12 sm:h-12 bg-[#EC4899]/10 rounded-xl flex items-center justify-center mb-4">
                   <MessageSquare className="w-5 h-5 sm:w-6 sm:h-6 text-[#EC4899]" />
                 </div>
-                <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">Instant meal tweaks</h3>
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">Change anything instantly</h3>
                 <p className="text-sm sm:text-base text-gray-600">
-                  &quot;Make it quicker.&quot; &quot;No mushrooms.&quot; &quot;Swap beef for chicken.&quot; One message, done.
+                  &quot;Make it faster.&quot; &quot;Swap the chicken.&quot; Done in seconds.
                 </p>
               </div>
             </div>
@@ -634,23 +649,23 @@ export default function Home() {
             <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
               {/* Content - shows first on mobile, second on desktop */}
               <div className="lg:order-last">
-                <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-red-500/10 text-red-500 rounded-full text-xs sm:text-sm font-medium mb-4 sm:mb-6">
+                <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-amber-500/10 text-amber-600 rounded-full text-xs sm:text-sm font-medium mb-4 sm:mb-6">
                   <Sparkles className="w-3 h-3 sm:w-4 sm:h-4" />
-                  AI Diet Scanner
+                  Optional Superpower
                 </div>
                 <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
-                  Snap a photo. We&apos;ll do the rest.
+                  Got food rules? We&apos;ll handle them.
                 </h2>
                 <p className="text-base sm:text-lg text-gray-600 mb-6 sm:mb-8">
-                  Got instructions from a doctor, dietitian, or trainer? Just snap a photo or upload a PDF. Our AI reads it, extracts the restrictions, and automatically filters every meal to match.
+                  If you have allergy notes, nutrition guidelines, or specific restrictions — just upload them. CartSense reads them once and remembers forever. You get meals that fit, without the mental load.
                 </p>
 
                 <div className="space-y-3 sm:space-y-4 mb-6 sm:mb-8">
                   {[
-                    "Take a photo or upload PDFs",
-                    "Scans handwritten notes and printed docs",
-                    "Extracts allergies, restrictions, and goals",
-                    "Automatically applies to every meal generated",
+                    "Snap a photo or upload a PDF",
+                    "AI extracts allergies and restrictions",
+                    "Every meal automatically respects them",
+                    "One less thing to think about",
                   ].map((item, i) => (
                     <div key={i} className="flex items-start gap-3">
                       <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
@@ -660,15 +675,15 @@ export default function Home() {
                 </div>
 
                 <p className="text-sm text-gray-500">
-                  Works with meal plans, allergy lists, post-surgery diets, and more.
+                  Don&apos;t have restrictions? Skip it entirely — CartSense works great without it.
                 </p>
               </div>
 
               {/* Mockup - shows second on mobile, first on desktop */}
               <div className="bg-white rounded-2xl sm:rounded-3xl shadow-xl overflow-hidden">
                 {/* Header */}
-                <div className="bg-gradient-to-r from-red-500 to-red-600 px-4 sm:px-5 py-3 sm:py-4">
-                  <p className="font-medium text-sm sm:text-base" style={{ color: 'white' }}>Diet Restrictions</p>
+                <div className="bg-gradient-to-r from-amber-500 to-amber-600 px-4 sm:px-5 py-3 sm:py-4">
+                  <p className="font-medium text-sm sm:text-base" style={{ color: 'white' }}>Food Preferences</p>
                   <p className="text-xs sm:text-sm" style={{ color: 'white' }}>Scanned from your photo</p>
                 </div>
 
@@ -699,20 +714,20 @@ export default function Home() {
         </section>
 
         {/* Grocery Integration */}
-        <section className="px-4 sm:px-6 py-12 sm:py-20 bg-gray-50">
+        <section className="px-4 sm:px-6 py-12 sm:py-20 bg-[#4A90E2]/5">
           <div className="max-w-6xl mx-auto">
             <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
               {/* Left: Content */}
               <div>
                 <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-[#4A90E2]/10 text-[#4A90E2] rounded-full text-xs sm:text-sm font-medium mb-4 sm:mb-6">
                   <ShoppingCart className="w-3 h-3 sm:w-4 sm:h-4" />
-                  Grocery Integration
+                  The Missing Link
                 </div>
                 <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
-                  Turn any meal into a shopping trip.
+                  Meals become groceries. Automatically.
                 </h2>
                 <p className="text-base sm:text-lg text-gray-600 mb-6 sm:mb-8">
-                  CartSense finds the exact products at your store so you never guess again.
+                  No copying ingredients. No wandering the store. CartSense matches every item to real products at your local grocery store and adds them to your cart.
                 </p>
 
                 <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-6 sm:mb-8">
@@ -816,14 +831,129 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Who's It For Section */}
+        {/* Household Members Section */}
         <section className="px-4 sm:px-6 py-12 sm:py-20 bg-white">
+          <div className="max-w-6xl mx-auto">
+            <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
+              {/* Mockup - shows second on mobile, first on desktop */}
+              <div className="lg:order-first order-last bg-[#f8fafb] rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xl">
+                {/* Header */}
+                <div className="flex items-center justify-between mb-4 sm:mb-6">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-5 h-5 text-[#8B5CF6]" />
+                    <span className="font-medium text-gray-900 text-sm sm:text-base">Household Members</span>
+                  </div>
+                  <button className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-[#8B5CF6] text-white text-xs sm:text-sm font-medium rounded-lg">
+                    <UserPlus className="w-3.5 h-3.5" />
+                    Add
+                  </button>
+                </div>
+
+                {/* Member Cards */}
+                <div className="space-y-3">
+                  {[
+                    { name: "Mom", avatar: "M", color: "bg-pink-500", restrictions: ["Gluten-free", "Low sodium"] },
+                    { name: "Dad", avatar: "D", color: "bg-blue-500", restrictions: ["Dairy-free"] },
+                    { name: "Emma", avatar: "E", color: "bg-purple-500", restrictions: ["Nut allergy", "Vegetarian"] },
+                    { name: "Jake", avatar: "J", color: "bg-green-500", restrictions: ["No restrictions"] },
+                  ].map((member, i) => (
+                    <div key={i} className="bg-white rounded-xl p-3 sm:p-4 border border-gray-100 shadow-sm">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 sm:w-12 sm:h-12 ${member.color} rounded-full flex items-center justify-center text-white font-bold text-sm sm:text-base`}>
+                          {member.avatar}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-900 text-sm sm:text-base">{member.name}</p>
+                          <div className="flex flex-wrap gap-1.5 mt-1">
+                            {member.restrictions.map((r, j) => (
+                              <span
+                                key={j}
+                                className={`px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium ${
+                                  r === "No restrictions"
+                                    ? "bg-green-100 text-green-700"
+                                    : "bg-red-50 text-red-600"
+                                }`}
+                              >
+                                {r === "No restrictions" ? (
+                                  <span className="flex items-center gap-1">
+                                    <Check className="w-2.5 h-2.5" />
+                                    {r}
+                                  </span>
+                                ) : (
+                                  <span className="flex items-center gap-1">
+                                    <Ban className="w-2.5 h-2.5" />
+                                    {r}
+                                  </span>
+                                )}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Summary */}
+                <div className="mt-4 sm:mt-6 p-3 sm:p-4 bg-gradient-to-r from-[#8B5CF6]/10 to-[#4A90E2]/10 rounded-xl">
+                  <div className="flex items-center gap-2 text-sm text-gray-700">
+                    <Leaf className="w-4 h-4 text-[#8B5CF6]" />
+                    <span>Meals automatically respect <strong>all</strong> household restrictions</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right: Content */}
+              <div>
+                <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-[#8B5CF6]/10 text-[#8B5CF6] rounded-full text-xs sm:text-sm font-medium mb-4 sm:mb-6">
+                  <Users className="w-3 h-3 sm:w-4 sm:h-4" />
+                  Household Profiles
+                </div>
+                <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+                  Everyone eats. No one argues.
+                </h2>
+                <p className="text-base sm:text-lg text-gray-600 mb-6 sm:mb-8">
+                  Different tastes, allergies, and preferences? Add up to 5 household members. CartSense remembers what everyone can eat — so you don&apos;t have to.
+                </p>
+
+                <div className="space-y-3 sm:space-y-4 mb-6 sm:mb-8">
+                  {[
+                    "Create a profile for each person",
+                    "Set preferences once, never think about it again",
+                    "Every meal works for everyone",
+                    "One shopping list, no coordination needed",
+                  ].map((item, i) => (
+                    <div key={i} className="flex items-start gap-3">
+                      <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
+                      <span className="text-sm sm:text-base text-gray-700">{item}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <p className="text-sm text-gray-500 mb-4">
+                  Available on Family plan
+                </p>
+
+                <Link
+                  href="/signup"
+                  className="inline-flex items-center gap-2 text-[#8B5CF6] font-semibold hover:underline text-sm sm:text-base"
+                >
+                  Try Family plan free for 7 days
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Who's It For Section */}
+        <section className="px-4 sm:px-6 py-12 sm:py-20 bg-[#f8fafb]">
           <div className="max-w-5xl mx-auto">
             <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 mb-3 sm:mb-4 text-center">
-              Who&apos;s it for?
+              For anyone who wants dinner handled.
             </h2>
             <p className="text-base sm:text-lg text-gray-600 text-center mb-8 sm:mb-12">
-              Anyone who&apos;s tired of the daily food debate.
+              Meals planned. Groceries added. Done.
             </p>
 
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
@@ -831,11 +961,11 @@ export default function Home() {
                 { icon: Baby, title: "Busy parents", desc: "No time to plan, no energy to decide. CartSense handles it." },
                 { icon: Users, title: "Couples", desc: "End the \"what do you want?\" \"I don't know, what do you want?\" loop." },
                 { icon: User, title: "Solo cooks", desc: "Escape the same 3 meals on rotation. Discover new favorites." },
-                { icon: Clock, title: "Meal preppers", desc: "Plan your week in minutes. Batch cooking, simplified." },
-                { icon: Heart, title: "Diet followers", desc: "Keto, low-carb, high-protein — meals that match your goals." },
+                { icon: Clock, title: "Meal preppers", desc: "Plan your week in minutes. Groceries ready when you are." },
+                { icon: Wallet, title: "Budget-conscious", desc: "See real prices before you buy. No surprises at checkout." },
                 { icon: Utensils, title: "Picky households", desc: "Different preferences, one organized list. Everyone wins." },
               ].map((item, i) => (
-                <div key={i} className="bg-gray-50 rounded-2xl p-5 sm:p-6">
+                <div key={i} className="bg-white rounded-2xl p-5 sm:p-6 border border-gray-100">
                   <div className="w-10 h-10 bg-[#4A90E2]/10 rounded-xl flex items-center justify-center mb-3">
                     <item.icon className="w-5 h-5 text-[#4A90E2]" />
                   </div>
@@ -848,14 +978,14 @@ export default function Home() {
         </section>
 
         {/* Pricing */}
-        <section id="pricing" className="px-4 sm:px-6 py-12 sm:py-20 bg-[#f8fafb]">
+        <section id="pricing" className="px-4 sm:px-6 py-12 sm:py-20 bg-white">
           <div className="max-w-6xl mx-auto">
             <div className="text-center mb-8 sm:mb-12">
               <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
-                Start free — upgrade only if you want more
+                Try it free. Keep it if you love it.
               </h2>
               <p className="text-base sm:text-lg text-gray-600">
-                No credit card needed.
+                No credit card needed. Cancel anytime.
               </p>
             </div>
 
@@ -946,7 +1076,7 @@ export default function Home() {
             </div>
 
             <p className="text-center text-gray-600 mt-8 sm:mt-10 text-sm sm:text-base">
-              Join thousands of individuals and families eliminating the grocery debate.
+              Meals planned. Groceries added. Relief delivered.
             </p>
           </div>
         </section>

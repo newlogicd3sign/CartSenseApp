@@ -39,6 +39,10 @@ type Meal = {
     ingredients: Ingredient[];
     steps: string[];
     imageUrl?: string;
+    cookTimeRange?: {
+        min: number;
+        max: number;
+    };
 };
 
 type MealsMeta = {
