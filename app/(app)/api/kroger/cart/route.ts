@@ -1,8 +1,9 @@
 // app/(app)/api/kroger/cart/route.ts
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
-import { searchKrogerProduct, searchAlternativeProduct, type KrogerProductMatch } from "@/lib/kroger";
+import { searchKrogerProduct, searchAlternativeProduct, getKrogerApiStatus, type KrogerProductMatch } from "@/lib/kroger";
 import { isExcludedIngredient } from "@/lib/utils";
+import { KROGER_RATE_LIMITS } from "@/lib/krogerConfig";
 
 const TOKEN_URL = process.env.KROGER_TOKEN_URL ?? "https://api-ce.kroger.com/v1/connect/oauth2/token";
 const API_BASE_URL = process.env.KROGER_API_BASE_URL ?? "https://api-ce.kroger.com/v1";
@@ -141,44 +142,87 @@ export async function POST(request: Request) {
         // Filter out excluded ingredients like water before processing
         const filteredItems = items.filter((item) => !isExcludedIngredient(item.name));
 
+        // Check API status before starting (cart operations are critical)
+        const apiStatus = getKrogerApiStatus();
+        if (apiStatus.circuitBreaker.isOpen) {
+            console.warn(`[CART] Circuit breaker open, cannot process cart`);
+            return NextResponse.json({
+                success: false,
+                error: "API_UNAVAILABLE",
+                message: "Kroger API temporarily unavailable. Please try again in a few minutes.",
+                retryAfterMs: apiStatus.circuitBreaker.cooldownRemainingMs,
+            }, { status: 503 });
+        }
+
+        console.log(`[CART] Processing ${filteredItems.length} items for user ${userId}`);
+
         // Search for each item and enrich with Kroger product data
-        // If the best match is unavailable, search for an alternative
-        const enrichedItems: (EnrichedItem & { itemId: string; count: number; usedAlternative?: boolean })[] = await Promise.all(
-            filteredItems.map(async (item) => {
-                let product = await searchKrogerProduct(item.name, {
-                    locationId: locationId || undefined,
-                });
+        // Process in chunks to avoid overwhelming the API
+        const CHUNK_SIZE = KROGER_RATE_LIMITS.MAX_CONCURRENT_REQUESTS;
+        const enrichedItems: (EnrichedItem & { itemId: string; count: number; usedAlternative?: boolean })[] = [];
 
-                let usedAlternative = false;
+        for (let chunkStart = 0; chunkStart < filteredItems.length; chunkStart += CHUNK_SIZE) {
+            const chunk = filteredItems.slice(chunkStart, chunkStart + CHUNK_SIZE);
 
-                // If product found but not available, try to find an alternative
-                if (product && !product.available) {
-                    console.log(`⚠️ Product "${product.name}" is unavailable, searching for alternative...`);
-                    const alternative = await searchAlternativeProduct(item.name, {
-                        locationId: locationId || undefined,
-                        excludeProductId: product.krogerProductId,
-                    });
+            console.log(`[CART] Processing chunk ${Math.floor(chunkStart / CHUNK_SIZE) + 1}/${Math.ceil(filteredItems.length / CHUNK_SIZE)}`);
 
-                    if (alternative && alternative.available) {
-                        console.log(`✅ Found alternative: "${alternative.name}"`);
-                        product = alternative;
-                        usedAlternative = true;
-                    } else {
-                        console.log(`❌ No available alternative found for "${item.name}"`);
+            const chunkResults = await Promise.all(
+                chunk.map(async (item) => {
+                    try {
+                        let product = await searchKrogerProduct(item.name, {
+                            locationId: locationId || undefined,
+                        });
+
+                        let usedAlternative = false;
+
+                        // If product found but not available, try to find an alternative
+                        if (product && !product.available) {
+                            console.log(`⚠️ Product "${product.name}" is unavailable, searching for alternative...`);
+                            const alternative = await searchAlternativeProduct(item.name, {
+                                locationId: locationId || undefined,
+                                excludeProductId: product.krogerProductId,
+                            });
+
+                            if (alternative && alternative.available) {
+                                console.log(`✅ Found alternative: "${alternative.name}"`);
+                                product = alternative;
+                                usedAlternative = true;
+                            } else {
+                                console.log(`❌ No available alternative found for "${item.name}"`);
+                            }
+                        }
+
+                        return {
+                            itemId: item.id,
+                            originalName: item.name,
+                            quantity: item.quantity,
+                            count: item.count || 1,
+                            found: !!product && product.available,
+                            product: product || undefined,
+                            usedAlternative,
+                        };
+                    } catch (err) {
+                        console.error(`[CART] Error searching for "${item.name}":`, err);
+                        return {
+                            itemId: item.id,
+                            originalName: item.name,
+                            quantity: item.quantity,
+                            count: item.count || 1,
+                            found: false,
+                            product: undefined,
+                            usedAlternative: false,
+                        };
                     }
-                }
+                })
+            );
 
-                return {
-                    itemId: item.id,
-                    originalName: item.name,
-                    quantity: item.quantity,
-                    count: item.count || 1,
-                    found: !!product && product.available,
-                    product: product || undefined,
-                    usedAlternative,
-                };
-            })
-        );
+            enrichedItems.push(...chunkResults);
+
+            // Small delay between chunks to be gentle on the API
+            if (chunkStart + CHUNK_SIZE < filteredItems.length) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+        }
 
         // Filter items that were found and available
         const foundItems = enrichedItems.filter((item) => item.found && item.product);

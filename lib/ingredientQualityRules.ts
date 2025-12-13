@@ -50,6 +50,11 @@ export const CATEGORY_QUALITY_RULES = {
     preferKeywords: ["fresh", "organic", "whole"],
     avoidKeywords: ["in syrup", "candied", "sweetened", "dried sweetened", "juice"],
     notes: "Fresh or frozen, no added sugar"
+  },
+  eggs: {
+    preferKeywords: ["cage free", "free range", "pasture raised", "organic"],
+    avoidKeywords: ["egg substitute", "liquid egg product"],
+    notes: "Fresh eggs, preferably cage-free or better"
   }
 } as const;
 
@@ -904,26 +909,144 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
     matchKeywords: ["vinegar", "apple cider vinegar", "balsamic vinegar", "red wine vinegar"],
     avoidKeywords: ["vinaigrette dressing", "chips"],
     preferAttributes: ["organic", "raw", "unfiltered"]
+  },
+
+  // ========= PANTRY / JUICE / SPICES =========
+  {
+    id: "lemon_juice",
+    canonicalName: "Lemon Juice",
+    category: "fats_oils",
+    krogerDeptHint: "Condiments",
+    matchKeywords: ["lemon juice"],
+    avoidKeywords: ["lemonade", "lemon drink", "lemon tea", "lemon candy"],
+    preferAttributes: ["100%", "pure", "from concentrate", "realemon"],
+    notes: "Bottled lemon juice for cooking"
+  },
+  {
+    id: "lime_juice",
+    canonicalName: "Lime Juice",
+    category: "fats_oils",
+    krogerDeptHint: "Condiments",
+    matchKeywords: ["lime juice"],
+    avoidKeywords: ["limeade", "lime drink", "margarita mix"],
+    preferAttributes: ["100%", "pure", "from concentrate", "realime"],
+    notes: "Bottled lime juice for cooking"
+  },
+  {
+    id: "black_pepper",
+    canonicalName: "Black Pepper",
+    category: "fats_oils",
+    krogerDeptHint: "Spices",
+    matchKeywords: ["black pepper", "ground black pepper", "cracked black pepper"],
+    avoidKeywords: ["lemon pepper", "garlic pepper", "seasoned pepper", "pepper blend", "steak seasoning", "and spices"],
+    preferAttributes: ["ground", "pure", "whole peppercorns"],
+    notes: "Pure black pepper, not seasoning blends"
+  },
+  {
+    id: "salt",
+    canonicalName: "Salt",
+    category: "fats_oils",
+    krogerDeptHint: "Spices",
+    matchKeywords: ["salt", "table salt", "sea salt", "kosher salt"],
+    avoidKeywords: ["seasoned salt", "garlic salt", "onion salt", "salt substitute", "popcorn salt"],
+    preferAttributes: ["iodized", "kosher", "sea salt", "fine"],
+    notes: "Plain salt, not seasoning blends"
+  },
+  {
+    id: "garlic_powder",
+    canonicalName: "Garlic Powder",
+    category: "fats_oils",
+    krogerDeptHint: "Spices",
+    matchKeywords: ["garlic powder"],
+    avoidKeywords: ["garlic salt", "garlic bread seasoning", "garlic pepper"],
+    preferAttributes: ["pure", "granulated"],
+    notes: "Pure garlic powder"
+  },
+  {
+    id: "onion_powder",
+    canonicalName: "Onion Powder",
+    category: "fats_oils",
+    krogerDeptHint: "Spices",
+    matchKeywords: ["onion powder"],
+    avoidKeywords: ["onion salt", "onion soup mix"],
+    preferAttributes: ["pure", "granulated"],
+    notes: "Pure onion powder"
+  },
+  {
+    id: "paprika",
+    canonicalName: "Paprika",
+    category: "fats_oils",
+    krogerDeptHint: "Spices",
+    matchKeywords: ["paprika", "smoked paprika"],
+    avoidKeywords: ["seasoning blend", "rub"],
+    preferAttributes: ["smoked", "hungarian", "sweet"],
+    notes: "Pure paprika"
+  },
+  {
+    id: "cumin",
+    canonicalName: "Cumin",
+    category: "fats_oils",
+    krogerDeptHint: "Spices",
+    matchKeywords: ["cumin", "ground cumin"],
+    avoidKeywords: ["taco seasoning", "chili seasoning"],
+    preferAttributes: ["ground", "whole seeds"],
+    notes: "Pure cumin"
+  },
+  {
+    id: "italian_seasoning",
+    canonicalName: "Italian Seasoning",
+    category: "fats_oils",
+    krogerDeptHint: "Spices",
+    matchKeywords: ["italian seasoning", "italian herbs"],
+    avoidKeywords: ["dressing mix", "pasta sauce seasoning"],
+    preferAttributes: ["blend", "herbs"],
+    notes: "Herb blend for Italian dishes"
+  },
+  {
+    id: "chili_powder",
+    canonicalName: "Chili Powder",
+    category: "fats_oils",
+    krogerDeptHint: "Spices",
+    matchKeywords: ["chili powder"],
+    avoidKeywords: ["chili seasoning packet", "taco seasoning", "chili starter"],
+    preferAttributes: ["pure", "dark"],
+    notes: "Pure chili powder"
+  },
+  {
+    id: "cinnamon",
+    canonicalName: "Cinnamon",
+    category: "fats_oils",
+    krogerDeptHint: "Spices",
+    matchKeywords: ["cinnamon", "ground cinnamon"],
+    avoidKeywords: ["cinnamon sugar", "cinnamon roll", "cinnamon toast"],
+    preferAttributes: ["ground", "ceylon", "sticks"],
+    notes: "Pure cinnamon"
   }
 ];
 
 /**
- * Find matching quality rule for an ingredient name
+ * Find matching quality rule for an ingredient name.
+ * Prefers longer/more specific keyword matches over shorter ones.
+ * E.g., "lemon juice" should match the "lemon_juice" rule, not the "lemon" rule.
  */
 export function findIngredientRule(ingredientName: string): IngredientQualityRule | null {
   const normalized = ingredientName.toLowerCase().trim();
 
+  let bestMatch: { rule: IngredientQualityRule; keywordLength: number } | null = null;
+
   for (const rule of INGREDIENT_QUALITY_RULES) {
     for (const keyword of rule.matchKeywords) {
-      // Only match if ingredient contains keyword, or if keyword exactly equals ingredient
-      // Avoid matching "salt" to "salted butter" just because keyword contains the word
+      // Check if ingredient contains keyword or exactly equals it
       if (normalized.includes(keyword) || normalized === keyword) {
-        return rule;
+        // Prefer longer keyword matches (more specific)
+        if (!bestMatch || keyword.length > bestMatch.keywordLength) {
+          bestMatch = { rule, keywordLength: keyword.length };
+        }
       }
     }
   }
 
-  return null;
+  return bestMatch?.rule ?? null;
 }
 
 /**
@@ -1083,7 +1206,8 @@ export function getIngredientCategory(ingredientName: string): CategoryType | "p
   }
 
   // Fallback keyword matching for common items not in rules
-  const proteinKeywords = ['chicken', 'beef', 'pork', 'turkey', 'fish', 'salmon', 'tuna', 'shrimp', 'meat', 'steak', 'bacon', 'sausage', 'lamb', 'duck', 'tofu', 'tempeh', 'seitan', 'egg'];
+  const proteinKeywords = ['chicken', 'beef', 'pork', 'turkey', 'fish', 'salmon', 'tuna', 'shrimp', 'meat', 'steak', 'bacon', 'sausage', 'lamb', 'duck', 'tofu', 'tempeh', 'seitan'];
+  const eggsKeywords = ['egg', 'eggs'];
   const dairyKeywords = ['milk', 'cheese', 'yogurt', 'cream', 'butter', 'sour cream', 'cottage', 'ricotta', 'mozzarella', 'cheddar', 'parmesan'];
   const produceKeywords = ['lettuce', 'spinach', 'kale', 'tomato', 'onion', 'garlic', 'pepper', 'carrot', 'celery', 'broccoli', 'cauliflower', 'cucumber', 'zucchini', 'squash', 'potato', 'sweet potato', 'mushroom', 'avocado', 'cabbage', 'asparagus', 'corn', 'basil', 'cilantro', 'parsley', 'mint', 'ginger', 'jalapeno', 'salad', 'greens', 'arugula', 'chard'];
   const fruitsKeywords = ['lemon', 'lime', 'orange', 'apple', 'banana', 'berry', 'berries', 'strawberry', 'blueberry', 'raspberry', 'grape', 'melon', 'watermelon', 'cantaloupe', 'mango', 'pineapple', 'peach', 'pear', 'plum', 'cherry', 'kiwi', 'papaya', 'fruit'];
@@ -1092,6 +1216,9 @@ export function getIngredientCategory(ingredientName: string): CategoryType | "p
   const snacksKeywords = ['nut', 'almond', 'walnut', 'cashew', 'pecan', 'pistachio', 'peanut', 'seed', 'chia', 'flax', 'sunflower', 'pumpkin seed', 'dried fruit', 'raisin', 'cranberry', 'chip', 'pretzel', 'popcorn'];
   const beansKeywords = ['bean', 'beans', 'lentil', 'lentils', 'chickpea', 'chickpeas', 'black bean', 'kidney bean', 'pinto bean', 'cannellini', 'navy bean', 'garbanzo', 'edamame', 'pea', 'peas', 'split pea'];
 
+  for (const keyword of eggsKeywords) {
+    if (normalized.includes(keyword)) return 'eggs';
+  }
   for (const keyword of proteinKeywords) {
     if (normalized.includes(keyword)) return 'protein';
   }

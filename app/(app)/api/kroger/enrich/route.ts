@@ -4,8 +4,9 @@
 
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
-import { searchKrogerProduct, searchAlternativeProduct, type KrogerProductMatch } from "@/lib/kroger";
+import { searchKrogerProduct, searchAlternativeProduct, getKrogerApiStatus } from "@/lib/kroger";
 import { isExcludedIngredient } from "@/lib/utils";
+import { KROGER_RATE_LIMITS } from "@/lib/krogerConfig";
 
 type Ingredient = {
     name: string;
@@ -97,75 +98,133 @@ export async function POST(request: Request) {
 
         console.log(`[ENRICH] Enriching ${ingredients.length} ingredients for user ${userId}`);
 
-        // Enrich each ingredient with Kroger product data
-        const enrichedIngredients: EnrichedIngredient[] = await Promise.all(
-            ingredients.map(async (ingredient) => {
-                // Skip excluded ingredients like water
-                if (isExcludedIngredient(ingredient.name)) {
-                    console.log(`[ENRICH] Skipping excluded ingredient: ${ingredient.name}`);
-                    return ingredient;
-                }
+        // Check API status before starting
+        const apiStatus = getKrogerApiStatus();
+        if (apiStatus.circuitBreaker.isOpen) {
+            console.warn(`[ENRICH] Circuit breaker open, returning unenriched ingredients`);
+            return NextResponse.json({
+                success: false,
+                error: "API_UNAVAILABLE",
+                message: "Kroger API temporarily unavailable. Please try again later.",
+                ingredients: ingredients,
+                enrichedCount: 0,
+                totalCount: ingredients.length,
+                retryAfterMs: apiStatus.circuitBreaker.cooldownRemainingMs,
+            });
+        }
 
-                // Skip if already enriched with Kroger data
-                if (ingredient.krogerProductId) {
-                    console.log(`[ENRICH] Already enriched: ${ingredient.name}`);
-                    return ingredient;
-                }
+        // Separate ingredients into those needing enrichment and those to skip
+        const toEnrich: { index: number; ingredient: Ingredient }[] = [];
+        const enrichedIngredients: EnrichedIngredient[] = [...ingredients];
 
-                try {
-                    let product = await searchKrogerProduct(ingredient.name, {
-                        locationId: locationId || undefined,
-                    });
+        for (let i = 0; i < ingredients.length; i++) {
+            const ingredient = ingredients[i];
 
-                    // If product found but not available, try to find an alternative
-                    if (product && !product.available) {
-                        console.log(`[ENRICH] Product "${product.name}" unavailable, searching alternative...`);
-                        const alternative = await searchAlternativeProduct(ingredient.name, {
+            // Skip excluded ingredients like water
+            if (isExcludedIngredient(ingredient.name)) {
+                console.log(`[ENRICH] Skipping excluded ingredient: ${ingredient.name}`);
+                continue;
+            }
+
+            // Skip if already enriched with Kroger data
+            if (ingredient.krogerProductId) {
+                console.log(`[ENRICH] Already enriched: ${ingredient.name}`);
+                continue;
+            }
+
+            toEnrich.push({ index: i, ingredient });
+        }
+
+        console.log(`[ENRICH] ${toEnrich.length} ingredients need enrichment`);
+
+        // Process in chunks to avoid overwhelming the API
+        const CHUNK_SIZE = KROGER_RATE_LIMITS.MAX_CONCURRENT_REQUESTS;
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (let chunkStart = 0; chunkStart < toEnrich.length; chunkStart += CHUNK_SIZE) {
+            const chunk = toEnrich.slice(chunkStart, chunkStart + CHUNK_SIZE);
+
+            console.log(`[ENRICH] Processing chunk ${Math.floor(chunkStart / CHUNK_SIZE) + 1}/${Math.ceil(toEnrich.length / CHUNK_SIZE)}`);
+
+            // Process chunk in parallel (but limited to CHUNK_SIZE concurrent requests)
+            const chunkResults = await Promise.all(
+                chunk.map(async ({ index, ingredient }) => {
+                    try {
+                        let product = await searchKrogerProduct(ingredient.name, {
                             locationId: locationId || undefined,
-                            excludeProductId: product.krogerProductId,
                         });
 
-                        if (alternative && alternative.available) {
-                            console.log(`[ENRICH] Found alternative: "${alternative.name}"`);
-                            product = alternative;
+                        // If product found but not available, try to find an alternative
+                        if (product && !product.available) {
+                            console.log(`[ENRICH] Product "${product.name}" unavailable, searching alternative...`);
+                            const alternative = await searchAlternativeProduct(ingredient.name, {
+                                locationId: locationId || undefined,
+                                excludeProductId: product.krogerProductId,
+                            });
+
+                            if (alternative && alternative.available) {
+                                console.log(`[ENRICH] Found alternative: "${alternative.name}"`);
+                                product = alternative;
+                            }
                         }
+
+                        if (!product) {
+                            console.log(`[ENRICH] No match for: ${ingredient.name}`);
+                            return { index, enriched: null };
+                        }
+
+                        console.log(`[ENRICH] Matched "${ingredient.name}" -> "${product.name}"`);
+
+                        return {
+                            index,
+                            enriched: {
+                                ...ingredient,
+                                krogerProductId: product.krogerProductId,
+                                productName: product.name,
+                                productImageUrl: product.imageUrl,
+                                productSize: product.size,
+                                productAisle: product.aisle,
+                                price: product.price,
+                                soldBy: product.soldBy,
+                                stockLevel: product.stockLevel,
+                                available: product.available,
+                                aisle: ingredient.aisle ?? product.aisle,
+                            } as EnrichedIngredient,
+                        };
+                    } catch (err) {
+                        console.error(`[ENRICH] Error enriching ${ingredient.name}:`, err);
+                        return { index, enriched: null, error: true };
                     }
+                })
+            );
 
-                    if (!product) {
-                        console.log(`[ENRICH] No match for: ${ingredient.name}`);
-                        return ingredient;
-                    }
-
-                    console.log(`[ENRICH] Matched "${ingredient.name}" -> "${product.name}"`);
-
-                    return {
-                        ...ingredient,
-                        krogerProductId: product.krogerProductId,
-                        productName: product.name,
-                        productImageUrl: product.imageUrl,
-                        productSize: product.size,
-                        productAisle: product.aisle,
-                        price: product.price,
-                        soldBy: product.soldBy,
-                        stockLevel: product.stockLevel,
-                        available: product.available,
-                        aisle: ingredient.aisle ?? product.aisle,
-                    };
-                } catch (err) {
-                    console.error(`[ENRICH] Error enriching ${ingredient.name}:`, err);
-                    return ingredient;
+            // Apply results to enrichedIngredients array
+            for (const result of chunkResults) {
+                if (result.enriched) {
+                    enrichedIngredients[result.index] = result.enriched;
+                    successCount++;
+                } else if ('error' in result && result.error) {
+                    errorCount++;
                 }
-            })
-        );
+            }
+
+            // Small delay between chunks to be gentle on the API
+            if (chunkStart + CHUNK_SIZE < toEnrich.length) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+        }
 
         const enrichedCount = enrichedIngredients.filter(i => i.krogerProductId).length;
-        console.log(`[ENRICH] Enriched ${enrichedCount}/${ingredients.length} ingredients`);
+        console.log(`[ENRICH] Enriched ${enrichedCount}/${ingredients.length} ingredients (${successCount} new, ${errorCount} errors)`);
 
         return NextResponse.json({
             success: true,
             ingredients: enrichedIngredients,
             enrichedCount,
             totalCount: ingredients.length,
+            newlyEnriched: successCount,
+            errors: errorCount,
         });
 
     } catch (err) {

@@ -56,6 +56,10 @@ type Meal = {
     ingredients: Ingredient[];
     steps: string[];
     imageUrl?: string;
+    cookTimeRange?: {
+        min: number;
+        max: number;
+    };
 };
 
 type UserPrefs = {
@@ -189,6 +193,15 @@ function normalizeMeal(raw: unknown): Meal {
     const stepsArray = Array.isArray(r.steps) ? r.steps : [];
     const macros = (r.macros as Record<string, unknown>) || {};
 
+    // Normalize cook time range
+    const cookTimeRaw = r.cookTimeRange as Record<string, unknown> | undefined;
+    const cookTimeRange = cookTimeRaw
+        ? {
+            min: Math.max(1, Math.round(normalizeNumber(cookTimeRaw.min, 15))),
+            max: Math.max(1, Math.round(normalizeNumber(cookTimeRaw.max, 30))),
+        }
+        : undefined;
+
     return {
         id: randomUUID(), // Always generate unique ID - don't trust AI-generated IDs
         mealType: safeMealType,
@@ -205,6 +218,7 @@ function normalizeMeal(raw: unknown): Meal {
         ingredients: ingredientsArray.map((ing) => normalizeIngredient(ing)),
         steps: stepsArray.map((s) => normalizeString(s, "")).filter((s) => s.length > 0),
         imageUrl: typeof r.imageUrl === "string" && r.imageUrl.trim().length > 0 ? r.imageUrl.trim() : undefined,
+        cookTimeRange,
     };
 }
 
@@ -584,10 +598,14 @@ ${cookingGuidance}
 ${restrictionsText}
 
 JSON output:
-{"meals":[{"mealType":"breakfast|lunch|dinner|snack","name":"","description":"","servings":N,"macros":{"calories":N,"protein":N,"carbs":N,"fiber":N,"fat":N},"ingredients":[{"name":"display name","quantity":"","grocerySearchTerm":"raw product","preparation":""}],"steps":[""]}]}
+{"meals":[{"mealType":"breakfast|lunch|dinner|snack","name":"","description":"","servings":N,"macros":{"calories":N,"protein":N,"carbs":N,"fiber":N,"fat":N},"cookTimeRange":{"min":N,"max":N},"ingredients":[{"name":"display name","quantity":"","grocerySearchTerm":"raw product","preparation":""}],"steps":[""]}]}
 
 KEY RULES:
 - macros = PER SERVING, not total
+- cookTimeRange = estimated cook time in minutes as a range (min to max) accounting for skill variance
+  - Simple meals: range of 10-15 min (e.g., {"min":15,"max":25})
+  - Moderate meals: range of 15-20 min (e.g., {"min":30,"max":50})
+  - Complex meals: range of 20-30 min (e.g., {"min":45,"max":75})
 - grocerySearchTerm = raw product (no prep words). "diced onion" → "yellow onion"
 - Include seasonings in ingredients
 - description: 1 sentence max

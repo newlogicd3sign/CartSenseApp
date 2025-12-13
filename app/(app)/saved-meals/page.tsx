@@ -50,6 +50,10 @@ type SavedMeal = {
     prompt?: string | null;
     savedAt?: any;
     imageUrl?: string;
+    cookTimeRange?: {
+        min: number;
+        max: number;
+    };
 };
 
 export default function SavedMealsPage() {
@@ -218,6 +222,7 @@ export default function SavedMealsPage() {
                                     mealType={meal.mealType}
                                     macros={meal.macros}
                                     imageUrl={meal.imageUrl}
+                                    cookTimeRange={meal.cookTimeRange}
                                     onClick={() => handleViewMeal(meal.id)}
                                     badge={
                                         <div className="w-5 h-5 bg-[#4A90E2] rounded-full flex items-center justify-center">

@@ -42,6 +42,10 @@ type Meal = {
     ingredients: Ingredient[];
     steps: string[];
     imageUrl?: string;
+    cookTimeRange?: {
+        min: number;
+        max: number;
+    };
 };
 
 type MealsMeta = {
@@ -424,6 +428,7 @@ function MealsPageContent() {
                                     mealType={meal.mealType}
                                     macros={meal.macros}
                                     imageUrl={meal.imageUrl}
+                                    cookTimeRange={meal.cookTimeRange}
                                     onClick={() => router.push(`/meals/${meal.id}?prompt=${encodeURIComponent(displayedPrompt)}`)}
                                     animationDelay={index * 100}
                                     badge={

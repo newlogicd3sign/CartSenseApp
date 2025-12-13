@@ -14,10 +14,14 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CartSense",
-  description: "AI-powered meal planning and grocery shopping",
+  title: "CartSense – AI Meal Planning That Adds Groceries to Your Cart",
+  description: "Tell CartSense what you're craving. Get personalized meals with recipes and ingredients, then add everything to your Kroger cart with one click. Free to start.",
   manifest: "/manifest.json",
-  themeColor: "#10b981",
+  themeColor: "#4A90E2",
+  keywords: ["meal planning", "grocery shopping", "AI meals", "Kroger", "recipe generator", "shopping list", "meal prep", "dinner ideas"],
+  authors: [{ name: "CartSense" }],
+  creator: "CartSense",
+  publisher: "CartSense",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -26,6 +30,32 @@ export const metadata: Metadata = {
   icons: {
     icon: "/icons/icon-192x192.png",
     apple: "/icons/icon-192x192.png",
+  },
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    url: "https://cartsense.app",
+    siteName: "CartSense",
+    title: "CartSense – AI Meal Planning That Adds Groceries to Your Cart",
+    description: "Tell CartSense what you're craving. Get personalized meals with recipes, then add all ingredients to your Kroger cart with one click.",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "CartSense - AI Meal Planning and Grocery Shopping",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "CartSense – AI Meal Planning That Adds Groceries to Your Cart",
+    description: "Tell CartSense what you're craving. Get personalized meals with recipes, then add all ingredients to your Kroger cart with one click.",
+    images: ["/og-image.png"],
+  },
+  robots: {
+    index: true,
+    follow: true,
   },
 };
 
