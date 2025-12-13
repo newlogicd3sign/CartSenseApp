@@ -2,12 +2,19 @@ import { NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { adminDb } from "@/lib/firebaseAdmin";
 
-const PRICE_ID = process.env.STRIPE_PRICE_ID;
+const PRICE_IDS = {
+    individual: process.env.STRIPE_PRICE_ID_INDIVIDUAL || process.env.STRIPE_PRICE_ID,
+    family: process.env.STRIPE_PRICE_ID_FAMILY,
+};
 
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { uid, email } = body as { uid?: string; email?: string };
+        const { uid, email, plan = "individual" } = body as {
+            uid?: string;
+            email?: string;
+            plan?: "individual" | "family";
+        };
 
         if (!uid || !email) {
             return NextResponse.json(
@@ -16,10 +23,11 @@ export async function POST(request: Request) {
             );
         }
 
-        if (!PRICE_ID) {
-            console.error("[STRIPE] Missing STRIPE_PRICE_ID env variable");
+        const priceId = PRICE_IDS[plan];
+        if (!priceId) {
+            console.error(`[STRIPE] Missing price ID for plan: ${plan}`);
             return NextResponse.json(
-                { error: "Stripe not configured" },
+                { error: "Stripe not configured for this plan" },
                 { status: 500 }
             );
         }
@@ -55,7 +63,7 @@ export async function POST(request: Request) {
             payment_method_types: ["card"],
             line_items: [
                 {
-                    price: PRICE_ID,
+                    price: priceId,
                     quantity: 1,
                 },
             ],
@@ -63,10 +71,12 @@ export async function POST(request: Request) {
             cancel_url: `${origin}/upgrade?canceled=true`,
             metadata: {
                 firebaseUid: uid,
+                plan,
             },
             subscription_data: {
                 metadata: {
                     firebaseUid: uid,
+                    plan,
                 },
             },
         });

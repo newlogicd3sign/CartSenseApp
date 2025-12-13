@@ -50,6 +50,7 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 import { Modal } from "@/components/Modal";
 import { StoreSearchModal } from "@/components/StoreSearchModal";
 import { getStoreBrand } from "@/lib/utils";
+import { warmLocationInBackground } from "@/lib/krogerWarm";
 import type { FamilyMember } from "@/types/family";
 
 const ALLERGY_OPTIONS = [
@@ -138,9 +139,12 @@ type UserPrefsDoc = {
     monthlyPromptCount?: number;
     promptPeriodStart?: any;
     isPremium?: boolean;
+    planType?: "free" | "individual" | "family";
 };
 
 const FREE_TIER_MONTHLY_LIMIT = 10;
+const INDIVIDUAL_MONTHLY_LIMIT = 1000;
+const FAMILY_MONTHLY_LIMIT = 1500;
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 type UserLocation = {
@@ -473,6 +477,9 @@ function AccountPageContent() {
                     : { defaultKrogerLocationId: loc.krogerLocationId }
             );
 
+            // Warm cache for the new default location in background
+            warmLocationInBackground(loc.krogerLocationId);
+
             showToast("Default store updated.", "success");
         } catch (err) {
             console.error("Error setting default location", err);
@@ -588,6 +595,9 @@ function AccountPageContent() {
                 ? { ...prev, defaultKrogerLocationId: store.locationId }
                 : { defaultKrogerLocationId: store.locationId }
         );
+
+        // Warm cache for the new store in background
+        warmLocationInBackground(store.locationId);
 
         showToast(
             isFirstLocation
@@ -760,11 +770,15 @@ function AccountPageContent() {
         setMemberCustomSensitivity("");
     };
 
-    const MAX_HOUSEHOLD_MEMBERS = 5;
+    const MAX_HOUSEHOLD_MEMBERS = userDoc?.planType === "family" ? 5 : 1;
 
     const handleOpenAddMember = () => {
         if (familyMembers.length >= MAX_HOUSEHOLD_MEMBERS) {
-            showToast(`You can add up to ${MAX_HOUSEHOLD_MEMBERS} household members.`, "error");
+            if (userDoc?.planType !== "family") {
+                showToast("Upgrade to Family & Friends plan to add more members.", "error");
+            } else {
+                showToast(`You can add up to ${MAX_HOUSEHOLD_MEMBERS} household members.`, "error");
+            }
             return;
         }
         setEditingMember(null);
@@ -1132,50 +1146,71 @@ function AccountPageContent() {
             {/* Content */}
             <div className="px-6 py-6">
                 <div className="max-w-3xl mx-auto space-y-4">
-                    {/* Premium Subscription Card */}
-                    {userDoc?.isPremium && (
-                        <div className="bg-gradient-to-r from-violet-50 to-purple-50 rounded-2xl border border-violet-200 overflow-hidden">
-                            <div className="px-5 py-4 border-b border-violet-200">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 bg-violet-100 rounded-xl flex items-center justify-center">
-                                        <Sparkles className="w-5 h-5 text-violet-600" />
-                                    </div>
-                                    <div>
-                                        <h2 className="font-medium text-violet-900">Premium Subscription</h2>
-                                        <p className="text-xs text-violet-600">You have full access to all features</p>
+                    {/* Premium Usage Card */}
+                    {userDoc?.isPremium && (() => {
+                        const premiumLimit = userDoc?.planType === "family" ? FAMILY_MONTHLY_LIMIT : INDIVIDUAL_MONTHLY_LIMIT;
+                        const planLabel = userDoc?.planType === "family" ? "Family & Friends" : "Individual";
+                        let monthlyCount = userDoc?.monthlyPromptCount ?? 0;
+                        let daysUntilReset = 30;
+
+                        if (userDoc?.promptPeriodStart) {
+                            const startDate = typeof userDoc.promptPeriodStart.toDate === "function"
+                                ? userDoc.promptPeriodStart.toDate()
+                                : new Date(userDoc.promptPeriodStart);
+                            const now = new Date();
+
+                            if (now.getTime() - startDate.getTime() >= THIRTY_DAYS_MS) {
+                                monthlyCount = 0;
+                                daysUntilReset = 30;
+                            } else {
+                                const resetDate = new Date(startDate.getTime() + THIRTY_DAYS_MS);
+                                daysUntilReset = Math.max(0, Math.ceil((resetDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)));
+                            }
+                        }
+
+                        const usagePercent = Math.min((monthlyCount / premiumLimit) * 100, 100);
+                        const remaining = premiumLimit - monthlyCount;
+
+                        return (
+                            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                                <div className="px-5 py-4 border-b border-gray-100">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center">
+                                            <Zap className="w-5 h-5 text-purple-500" />
+                                        </div>
+                                        <div>
+                                            <h2 className="font-medium text-gray-900">Monthly Usage</h2>
+                                            <p className="text-xs text-gray-500">{planLabel} plan generations</p>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            <div className="px-5 py-4">
-                                <div className="flex items-center gap-2 mb-4">
-                                    <CheckCircle className="w-5 h-5 text-emerald-500" />
-                                    <span className="text-sm text-violet-800">Your subscription is active</span>
+                                <div className="px-5 py-4">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <span className="text-sm text-gray-700">Meal generations used</span>
+                                        <span className="text-sm font-medium text-gray-900">
+                                            {monthlyCount.toLocaleString()} / {premiumLimit.toLocaleString()}
+                                        </span>
+                                    </div>
+                                    <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                                        <div
+                                            className={`h-full rounded-full transition-all ${
+                                                usagePercent >= 100
+                                                    ? "bg-red-500"
+                                                    : usagePercent >= 80
+                                                    ? "bg-amber-500"
+                                                    : "bg-purple-500"
+                                            }`}
+                                            style={{ width: `${usagePercent}%` }}
+                                        />
+                                    </div>
+                                    <p className="text-sm text-gray-500 mt-3">
+                                        {remaining.toLocaleString()} generation{remaining !== 1 ? "s" : ""} remaining. Resets in {daysUntilReset} day{daysUntilReset !== 1 ? "s" : ""}.
+                                    </p>
                                 </div>
-
-                                <button
-                                    onClick={() => void handleManageSubscription()}
-                                    disabled={loadingPortal}
-                                    className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 text-white rounded-xl text-sm font-medium hover:bg-violet-700 transition-colors disabled:opacity-70"
-                                >
-                                    {loadingPortal ? (
-                                        <>
-                                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                            <span>Loading...</span>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <CreditCard className="w-4 h-4" />
-                                            <span>Manage Subscription</span>
-                                        </>
-                                    )}
-                                </button>
-                                <p className="text-xs text-violet-500 mt-3">
-                                    Update payment method, view invoices, or cancel subscription
-                                </p>
                             </div>
-                        </div>
-                    )}
+                        );
+                    })()}
 
                     {/* Usage Card - Free Tier */}
                     {!userDoc?.isPremium && (() => {
@@ -1670,7 +1705,7 @@ function AccountPageContent() {
                                 onClick={handleOpenAddMember}
                                 disabled={familyMembers.length >= MAX_HOUSEHOLD_MEMBERS}
                                 className="w-9 h-9 flex items-center justify-center rounded-xl bg-purple-500 hover:bg-purple-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                title={familyMembers.length >= MAX_HOUSEHOLD_MEMBERS ? `Maximum ${MAX_HOUSEHOLD_MEMBERS} members` : "Add member"}
+                                title={familyMembers.length >= MAX_HOUSEHOLD_MEMBERS ? (userDoc?.planType !== "family" ? "Upgrade to add more members" : `Maximum ${MAX_HOUSEHOLD_MEMBERS} members`) : "Add member"}
                             >
                                 <Plus className="w-5 h-5 text-white" />
                             </button>
@@ -1951,6 +1986,51 @@ function AccountPageContent() {
                         onSetDefault={handleSetDefault}
                         onRemoveStore={handleRemoveStore}
                     />
+
+                    {/* Premium Subscription Card */}
+                    {userDoc?.isPremium && (
+                        <div className="bg-gradient-to-r from-violet-50 to-purple-50 rounded-2xl border border-violet-200 overflow-hidden">
+                            <div className="px-5 py-4 border-b border-violet-200">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-violet-100 rounded-xl flex items-center justify-center">
+                                        <Sparkles className="w-5 h-5 text-violet-600" />
+                                    </div>
+                                    <div>
+                                        <h2 className="font-medium text-violet-900">Premium Subscription</h2>
+                                        <p className="text-xs text-violet-600">You have full access to all features</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="px-5 py-4">
+                                <div className="flex items-center gap-2 mb-4">
+                                    <CheckCircle className="w-5 h-5 text-emerald-500" />
+                                    <span className="text-sm text-violet-800">Your subscription is active</span>
+                                </div>
+
+                                <button
+                                    onClick={() => void handleManageSubscription()}
+                                    disabled={loadingPortal}
+                                    className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 text-white rounded-xl text-sm font-medium hover:bg-violet-700 transition-colors disabled:opacity-70"
+                                >
+                                    {loadingPortal ? (
+                                        <>
+                                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            <span>Loading...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <CreditCard className="w-4 h-4" />
+                                            <span>Manage Subscription</span>
+                                        </>
+                                    )}
+                                </button>
+                                <p className="text-xs text-violet-500 mt-3">
+                                    Update payment method, view invoices, or cancel subscription
+                                </p>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Password & Security Card */}
                     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">

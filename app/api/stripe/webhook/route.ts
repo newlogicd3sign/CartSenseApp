@@ -100,13 +100,16 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 
     // The subscription will be activated via subscription.created/updated event
     // But we can also set premium here as a safety measure
+    const plan = session.metadata?.plan || "individual";
     const userRef = adminDb.collection("users").doc(firebaseUid);
     await userRef.set(
         {
             isPremium: true,
-            planType: "premium",
+            planType: plan,
             stripeSubscriptionId: session.subscription,
             premiumSince: new Date(),
+            monthlyPromptCount: 0,
+            promptPeriodStart: new Date(),
         },
         { merge: true }
     );
@@ -136,8 +139,9 @@ async function handleSubscriptionChange(subscription: Stripe.Subscription) {
 
 async function updateUserSubscription(uid: string, subscription: Stripe.Subscription) {
     const isActive = subscription.status === "active" || subscription.status === "trialing";
+    const plan = subscription.metadata?.plan || "individual";
 
-    console.log("[STRIPE WEBHOOK] Updating subscription for user:", uid, "active:", isActive);
+    console.log("[STRIPE WEBHOOK] Updating subscription for user:", uid, "active:", isActive, "plan:", plan);
 
     // Get period end from the first subscription item
     const periodEnd = subscription.items?.data?.[0]?.current_period_end;
@@ -146,7 +150,7 @@ async function updateUserSubscription(uid: string, subscription: Stripe.Subscrip
     await userRef.set(
         {
             isPremium: isActive,
-            planType: isActive ? "premium" : "free",
+            planType: isActive ? plan : "free",
             stripeSubscriptionId: subscription.id,
             stripeSubscriptionStatus: subscription.status,
             ...(periodEnd && { subscriptionCurrentPeriodEnd: new Date(periodEnd * 1000) }),
@@ -157,6 +161,7 @@ async function updateUserSubscription(uid: string, subscription: Stripe.Subscrip
 
 async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
     const firebaseUid = subscription.metadata?.firebaseUid;
+    const previousPlan = subscription.metadata?.plan || "individual";
 
     let uid = firebaseUid;
 
@@ -173,14 +178,16 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
         return;
     }
 
-    console.log("[STRIPE WEBHOOK] Subscription deleted for user:", uid);
+    console.log("[STRIPE WEBHOOK] Subscription deleted for user:", uid, "previous plan:", previousPlan);
 
     const userRef = adminDb.collection("users").doc(uid);
     await userRef.set(
         {
             isPremium: false,
             planType: "free",
+            previousPlanType: previousPlan,
             stripeSubscriptionStatus: "canceled",
+            canceledAt: new Date(),
         },
         { merge: true }
     );
