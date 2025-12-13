@@ -39,7 +39,8 @@ import {
     X,
     RefreshCw,
     PencilRuler,
-    Drumstick,
+    Ham,
+    Egg,
     Milk,
     Leaf,
     Cookie,
@@ -912,7 +913,9 @@ export default function SavedMealDetailPage() {
                                                     const category = getIngredientCategory(ing.name);
                                                     switch (category) {
                                                         case 'protein':
-                                                            return <Drumstick className="w-6 h-6 text-red-400" />;
+                                                            return <Ham className="w-6 h-6 text-red-400" />;
+                                                        case 'eggs':
+                                                            return <Egg className="w-6 h-6 text-amber-400" />;
                                                         case 'dairy':
                                                             return <Milk className="w-6 h-6 text-blue-400" />;
                                                         case 'produce':
@@ -1089,7 +1092,9 @@ export default function SavedMealDetailPage() {
                                                     const category = getIngredientCategory(ing.name);
                                                     switch (category) {
                                                         case 'protein':
-                                                            return <Drumstick className="w-16 h-16 text-red-400" />;
+                                                            return <Ham className="w-16 h-16 text-red-400" />;
+                                                        case 'eggs':
+                                                            return <Egg className="w-16 h-16 text-amber-400" />;
                                                         case 'dairy':
                                                             return <Milk className="w-16 h-16 text-blue-400" />;
                                                         case 'produce':

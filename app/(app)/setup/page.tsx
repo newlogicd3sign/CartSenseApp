@@ -10,6 +10,7 @@ import Image from "next/image";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
 import { getRandomAccentColor, getStoreBrand, type AccentColor } from "@/lib/utils";
 import { useToast } from "@/components/Toast";
+import { warmLocationInBackground } from "@/lib/krogerWarm";
 
 const ALLERGY_OPTIONS = [
     "Dairy",
@@ -418,6 +419,9 @@ function SetupPageContent() {
             await setDoc(userRef, {
                 defaultKrogerLocationId: store.locationId,
             }, { merge: true });
+
+            // Warm cache for the new store in background
+            warmLocationInBackground(store.locationId);
 
             setSelectedStore(store);
         } catch (err) {

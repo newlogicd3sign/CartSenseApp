@@ -102,6 +102,50 @@ export const cleanupExpiredMealImageCache = onSchedule(
     });
 
 /**
+ * Scheduled function to clean up expired rate limit documents.
+ * Runs every hour to delete expired rate limit windows.
+ */
+export const cleanupExpiredRateLimits = onSchedule(
+    { schedule: "every 1 hours", timeZone: "America/New_York" },
+    async (_event: ScheduledEvent) => {
+        const now = admin.firestore.Timestamp.now();
+        let totalDeleted = 0;
+        let hasMore = true;
+
+        console.log(`Starting rate limit cleanup at ${now.toDate().toISOString()}`);
+
+        while (hasMore) {
+            const snap = await db
+                .collection("krogerRateLimits")
+                .where("expiresAt", "<", now)
+                .limit(BATCH_SIZE)
+                .get();
+
+            if (snap.empty) {
+                hasMore = false;
+                break;
+            }
+
+            const batch = db.batch();
+            snap.docs.forEach((doc) => batch.delete(doc.ref));
+            await batch.commit();
+
+            totalDeleted += snap.size;
+            console.log(`Deleted batch of ${snap.size} expired rate limit docs`);
+
+            if (snap.size < BATCH_SIZE) {
+                hasMore = false;
+            }
+        }
+
+        if (totalDeleted > 0) {
+            console.log(`Rate limit cleanup complete: deleted ${totalDeleted} expired docs`);
+        } else {
+            console.log("Rate limit cleanup complete: no expired docs to delete");
+        }
+    });
+
+/**
  * HTTP-callable function to manually trigger cache cleanup.
  * Useful for testing or manual maintenance.
  */

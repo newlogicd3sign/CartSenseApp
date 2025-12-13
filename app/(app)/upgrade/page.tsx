@@ -13,12 +13,15 @@ import {
     ShoppingCart,
     Zap,
     ArrowLeft,
+    Users,
 } from "lucide-react";
 
-const features = [
+type PlanType = "individual" | "family";
+
+const getFeatures = (plan: PlanType) => [
     {
         icon: MessageSquare,
-        title: "1,000 AI Chat Messages",
+        title: plan === "family" ? "1,500 AI Chat Messages" : "1,000 AI Chat Messages",
         description: "Customize your meals with unlimited AI conversations",
     },
     {
@@ -43,10 +46,36 @@ const features = [
     },
 ];
 
+const plans = [
+    {
+        id: "individual" as PlanType,
+        name: "Individual",
+        price: "$9.99",
+        description: "Perfect for single users",
+        highlight: false,
+        features: null,
+    },
+    {
+        id: "family" as PlanType,
+        name: "Family & Friends",
+        price: "$14.99",
+        description: "For the whole household",
+        highlight: true,
+        features: [
+            "Up to 5 members",
+            "Diet instructions per member",
+            "Toggle members on/off",
+            "One unified grocery list",
+            "Plus 500 extra prompts"
+        ],
+    },
+];
+
 export default function UpgradePage() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [loading, setLoading] = useState(false);
+    const [selectedPlan, setSelectedPlan] = useState<PlanType>("individual");
     const [user, setUser] = useState<{ uid: string; email: string | null } | null>(null);
     const canceled = searchParams.get("canceled") === "true";
 
@@ -70,6 +99,7 @@ export default function UpgradePage() {
                 body: JSON.stringify({
                     uid: user.uid,
                     email: user.email,
+                    plan: selectedPlan,
                 }),
             });
 
@@ -124,17 +154,70 @@ export default function UpgradePage() {
                     </p>
                 </div>
 
-                {/* Pricing card */}
+                {/* Plan Selection */}
+                <div className="space-y-3 mb-6">
+                    {plans.map((plan) => (
+                        <button
+                            key={plan.id}
+                            onClick={() => setSelectedPlan(plan.id)}
+                            className={`relative w-full p-4 rounded-xl border-2 transition-all text-left ${
+                                selectedPlan === plan.id
+                                    ? "border-violet-600 bg-violet-50"
+                                    : "border-gray-200 bg-white hover:border-gray-300"
+                            }`}
+                        >
+                            {plan.highlight && (
+                                <span className="absolute -top-2.5 left-4 px-2 py-0.5 bg-violet-600 text-white text-xs font-medium rounded-full">
+                                    Best Value
+                                </span>
+                            )}
+                            <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        {plan.id === "family" ? (
+                                            <Users className="w-4 h-4 text-violet-600" />
+                                        ) : (
+                                            <Sparkles className="w-4 h-4 text-violet-600" />
+                                        )}
+                                        <span className="font-semibold text-gray-900">{plan.name}</span>
+                                    </div>
+                                    <p className="text-xs text-gray-500 mb-2">{plan.description}</p>
+                                    {plan.features && (
+                                        <ul className="space-y-1">
+                                            {plan.features.map((feature, idx) => (
+                                                <li key={idx} className="flex items-center gap-2 text-xs text-gray-600">
+                                                    <Check className="w-3 h-3 text-green-500 flex-shrink-0" />
+                                                    {feature}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                </div>
+                                <div className="text-right flex-shrink-0 ml-4">
+                                    <div className="flex items-baseline gap-0.5">
+                                        <span className="text-2xl font-bold text-gray-900">{plan.price}</span>
+                                        <span className="text-gray-500 text-sm">/mo</span>
+                                    </div>
+                                    {selectedPlan === plan.id && (
+                                        <div className="mt-1 flex justify-end">
+                                            <div className="w-5 h-5 bg-violet-600 rounded-full flex items-center justify-center">
+                                                <Check className="w-3 h-3 text-white" />
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </button>
+                    ))}
+                </div>
+
+                {/* Features card */}
                 <div className="bg-white rounded-2xl shadow-lg shadow-violet-100 border border-violet-100 p-6 mb-8">
-                    <div className="flex items-baseline gap-1 mb-2">
-                        <span className="text-4xl font-bold text-gray-900">$9.99</span>
-                        <span className="text-gray-500">/month</span>
-                    </div>
-                    <p className="text-sm text-gray-500 mb-6">Cancel anytime</p>
+                    <p className="text-sm text-gray-500 mb-4">All plans include:</p>
 
                     {/* Features list */}
                     <div className="space-y-4">
-                        {features.map((feature, index) => {
+                        {getFeatures(selectedPlan).map((feature, index) => {
                             const Icon = feature.icon;
                             return (
                                 <div key={index} className="flex items-start gap-3">

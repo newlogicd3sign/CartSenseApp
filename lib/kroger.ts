@@ -14,6 +14,10 @@ import {
     calculateRelevanceScore,
     type ProductCandidate,
 } from "./productSelectionService";
+import { queueKrogerRequest, getKrogerQueueStats } from "./krogerQueue";
+import { fetchWithRetry, getCircuitBreakerStatus } from "./krogerRetry";
+import { canMakeRequest, recordRequest } from "./krogerRateLimiter";
+import { QUEUE_PRIORITY, createKrogerError } from "./krogerConfig";
 
 // ✅ Defaults for Kroger api-ce, overridable via env
 const TOKEN_URL =
@@ -85,6 +89,68 @@ async function getKrogerToken(): Promise<string> {
     };
 
     return json.access_token;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Protected Kroger API Fetch (with queue, rate limiter, and retry)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Make a protected Kroger API request with:
+ * 1. Queue for concurrency control
+ * 2. Rate limit check
+ * 3. Retry with exponential backoff
+ * 4. Circuit breaker protection
+ */
+async function protectedKrogerFetch(
+    url: string | URL,
+    options?: RequestInit,
+    priority: number = QUEUE_PRIORITY.ENRICH
+): Promise<Response> {
+    return queueKrogerRequest(async () => {
+        // Check circuit breaker first
+        const circuitStatus = getCircuitBreakerStatus();
+        if (circuitStatus.isOpen) {
+            throw createKrogerError(
+                "CIRCUIT_OPEN",
+                `Circuit breaker open - ${circuitStatus.cooldownRemainingMs}ms remaining`,
+                circuitStatus.cooldownRemainingMs
+            );
+        }
+
+        // Check rate limit
+        const rateLimitCheck = await canMakeRequest();
+        if (!rateLimitCheck.allowed) {
+            console.warn(
+                `⚠️ Rate limit check failed: ${rateLimitCheck.currentSecond}/${rateLimitCheck.limitSecond}/sec, ${rateLimitCheck.currentHour}/${rateLimitCheck.limitHour}/hour`
+            );
+            throw createKrogerError(
+                "RATE_LIMITED",
+                `Pre-flight rate limit check failed`,
+                rateLimitCheck.retryAfterMs
+            );
+        }
+
+        // Make the request with retry logic
+        const response = await fetchWithRetry(url, options);
+
+        // Record successful request
+        recordRequest().catch((err) =>
+            console.error("Failed to record rate limit:", err)
+        );
+
+        return response;
+    }, priority);
+}
+
+/**
+ * Get Kroger API health status (for monitoring/debugging)
+ */
+export function getKrogerApiStatus() {
+    return {
+        queue: getKrogerQueueStats(),
+        circuitBreaker: getCircuitBreakerStatus(),
+    };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -279,6 +345,26 @@ function buildFallbackSearchTerm(original: string): string | null {
 // Transform Kroger API response to cache format
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Select the best (largest) image URL from Kroger image sizes array.
+ * Kroger provides: thumbnail, small, medium, large, xlarge (not always in order)
+ */
+function selectBestImageUrl(images?: KrogerProduct["images"]): string | null {
+    const sizes = images?.[0]?.sizes;
+    if (!sizes || sizes.length === 0) return null;
+
+    // Priority order: largest to smallest
+    const sizePreference = ["xlarge", "large", "medium", "small", "thumbnail"];
+
+    for (const preferredSize of sizePreference) {
+        const match = sizes.find(s => s.size?.toLowerCase() === preferredSize);
+        if (match?.url) return match.url;
+    }
+
+    // Fallback: return first available URL
+    return sizes[0]?.url ?? null;
+}
+
 function krogerProductToCached(product: KrogerProduct): CachedKrogerProduct {
     const item = product.items?.[0];
 
@@ -295,12 +381,7 @@ function krogerProductToCached(product: KrogerProduct): CachedKrogerProduct {
     }
 
     // Get best image URL
-    let imageUrl: string | null = null;
-    if (product.images?.[0]?.sizes) {
-        const sizes = product.images[0].sizes;
-        // Prefer larger images
-        imageUrl = sizes[sizes.length - 1]?.url ?? sizes[0]?.url ?? null;
-    }
+    const imageUrl = selectBestImageUrl(product.images);
 
     const { available, stockLevel } = isProductAvailable(product);
 
@@ -446,14 +527,23 @@ export async function searchKrogerProduct(
             params.append("filter.fulfillment", "ais");
         }
 
-        const res = await fetch(`${API_BASE_URL}/products?${params.toString()}`, {
-            method: "GET",
-            headers: {
-                Authorization: `Bearer ${token}`,
-                Accept: "application/json",
-            },
-            next: { revalidate: 60 * 60 * 8 },
-        });
+        let res: Response;
+        try {
+            res = await protectedKrogerFetch(
+                `${API_BASE_URL}/products?${params.toString()}`,
+                {
+                    method: "GET",
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        Accept: "application/json",
+                    },
+                },
+                QUEUE_PRIORITY.ENRICH
+            );
+        } catch (error) {
+            console.error("Kroger search error (protected):", error);
+            return { products: [], match: null };
+        }
 
         if (!res.ok) {
             const text = await res.text();
@@ -513,9 +603,7 @@ export async function searchKrogerProduct(
             }
         }
 
-        // Prefer larger images (last in sizes array)
-        const imageSizes = chosen.images?.[0]?.sizes;
-        const imageUrl = imageSizes?.[imageSizes.length - 1]?.url ?? imageSizes?.[0]?.url ?? undefined;
+        const imageUrl = selectBestImageUrl(chosen.images) ?? undefined;
 
         const soldBy = item?.soldBy?.toUpperCase() === "WEIGHT" ? "WEIGHT" as const : "UNIT" as const;
 
@@ -644,14 +732,23 @@ export async function searchAlternativeProduct(
         params.append("filter.fulfillment", "ais");
     }
 
-    const res = await fetch(`${API_BASE_URL}/products?${params.toString()}`, {
-        method: "GET",
-        headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/json",
-        },
-        next: { revalidate: 60 * 60 * 8 },
-    });
+    let res: Response;
+    try {
+        res = await protectedKrogerFetch(
+            `${API_BASE_URL}/products?${params.toString()}`,
+            {
+                method: "GET",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    Accept: "application/json",
+                },
+            },
+            QUEUE_PRIORITY.ENRICH
+        );
+    } catch (error) {
+        console.error("Kroger alternative search error (protected):", error);
+        return null;
+    }
 
     if (!res.ok) {
         console.error("Kroger alternative search error:", res.status);
@@ -704,9 +801,7 @@ export async function searchAlternativeProduct(
     const { available, stockLevel } = isProductAvailable(chosen);
     const item = chosen.items?.[0];
 
-    // Prefer larger images (last in sizes array)
-    const altImageSizes = chosen.images?.[0]?.sizes;
-    const imageUrl = altImageSizes?.[altImageSizes.length - 1]?.url ?? altImageSizes?.[0]?.url ?? undefined;
+    const imageUrl = selectBestImageUrl(chosen.images) ?? undefined;
 
     let priceValue: number | undefined;
     if (item?.price) {
@@ -805,14 +900,23 @@ export async function searchKrogerProducts(
         params.append("filter.fulfillment", "ais");
     }
 
-    const res = await fetch(`${API_BASE_URL}/products?${params.toString()}`, {
-        method: "GET",
-        headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/json",
-        },
-        next: { revalidate: 60 * 60 * 8 },
-    });
+    let res: Response;
+    try {
+        res = await protectedKrogerFetch(
+            `${API_BASE_URL}/products?${params.toString()}`,
+            {
+                method: "GET",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    Accept: "application/json",
+                },
+            },
+            QUEUE_PRIORITY.ENRICH
+        );
+    } catch (error) {
+        console.error("Kroger multi-product search error (protected):", error);
+        return [];
+    }
 
     if (!res.ok) {
         console.error("Kroger multi-product search error:", res.status);
@@ -859,9 +963,7 @@ export async function searchKrogerProducts(
         const { available, stockLevel } = isProductAvailable(product);
         const item = product.items?.[0];
 
-        // Prefer larger images (last in sizes array)
-        const prodImageSizes = product.images?.[0]?.sizes;
-        const imageUrl = prodImageSizes?.[prodImageSizes.length - 1]?.url ?? prodImageSizes?.[0]?.url ?? undefined;
+        const imageUrl = selectBestImageUrl(product.images) ?? undefined;
 
         let priceValue: number | undefined;
         if (item?.price) {
@@ -922,14 +1024,23 @@ export async function searchKrogerLocationsByZip(
     params.append("filter.zipCode.near", trimmed);
     params.append("filter.limit", String(limit));
 
-    const res = await fetch(`${API_BASE_URL}/locations?${params.toString()}`, {
-        method: "GET",
-        headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/json",
-        },
-        next: { revalidate: 60 * 10 },
-    });
+    let res: Response;
+    try {
+        res = await protectedKrogerFetch(
+            `${API_BASE_URL}/locations?${params.toString()}`,
+            {
+                method: "GET",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    Accept: "application/json",
+                },
+            },
+            QUEUE_PRIORITY.LOCATION
+        );
+    } catch (error) {
+        console.error("Kroger locations error (protected):", error);
+        return [];
+    }
 
     if (!res.ok) {
         const text = await res.text();

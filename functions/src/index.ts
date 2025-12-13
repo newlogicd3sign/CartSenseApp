@@ -8,5 +8,12 @@ admin.initializeApp();
 export {
     cleanupExpiredKrogerCache,
     cleanupExpiredMealImageCache,
+    cleanupExpiredRateLimits,
     manualCacheCleanup,
 } from "./cleanupKrogerCache";
+
+export {
+    warmKrogerCache,
+    manualCacheWarm,
+    warmLocationOnDemand,
+} from "./warmKrogerCache";
