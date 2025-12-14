@@ -342,33 +342,6 @@ export default function PromptPage() {
                         </div>
                     )}
 
-                    {/* View Previous Meals Card */}
-                    {hasStoredMeals && (
-                        <button
-                            onClick={() => router.push("/meals")}
-                            className={`w-full bg-white border border-gray-200 rounded-2xl p-4 mb-6 flex items-center justify-between hover:border-gray-300 hover:shadow-sm transition-all ${animateFromSetup ? "animate-content-after-greeting" : ""}`}
-                        >
-                            <div className="flex items-center gap-3">
-                                <div
-                                    className="w-10 h-10 rounded-xl flex items-center justify-center"
-                                    style={{ backgroundColor: `${accentColor.primary}15` }}
-                                >
-                                    <UtensilsCrossed className="w-5 h-5" style={{ color: accentColor.primary }} />
-                                </div>
-                                <div className="text-left">
-                                    <h3 className="font-medium text-gray-900 text-sm">View Previous Meals</h3>
-                                    <p className="text-xs text-gray-500">
-                                        {storedMealsCount} meal{storedMealsCount !== 1 ? "s" : ""} generated
-                                        {storedPrompt && (
-                                            <span className="text-gray-400"> · {storedPrompt.length > 30 ? storedPrompt.slice(0, 30) + "..." : storedPrompt}</span>
-                                        )}
-                                    </p>
-                                </div>
-                            </div>
-                            <ChevronRight className="w-5 h-5 text-gray-400" />
-                        </button>
-                    )}
-
                     {/* Pantry Mode Card */}
                     <button
                         onClick={() => setPantryMode(!pantryMode)}
@@ -503,8 +476,27 @@ export default function PromptPage() {
                         </p>
                     </div>
 
+                    {/* View Stored Meals (compact) */}
+                    {hasStoredMeals && (
+                        <div className={`mt-4 flex justify-start ${animateFromSetup ? "animate-content-after-greeting" : ""}`}>
+                            <button
+                                onClick={() => router.push("/meals")}
+                                className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-gray-800 shadow-sm transition-all bg-white border border-gray-200 hover:border-gray-300 hover:shadow"
+                            >
+                                <div
+                                    className="w-7 h-7 rounded-md flex items-center justify-center"
+                                    style={{ backgroundColor: `${accentColor.primary}15` }}
+                                >
+                                    <UtensilsCrossed className="w-4 h-4" style={{ color: accentColor.primary }} />
+                                </div>
+                                <span>View previous meals — {storedMealsCount} meal{storedMealsCount !== 1 ? "s" : ""}</span>
+                                <ChevronRight className="w-4 h-4 text-gray-400 ml-auto" />
+                            </button>
+                        </div>
+                    )}
+
                     {/* Quick Prompt Chips */}
-                    <div className={`grid grid-cols-2 gap-2 mt-4 ${animateFromSetup ? "animate-content-after-greeting" : ""}`}>
+                    <div className={`grid grid-cols-2 gap-2 mt-3 ${animateFromSetup ? "animate-content-after-greeting" : ""}`}>
                         {(pantryMode ? pantryQuickPrompts : quickPrompts).map((qp, index) => (
                             <button
                                 key={qp.label}
