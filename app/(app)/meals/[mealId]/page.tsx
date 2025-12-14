@@ -50,6 +50,7 @@ import {
     FlaskConical,
     Apple,
     Clock,
+    Home,
 } from "lucide-react";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { useToast } from "@/components/Toast";
@@ -156,6 +157,7 @@ type MealsMeta = {
     usedDoctorInstructions?: boolean;
     blockedIngredientsFromDoctor?: string[];
     blockedGroupsFromDoctor?: string[];
+    pantryMode?: boolean;
 };
 
 type StoredMealsPayload =
@@ -306,10 +308,12 @@ function MealDetailPageContent() {
         setHasLoggedView(true);
     }, [user, meal, hasLoggedView]);
 
-    // Scroll to top when the page loads to ensure proper slide-up effect on mobile
+    // Scroll to top only on initial page load (not on meal updates)
+    const hasScrolledToTop = useRef(false);
     useEffect(() => {
-        if (!loadingMeal && meal) {
+        if (!loadingMeal && meal && !hasScrolledToTop.current) {
             window.scrollTo(0, 0);
+            hasScrolledToTop.current = true;
         }
     }, [loadingMeal, meal]);
 
@@ -344,9 +348,10 @@ function MealDetailPageContent() {
         }
     }, [threadMessages]);
 
-    // Lazy load Kroger enrichment when viewing meal (only if Kroger is connected)
+    // Lazy load Kroger enrichment when viewing meal (only if Kroger is connected and not in pantry mode)
     useEffect(() => {
-        if (!user || !meal || !krogerConnected || !krogerStoreSet || hasEnrichedKroger) return;
+        // Skip Kroger enrichment in pantry mode - user is cooking with what they have
+        if (!user || !meal || !krogerConnected || !krogerStoreSet || hasEnrichedKroger || mealsMeta?.pantryMode) return;
 
         // Check if any ingredient already has Kroger data (already enriched)
         const alreadyEnriched = meal.ingredients.some(ing => ing.krogerProductId);
@@ -384,7 +389,7 @@ function MealDetailPageContent() {
         };
 
         enrichIngredients();
-    }, [user, meal, krogerConnected, krogerStoreSet, hasEnrichedKroger]);
+    }, [user, meal, krogerConnected, krogerStoreSet, hasEnrichedKroger, mealsMeta?.pantryMode]);
 
     // Use enriched ingredients if available, otherwise fall back to meal ingredients
     const displayIngredients = enrichedIngredients ?? meal?.ingredients ?? [];
@@ -417,6 +422,9 @@ function MealDetailPageContent() {
         // and can be re-enriched with Kroger data
         setEnrichedIngredients(null);
         setHasEnrichedKroger(false);
+
+        // Reset saved state so user can save the modified meal
+        setIsMealAlreadySaved(false);
 
         try {
             const stored = sessionStorage.getItem("generatedMeals");
@@ -1028,9 +1036,17 @@ function MealDetailPageContent() {
 
                         {/* Content - Right */}
                         <div className="flex-1 flex flex-col min-w-0">
-                            <span className="inline-block self-start px-2 py-0.5 bg-gray-100 rounded-md text-xs font-medium text-gray-600 capitalize mb-2">
-                                {meal.mealType}
-                            </span>
+                            <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                <span className="inline-block px-2 py-0.5 bg-gray-100 rounded-md text-xs font-medium text-gray-600 capitalize">
+                                    {meal.mealType}
+                                </span>
+                                {meal.cookTimeRange && (
+                                    <div className="flex items-center gap-1 px-2 py-0.5 bg-sky-50 border border-sky-200 rounded-full">
+                                        <Clock className="w-3 h-3 text-sky-600" />
+                                        <span className="text-[10px] font-medium text-sky-700">{meal.cookTimeRange.min}-{meal.cookTimeRange.max}m</span>
+                                    </div>
+                                )}
+                            </div>
                             <h1 className="text-lg sm:text-xl font-medium text-gray-900 mb-1">{meal.name}</h1>
                             <p className="text-sm text-gray-500">{meal.description}</p>
                         </div>
@@ -1041,29 +1057,31 @@ function MealDetailPageContent() {
             {/* Content */}
             <div className="px-6 py-6">
                 <div className="max-w-3xl mx-auto space-y-6">
-                    {/* Doctor Badge */}
-                    {doctorApplied && (
-                        <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-xl w-fit">
-                            <Heart className="w-4 h-4 text-emerald-500" />
-                            <span className="text-sm font-medium text-emerald-700">
-                                Generated with your diet instructions
-                            </span>
-                        </div>
-                    )}
+                    {/* Status Badges */}
+                    <div className="flex flex-wrap gap-2">
+                        {mealsMeta?.pantryMode && (
+                            <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl">
+                                <Home className="w-4 h-4 text-amber-600" />
+                                <span className="text-sm font-medium text-amber-700">
+                                    Pantry Mode — cook with what you have
+                                </span>
+                            </div>
+                        )}
+                        {doctorApplied && (
+                            <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-xl">
+                                <Heart className="w-4 h-4 text-emerald-500" />
+                                <span className="text-sm font-medium text-emerald-700">
+                                    Generated with your diet instructions
+                                </span>
+                            </div>
+                        )}
+                    </div>
 
                     {/* Macros Card */}
                     <div className="bg-white rounded-2xl border border-gray-100 p-5">
-                        <div className="flex items-center gap-4 mb-4">
-                            <div className="flex items-center gap-2">
-                                <Users className="w-5 h-5 text-gray-400" />
-                                <span className="text-sm text-gray-500">{meal.servings} servings</span>
-                            </div>
-                            {meal.cookTimeRange && (
-                                <div className="flex items-center gap-1.5 px-3 py-1 bg-sky-50 border border-sky-200 rounded-full">
-                                    <Clock className="w-4 h-4 text-sky-600" />
-                                    <span className="text-sm font-medium text-sky-700">{meal.cookTimeRange.min}-{meal.cookTimeRange.max} min</span>
-                                </div>
-                            )}
+                        <div className="flex items-center gap-2 mb-4">
+                            <Users className="w-5 h-5 text-gray-400" />
+                            <span className="text-sm text-gray-500">{meal.servings} servings</span>
                         </div>
                         <div className="grid grid-cols-4 gap-4">
                             <div className="text-center">
@@ -1383,8 +1401,8 @@ function MealDetailPageContent() {
                             )}
                         </button>
 
-                        {/* Kroger Cart Button - only show if connected and store is set */}
-                        {krogerConnected && krogerStoreSet && (
+                        {/* Kroger Cart Button - only show if connected, store is set, and not in pantry mode */}
+                        {krogerConnected && krogerStoreSet && !mealsMeta?.pantryMode && (
                             <button
                                 onClick={handleAddToKrogerCart}
                                 disabled={addingToKrogerCart || selectedIngredients.size === 0}

@@ -60,33 +60,31 @@ export function MealCard({
                 </div>
             )}
 
-            {/* Thumbnail + Cook Time - Left */}
-            <div className="flex flex-col items-center flex-shrink-0">
-                <div
-                    onClick={onClick}
-                    className="w-20 h-20 bg-gray-100 rounded-xl overflow-hidden cursor-pointer"
-                >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                        src={thumbSrc}
-                        alt={name}
-                        className="w-full h-full object-cover transition-opacity duration-300"
-                    />
-                </div>
-                {cookTimeRange && (
-                    <div className="flex items-center gap-1 mt-2 px-2 py-0.5 bg-sky-50 border border-sky-200 rounded-full">
-                        <Clock className="w-3 h-3 text-sky-600" />
-                        <span className="text-[10px] font-medium text-sky-700">{cookTimeRange.min}-{cookTimeRange.max}m</span>
-                    </div>
-                )}
+            {/* Thumbnail - Left */}
+            <div
+                onClick={onClick}
+                className="w-20 h-20 bg-gray-100 rounded-xl overflow-hidden cursor-pointer flex-shrink-0"
+            >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                    src={thumbSrc}
+                    alt={name}
+                    className="w-full h-full object-cover transition-opacity duration-300"
+                />
             </div>
 
             {/* Content - Right */}
             <div className="flex-1 flex flex-col min-w-0">
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="inline-block px-2 py-0.5 bg-gray-100 rounded-md text-xs font-medium text-gray-600 capitalize">
                         {mealType}
                     </span>
+                    {cookTimeRange && (
+                        <div className="flex items-center gap-1 px-2 py-0.5 bg-sky-50 border border-sky-200 rounded-full">
+                            <Clock className="w-3 h-3 text-sky-600" />
+                            <span className="text-[10px] font-medium text-sky-700">{cookTimeRange.min}-{cookTimeRange.max}m</span>
+                        </div>
+                    )}
                     {badge}
                 </div>
                 <h2

@@ -221,3 +221,269 @@ export function getStoreBrand(locationName: string): StoreBrandInfo {
   // Default to generic Kroger family branding
   return { displayName: "Kroger", tagline: "Kroger Family of Stores", cartUrl: "https://www.kroger.com/cart" };
 }
+
+// ============================================
+// Quantity Parsing & Calculation Utilities
+// ============================================
+
+export type ParsedQuantity = {
+  amount: number;
+  unit: string;
+  raw: string;
+};
+
+// Unit conversion to base units (ounces for weight, count for items)
+const WEIGHT_TO_OZ: Record<string, number> = {
+  "oz": 1,
+  "ounce": 1,
+  "ounces": 1,
+  "lb": 16,
+  "lbs": 16,
+  "pound": 16,
+  "pounds": 16,
+  "g": 0.035274,
+  "gram": 0.035274,
+  "grams": 0.035274,
+  "kg": 35.274,
+  "kilogram": 35.274,
+  "kilograms": 35.274,
+};
+
+const VOLUME_TO_FLOZ: Record<string, number> = {
+  "fl oz": 1,
+  "floz": 1,
+  "fluid ounce": 1,
+  "fluid ounces": 1,
+  "cup": 8,
+  "cups": 8,
+  "pint": 16,
+  "pints": 16,
+  "pt": 16,
+  "quart": 32,
+  "quarts": 32,
+  "qt": 32,
+  "gallon": 128,
+  "gallons": 128,
+  "gal": 128,
+  "ml": 0.033814,
+  "milliliter": 0.033814,
+  "milliliters": 0.033814,
+  "l": 33.814,
+  "liter": 33.814,
+  "liters": 33.814,
+  "tbsp": 0.5,
+  "tablespoon": 0.5,
+  "tablespoons": 0.5,
+  "tsp": 0.166667,
+  "teaspoon": 0.166667,
+  "teaspoons": 0.166667,
+};
+
+// Count-based units (eggs, pieces, etc.)
+const COUNT_UNITS = new Set([
+  "egg", "eggs",
+  "piece", "pieces", "pc", "pcs",
+  "slice", "slices",
+  "clove", "cloves",
+  "head", "heads",
+  "bunch", "bunches",
+  "stalk", "stalks",
+  "rib", "ribs",
+  "can", "cans",
+  "jar", "jars",
+  "bottle", "bottles",
+  "bag", "bags",
+  "package", "packages", "pkg",
+  "box", "boxes",
+  "dozen", "doz",
+  "each",
+  "", // no unit = count
+]);
+
+/**
+ * Parse a quantity string like "2 lbs", "12 oz", "6 eggs" into structured data
+ */
+export function parseQuantity(quantityStr: string): ParsedQuantity | null {
+  if (!quantityStr) return null;
+
+  const raw = quantityStr.trim().toLowerCase();
+
+  // Handle fractions like "1/2", "1 1/2"
+  let normalized = raw
+    .replace(/½/g, "0.5")
+    .replace(/¼/g, "0.25")
+    .replace(/¾/g, "0.75")
+    .replace(/⅓/g, "0.333")
+    .replace(/⅔/g, "0.667");
+
+  // Match patterns like "2 lbs", "1.5 lb", "1 1/2 cups", "6 eggs"
+  // Pattern: optional number (with decimals/fractions), optional space, optional unit
+  const match = normalized.match(/^(\d+(?:\.\d+)?(?:\s+\d+\/\d+)?|\d+\/\d+)?\s*(.*)$/);
+
+  if (!match) return null;
+
+  let amount = 1;
+  let unit = "";
+
+  if (match[1]) {
+    // Handle mixed fractions like "1 1/2"
+    const parts = match[1].trim().split(/\s+/);
+    if (parts.length === 2 && parts[1].includes("/")) {
+      const [num, denom] = parts[1].split("/").map(Number);
+      amount = Number(parts[0]) + (num / denom);
+    } else if (parts[0].includes("/")) {
+      const [num, denom] = parts[0].split("/").map(Number);
+      amount = num / denom;
+    } else {
+      amount = Number(parts[0]);
+    }
+  }
+
+  if (match[2]) {
+    unit = match[2].trim();
+  }
+
+  return { amount, unit, raw };
+}
+
+/**
+ * Parse a product size string from Kroger (e.g., "1 lb", "16 oz", "12 ct")
+ */
+export function parseProductSize(sizeStr: string | undefined): ParsedQuantity | null {
+  if (!sizeStr) return null;
+
+  // Kroger often uses formats like "1 lb", "16 oz", "12 ct", "1 gal"
+  return parseQuantity(sizeStr);
+}
+
+/**
+ * Convert a parsed quantity to a base unit for comparison
+ * Returns { value, type } where type is "weight_oz", "volume_floz", or "count"
+ */
+export function toBaseUnit(parsed: ParsedQuantity): { value: number; type: "weight_oz" | "volume_floz" | "count" } | null {
+  const unit = parsed.unit.toLowerCase().trim();
+
+  // Check weight units
+  if (WEIGHT_TO_OZ[unit]) {
+    return { value: parsed.amount * WEIGHT_TO_OZ[unit], type: "weight_oz" };
+  }
+
+  // Check volume units
+  if (VOLUME_TO_FLOZ[unit]) {
+    return { value: parsed.amount * VOLUME_TO_FLOZ[unit], type: "volume_floz" };
+  }
+
+  // Check count units
+  if (COUNT_UNITS.has(unit)) {
+    // Special case: dozen = 12
+    if (unit === "dozen" || unit === "doz") {
+      return { value: parsed.amount * 12, type: "count" };
+    }
+    return { value: parsed.amount, type: "count" };
+  }
+
+  // Unknown unit - default to count
+  return { value: parsed.amount, type: "count" };
+}
+
+export type CalculatedQuantity = {
+  unitsNeeded: number;
+  recipeAmount: string;
+  productSize: string;
+  calculation: string;
+  soldBy: "WEIGHT" | "UNIT";
+};
+
+/**
+ * Calculate how many units of a product are needed to satisfy a recipe quantity
+ *
+ * @param recipeQuantity - The quantity string from the recipe (e.g., "2 lbs")
+ * @param productSize - The size string from Kroger product (e.g., "1 lb")
+ * @param soldBy - How the product is sold ("WEIGHT" or "UNIT")
+ * @param itemCount - How many times this ingredient appears across meals (default 1)
+ * @returns The number of units to add to cart
+ */
+export function calculateUnitsNeeded(
+  recipeQuantity: string,
+  productSize: string | undefined,
+  soldBy: "WEIGHT" | "UNIT" | undefined,
+  itemCount: number = 1
+): CalculatedQuantity {
+  const defaultResult: CalculatedQuantity = {
+    unitsNeeded: itemCount,
+    recipeAmount: recipeQuantity,
+    productSize: productSize || "unknown",
+    calculation: "default (1 unit per recipe)",
+    soldBy: soldBy || "UNIT",
+  };
+
+  // Parse recipe quantity
+  const recipeParsed = parseQuantity(recipeQuantity);
+  if (!recipeParsed) {
+    return defaultResult;
+  }
+
+  // For WEIGHT-based products (deli counter items), quantity IS the weight
+  if (soldBy === "WEIGHT") {
+    // Convert recipe to base unit (oz)
+    const recipeBase = toBaseUnit(recipeParsed);
+    if (recipeBase && recipeBase.type === "weight_oz") {
+      // Convert oz to lbs for the API (Kroger uses lbs for weight-based items)
+      const lbsNeeded = (recipeBase.value / 16) * itemCount;
+      return {
+        unitsNeeded: Math.ceil(lbsNeeded * 10) / 10, // Round to 1 decimal
+        recipeAmount: recipeQuantity,
+        productSize: "sold by weight",
+        calculation: `${recipeQuantity} × ${itemCount} = ${lbsNeeded.toFixed(1)} lbs`,
+        soldBy: "WEIGHT",
+      };
+    }
+    // If we can't parse as weight, use the raw amount
+    return {
+      unitsNeeded: recipeParsed.amount * itemCount,
+      recipeAmount: recipeQuantity,
+      productSize: "sold by weight",
+      calculation: `${recipeParsed.amount} × ${itemCount} = ${recipeParsed.amount * itemCount}`,
+      soldBy: "WEIGHT",
+    };
+  }
+
+  // For UNIT-based products, calculate how many packages needed
+  const productParsed = parseProductSize(productSize);
+  if (!productParsed) {
+    // Can't parse product size - default to item count
+    return defaultResult;
+  }
+
+  const recipeBase = toBaseUnit(recipeParsed);
+  const productBase = toBaseUnit(productParsed);
+
+  if (!recipeBase || !productBase) {
+    return defaultResult;
+  }
+
+  // Check if units are compatible
+  if (recipeBase.type !== productBase.type) {
+    // Incompatible units (e.g., recipe is "2 cups" but product is "1 lb")
+    // This happens - just use 1 unit per recipe occurrence
+    return {
+      unitsNeeded: itemCount,
+      recipeAmount: recipeQuantity,
+      productSize: productSize || "unknown",
+      calculation: `incompatible units: ${recipeParsed.unit} vs ${productParsed.unit}`,
+      soldBy: "UNIT",
+    };
+  }
+
+  // Calculate units needed
+  const totalNeeded = recipeBase.value * itemCount;
+  const unitsNeeded = Math.ceil(totalNeeded / productBase.value);
+
+  return {
+    unitsNeeded: Math.max(1, unitsNeeded), // At least 1 unit
+    recipeAmount: recipeQuantity,
+    productSize: productSize || "unknown",
+    calculation: `${recipeQuantity} × ${itemCount} = ${totalNeeded.toFixed(2)} ${recipeBase.type.replace("_", " ")} / ${productSize} = ${unitsNeeded} units`,
+    soldBy: "UNIT",
+  };
+}
