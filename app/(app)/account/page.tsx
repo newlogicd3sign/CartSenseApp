@@ -1082,8 +1082,23 @@ function AccountPageContent() {
             setDeletingAccount(true);
             setDeleteError(null);
 
+            // Get the user's current data before deleting
+            const userDocRef = doc(db, "users", user.uid);
+            const userDocSnap = await getDoc(userDocRef);
+            const userData = userDocSnap.data();
+
+            // Save email and prompt count to deletedEmails collection to prevent abuse
+            const emailLower = user.email.toLowerCase();
+            await setDoc(doc(db, "deletedEmails", emailLower), {
+                email: emailLower,
+                monthlyPromptCount: userData?.monthlyPromptCount || 0,
+                promptPeriodStart: userData?.promptPeriodStart || null,
+                planType: userData?.planType || "free",
+                deletedAt: serverTimestamp(),
+            });
+
             // Delete user document from Firestore
-            await deleteDoc(doc(db, "users", user.uid));
+            await deleteDoc(userDocRef);
 
             // Delete the Firebase Auth user
             await deleteUser(user);

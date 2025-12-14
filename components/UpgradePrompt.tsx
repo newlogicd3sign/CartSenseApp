@@ -36,7 +36,7 @@ const featureConfig: Record<FeatureType, {
     },
     saved_meals: {
         title: "Save More Meals",
-        limitDescription: "You've reached the free tier limit of 4 saved meals.",
+        limitDescription: "You've reached the free tier limit of 7 saved meals.",
         voluntaryDescription: "Save unlimited meals to build your personal recipe collection.",
         icon: Bookmark,
         benefit: "Premium users get unlimited saved meals",

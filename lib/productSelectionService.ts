@@ -356,6 +356,33 @@ export function calculateRelevanceScore(
     reasons.push("Relevant category");
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Category mismatch penalties (vegetables vs fruits, etc.)
+  // ─────────────────────────────────────────────────────────────────────────
+  const vegetableIndicators = ["vegetable", "vegetables", "veggie", "veggies"];
+  const fruitIndicators = ["fruit", "fruits", "melon", "berry", "berries", "apple", "orange", "grape", "mango", "pineapple", "watermelon", "cantaloupe", "honeydew", "peach", "pear", "plum", "cherry", "kiwi", "papaya", "banana"];
+
+  const searchingForVegetables = vegetableIndicators.some(v => term.includes(v));
+  const searchingForFruits = fruitIndicators.some(f => term.includes(f) && !term.includes("vegetable"));
+
+  // If searching for vegetables, heavily penalize fruit products
+  if (searchingForVegetables) {
+    const productIsFruit = fruitIndicators.some(f => desc.includes(f));
+    if (productIsFruit) {
+      score -= 50;
+      reasons.push("Fruit product when searching for vegetables");
+    }
+  }
+
+  // If searching for fruits, penalize vegetable products
+  if (searchingForFruits) {
+    const productIsVegetable = vegetableIndicators.some(v => desc.includes(v));
+    if (productIsVegetable) {
+      score -= 50;
+      reasons.push("Vegetable product when searching for fruits");
+    }
+  }
+
   // Penalize beverages when not searching for beverages
   if (!term.includes("juice") && !term.includes("drink") && !term.includes("beverage")) {
     const beverageWords = [

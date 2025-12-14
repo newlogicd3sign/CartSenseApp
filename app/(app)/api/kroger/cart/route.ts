@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
 import { searchKrogerProduct, searchAlternativeProduct, getKrogerApiStatus, type KrogerProductMatch } from "@/lib/kroger";
-import { isExcludedIngredient } from "@/lib/utils";
+import { isExcludedIngredient, calculateUnitsNeeded } from "@/lib/utils";
 import { KROGER_RATE_LIMITS } from "@/lib/krogerConfig";
 
 const TOKEN_URL = process.env.KROGER_TOKEN_URL ?? "https://api-ce.kroger.com/v1/connect/oauth2/token";
@@ -29,6 +29,8 @@ type EnrichedItem = {
     quantity: string;
     found: boolean;
     product?: KrogerProductMatch;
+    calculatedUnits?: number;
+    calculationDetails?: string;
 };
 
 async function refreshKrogerToken(
@@ -192,6 +194,16 @@ export async function POST(request: Request) {
                             }
                         }
 
+                        // Calculate units needed for this item
+                        const calculated = product
+                            ? calculateUnitsNeeded(
+                                  item.quantity,
+                                  product.size,
+                                  product.soldBy,
+                                  item.count || 1
+                              )
+                            : null;
+
                         return {
                             itemId: item.id,
                             originalName: item.name,
@@ -200,6 +212,8 @@ export async function POST(request: Request) {
                             found: !!product && product.available,
                             product: product || undefined,
                             usedAlternative,
+                            calculatedUnits: calculated?.unitsNeeded,
+                            calculationDetails: calculated?.calculation,
                         };
                     } catch (err) {
                         console.error(`[CART] Error searching for "${item.name}":`, err);
@@ -211,6 +225,8 @@ export async function POST(request: Request) {
                             found: false,
                             product: undefined,
                             usedAlternative: false,
+                            calculatedUnits: undefined,
+                            calculationDetails: undefined,
                         };
                     }
                 })
@@ -261,6 +277,8 @@ export async function POST(request: Request) {
                     price: item.product.price || null,
                     soldBy: item.product.soldBy || null,
                     stockLevel: item.product.stockLevel || null,
+                    cartQuantity: item.calculatedUnits || item.count,
+                    cartCalculation: item.calculationDetails || null,
                 });
             });
 
@@ -281,10 +299,15 @@ export async function POST(request: Request) {
 
         // Add found items to Kroger cart
         // Kroger's productId is the UPC
-        const cartItems = foundItems.map((item) => ({
-            upc: item.product!.krogerProductId,
-            quantity: item.count,
-        }));
+        // Use the pre-calculated units based on recipe needs vs product package size
+        const cartItems = foundItems.map((item) => {
+            console.log(`[CART] ${item.originalName}: ${item.calculationDetails} → ${item.calculatedUnits} units`);
+
+            return {
+                upc: item.product!.krogerProductId,
+                quantity: item.calculatedUnits || item.count,
+            };
+        });
 
         const cartRes = await fetch(`${API_BASE_URL}/cart/add`, {
             method: "PUT",
@@ -344,6 +367,9 @@ export async function POST(request: Request) {
                 productSize: item.product.size || null,
                 productAisle: item.product.aisle || null,
                 price: item.product.price || null,
+                soldBy: item.product.soldBy || null,
+                cartQuantity: item.calculatedUnits || item.count,
+                cartCalculation: item.calculationDetails || null,
             });
         });
 
