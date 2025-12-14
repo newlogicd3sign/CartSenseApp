@@ -950,7 +950,7 @@ export default function Home() {
         <section className="px-4 sm:px-6 py-12 sm:py-20 bg-[#f8fafb]">
           <div className="max-w-5xl mx-auto">
             <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 mb-3 sm:mb-4 text-center">
-              For anyone who wants dinner handled.
+              For anyone who wants meals handled.
             </h2>
             <p className="text-base sm:text-lg text-gray-600 text-center mb-8 sm:mb-12">
               Meals planned. Groceries added. Done.
