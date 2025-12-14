@@ -242,6 +242,18 @@ function MealsPageContent() {
         }
     }, [loadingUser, user, prefs]);
 
+    // After a successful stream, strip the stream flag so refreshes don't re-generate meals
+    useEffect(() => {
+        if (!streamComplete) return;
+
+        const params = new URLSearchParams(Array.from(searchParams.entries()));
+        if (!params.has("stream")) return;
+
+        params.delete("stream");
+        const query = params.toString();
+        router.replace(`/meals${query ? `?${query}` : ""}`);
+    }, [streamComplete, searchParams, router]);
+
     // Load from storage OR start streaming
     useEffect(() => {
         if (!user || !prefs) return;
