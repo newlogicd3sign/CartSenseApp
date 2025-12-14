@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc, collection, getDocs, query, where } from "firebase/firestore";
-import { getRandomAccentColor, getRandomAccentColorExcluding, type AccentColor } from "@/lib/utils";
-import { Sparkles, UtensilsCrossed, ChefHat, Soup, Pizza, Salad, Sandwich, Croissant, Apple, Carrot, Beef, Fish, Citrus, Drumstick, Wheat, Ham, CookingPot, Hamburger, ShieldCheck, HeartPulse, Users, ChevronRight, Clock, Wallet, Baby, CalendarDays } from "lucide-react";
+import { getRandomAccentColor, getRandomAccentColorExcluding, ACCENT_COLORS, type AccentColor } from "@/lib/utils";
+import { Sparkles, UtensilsCrossed, ChefHat, Soup, Pizza, Salad, Sandwich, Croissant, Apple, Carrot, Beef, Fish, Citrus, Drumstick, Wheat, Ham, CookingPot, Hamburger, ShieldCheck, HeartPulse, Users, ChevronRight, Clock, Wallet, Baby, CalendarDays, Home, Lightbulb, ChevronDown } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { loadGeneratedMeals } from "@/lib/mealStorage";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -68,8 +68,22 @@ const placeholderPrompts = [
     "Ex: Fresh and light salads as main courses...",
 ];
 
-function getRandomPlaceholder() {
-    return placeholderPrompts[Math.floor(Math.random() * placeholderPrompts.length)];
+const pantryPlaceholderPrompts = [
+    "Ex: I have chicken, rice, and broccoli...",
+    "Ex: Eggs, cheese, spinach, and bacon...",
+    "Ex: Ground beef, pasta, canned tomatoes, onion...",
+    "Ex: Salmon, lemon, garlic, and asparagus...",
+    "Ex: Black beans, rice, peppers, onion, salsa...",
+    "Ex: Chicken thighs, potatoes, carrots, rosemary...",
+    "Ex: Shrimp, garlic, butter, pasta, parmesan...",
+    "Ex: Tofu, soy sauce, ginger, vegetables, rice...",
+    "Ex: Sausage, peppers, onions, and marinara...",
+    "Ex: Canned tuna, mayo, bread, celery, pickles...",
+];
+
+function getRandomPlaceholder(isPantryMode = false) {
+    const prompts = isPantryMode ? pantryPlaceholderPrompts : placeholderPrompts;
+    return prompts[Math.floor(Math.random() * prompts.length)];
 }
 
 const quickPrompts = [
@@ -79,6 +93,15 @@ const quickPrompts = [
     { label: "Healthy lunch ideas", icon: Salad, prompt: "Healthy lunch ideas that are filling" },
     { label: "Meal prep Sunday", icon: CalendarDays, prompt: "Meal prep recipes for the week" },
     { label: "Kid-friendly", icon: Baby, prompt: "Kid-friendly meals the whole family will love" },
+];
+
+const pantryQuickPrompts = [
+    { label: "Chicken & rice", icon: Drumstick, prompt: "I have chicken, rice, onion, garlic, and some vegetables" },
+    { label: "Pasta night", icon: Wheat, prompt: "I have pasta, canned tomatoes, garlic, olive oil, parmesan" },
+    { label: "Eggs & veggies", icon: Salad, prompt: "I have eggs, cheese, spinach, bell peppers, onion" },
+    { label: "Ground beef", icon: Beef, prompt: "I have ground beef, potatoes, onion, garlic, cheese" },
+    { label: "Rice & beans", icon: CookingPot, prompt: "I have rice, black beans, onion, peppers, salsa, cheese" },
+    { label: "Salmon dinner", icon: Fish, prompt: "I have salmon, lemon, garlic, butter, broccoli, rice" },
 ];
 
 export default function PromptPage() {
@@ -116,13 +139,58 @@ export default function PromptPage() {
     const [storedMealsCount, setStoredMealsCount] = useState(0);
     const [storedPrompt, setStoredPrompt] = useState<string | null>(null);
 
+    // Pantry mode state - persisted to localStorage
+    const [pantryMode, setPantryMode] = useState(false);
+
+    // Tips state - open by default, persisted to localStorage
+    const [showTips, setShowTips] = useState(true);
+
+    // Load pantry mode and tips state from localStorage on mount
+    useEffect(() => {
+        try {
+            const savedPantry = localStorage.getItem("pantryMode");
+            if (savedPantry === "true") {
+                setPantryMode(true);
+            }
+            const savedTips = localStorage.getItem("showTips");
+            if (savedTips === "false") {
+                setShowTips(false);
+            }
+        } catch {
+            // Ignore localStorage errors
+        }
+    }, []);
+
+    // Save pantry mode to localStorage when it changes
+    useEffect(() => {
+        try {
+            localStorage.setItem("pantryMode", pantryMode ? "true" : "false");
+        } catch {
+            // Ignore localStorage errors
+        }
+    }, [pantryMode]);
+
+    // Save tips state to localStorage when it changes
+    useEffect(() => {
+        try {
+            localStorage.setItem("showTips", showTips ? "true" : "false");
+        } catch {
+            // Ignore localStorage errors
+        }
+    }, [showTips]);
+
+    // Update placeholder when pantry mode changes
+    useEffect(() => {
+        setPlaceholder(getRandomPlaceholder(pantryMode));
+    }, [pantryMode]);
+
     useEffect(() => {
         // Scroll to top when page loads
         window.scrollTo(0, 0);
 
         setGreeting(getRandomGreeting());
         setFoodIcon(() => getRandomFoodIcon());
-        setPlaceholder(getRandomPlaceholder());
+        setPlaceholder(getRandomPlaceholder(false));
         const primaryColor = getRandomAccentColor();
         setAccentColor(primaryColor);
         setBadgeColor(getRandomAccentColorExcluding(primaryColor));
@@ -233,7 +301,14 @@ export default function PromptPage() {
 
         // Navigate immediately to meals page with stream=true
         // The meals page will handle the streaming
-        router.push(`/meals?prompt=${encodeURIComponent(trimmed)}&stream=true`);
+        const params = new URLSearchParams({
+            prompt: trimmed,
+            stream: "true",
+        });
+        if (pantryMode) {
+            params.set("pantryMode", "true");
+        }
+        router.push(`/meals?${params.toString()}`);
     };
 
     if (loadingUser) {
@@ -294,6 +369,48 @@ export default function PromptPage() {
                         </button>
                     )}
 
+                    {/* Pantry Mode Card */}
+                    <button
+                        onClick={() => setPantryMode(!pantryMode)}
+                        className={`w-full rounded-2xl p-4 mb-6 flex items-center justify-between transition-all ${animateFromSetup ? "animate-content-after-greeting" : ""} ${
+                            pantryMode
+                                ? "bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-400"
+                                : "bg-white border border-gray-200 hover:border-gray-300 hover:shadow-sm"
+                        }`}
+                    >
+                        <div className="flex items-center gap-3">
+                            <div
+                                className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                                    pantryMode ? "bg-amber-100" : "bg-gray-100"
+                                }`}
+                            >
+                                <Home className={`w-5 h-5 ${pantryMode ? "text-amber-600" : "text-gray-500"}`} />
+                            </div>
+                            <div className="text-left">
+                                <h3 className={`font-medium text-sm ${pantryMode ? "text-amber-800" : "text-gray-900"}`}>
+                                    Pantry Mode
+                                </h3>
+                                <p className={`text-xs ${pantryMode ? "text-amber-600" : "text-gray-500"}`}>
+                                    {pantryMode
+                                        ? "Recipes only — no shopping needed"
+                                        : "No need to shop? Enter what you have at home"}
+                                </p>
+                            </div>
+                        </div>
+                        {/* Toggle Switch */}
+                        <div
+                            className={`w-12 h-7 rounded-full p-1 transition-colors ${
+                                pantryMode ? "bg-amber-500" : "bg-gray-200"
+                            }`}
+                        >
+                            <div
+                                className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${
+                                    pantryMode ? "translate-x-5" : "translate-x-0"
+                                }`}
+                            />
+                        </div>
+                    </button>
+
                     {/* Search Card */}
                     <div className={`bg-white rounded-2xl shadow-lg p-5 mb-6 ${animateFromSetup ? "animate-content-after-greeting" : ""}`}>
                         <textarea
@@ -303,6 +420,40 @@ export default function PromptPage() {
                             className="w-full h-28 lg:h-32 p-4 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:bg-white resize-none transition-colors"
                             style={{ borderColor: prompt ? accentColor.primary : undefined }}
                         />
+
+                        {/* Expandable Tips - integrated below textarea */}
+                        <div className="mt-3">
+                            <button
+                                onClick={() => setShowTips(!showTips)}
+                                className={`flex items-center gap-2 transition-colors ${
+                                    pantryMode ? "text-amber-600 hover:text-amber-700" : "text-gray-500 hover:text-gray-700"
+                                }`}
+                            >
+                                <Lightbulb className="w-5 h-5" />
+                                <span className="text-base font-medium">{showTips ? "Hide tips" : "Show tips"}</span>
+                                <ChevronDown className={`w-5 h-5 transition-transform ${showTips ? "rotate-180" : ""}`} />
+                            </button>
+
+                            {showTips && (
+                                <ul className={`mt-3 space-y-1.5 pl-6 border-l-2 ${pantryMode ? "border-amber-200" : "border-gray-100"}`}>
+                                    {(pantryMode ? [
+                                        "List proteins and veggies you have on hand",
+                                        "Include staples like rice, pasta, canned goods",
+                                        "Mention seasonings or sauces available",
+                                        "No need for exact quantities",
+                                    ] : [
+                                        "Your diet preferences are auto-applied",
+                                        "Name specific ingredients (ground turkey, chicken)",
+                                        "Add cooking time (quick 20-min, slow cooker)",
+                                        "Try a style (power bowl, stir fry, Mediterranean)",
+                                    ]).map((tip, i) => (
+                                        <li key={i} className="text-xs text-gray-500">
+                                            {tip}
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
 
                         {/* Submit Button */}
                         <button
@@ -321,6 +472,12 @@ export default function PromptPage() {
                                 <Sparkles className="w-4 h-4" style={{ color: badgeColor.primary }} />
                                 <span className="text-sm" style={{ color: badgeColor.primary }}>AI powered</span>
                             </div>
+                            {pantryMode && (
+                                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-full">
+                                    <Home className="w-3.5 h-3.5 text-amber-600" />
+                                    <span className="text-xs font-medium text-amber-700">Pantry Mode</span>
+                                </div>
+                            )}
                             {hasDietInstructions && (
                                 <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-200 rounded-full">
                                     <HeartPulse className="w-3.5 h-3.5 text-emerald-600" />
@@ -346,35 +503,31 @@ export default function PromptPage() {
                         </p>
                     </div>
 
-                    {/* Tips Card */}
-                    <div className={`bg-white rounded-2xl border border-gray-100 p-5 ${animateFromSetup ? "animate-content-after-greeting" : ""}`}>
-                        <h3 className="font-medium text-gray-900 mb-3">Tips for better results</h3>
-                        <ul className="space-y-2">
-                            {[
-                                "Your saved diet preferences are automatically applied",
-                                "Name ingredients you have (ground turkey, chicken breast)",
-                                "Mention cooking time or effort (quick 20-min, slow cooker)",
-                                "Try a cuisine style or dish type (power bowl, stir fry)",
-                            ].map((tip, i) => (
-                                <li key={i} className="flex items-start gap-2 text-sm text-gray-500">
-                                    <span style={{ color: accentColor.primary }} className="mt-0.5">•</span>
-                                    {tip}
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-
                     {/* Quick Prompt Chips */}
                     <div className={`grid grid-cols-2 gap-2 mt-4 ${animateFromSetup ? "animate-content-after-greeting" : ""}`}>
-                        {quickPrompts.map((qp) => (
+                        {(pantryMode ? pantryQuickPrompts : quickPrompts).map((qp, index) => (
                             <button
                                 key={qp.label}
                                 onClick={() => {
-                                    router.push(`/meals?prompt=${encodeURIComponent(qp.prompt)}&stream=true`);
+                                    const qpParams = new URLSearchParams({
+                                        prompt: qp.prompt,
+                                        stream: "true",
+                                    });
+                                    if (pantryMode) {
+                                        qpParams.set("pantryMode", "true");
+                                    }
+                                    router.push(`/meals?${qpParams.toString()}`);
                                 }}
-                                className="flex items-center gap-2 p-3 bg-white border border-gray-200 rounded-xl hover:border-[#4A90E2] hover:bg-[#4A90E2]/5 transition-all text-left"
+                                className={`flex items-center gap-2 p-3 bg-white border rounded-xl transition-all text-left ${
+                                    pantryMode
+                                        ? "border-amber-200 hover:border-amber-400 hover:bg-amber-50/50"
+                                        : "border-gray-200 hover:border-[#4A90E2] hover:bg-[#4A90E2]/5"
+                                }`}
                             >
-                                <qp.icon className="w-4 h-4 text-[#4A90E2] flex-shrink-0" />
+                                <qp.icon
+                                    className="w-4 h-4 flex-shrink-0"
+                                    style={{ color: pantryMode ? "#d97706" : ACCENT_COLORS[index % ACCENT_COLORS.length].primary }}
+                                />
                                 <span className="text-sm font-medium text-gray-700">{qp.label}</span>
                             </button>
                         ))}

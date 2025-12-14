@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { auth, db } from "@/lib/firebaseClient";
-import { createUserWithEmailAndPassword, sendEmailVerification, ActionCodeSettings } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { createUserWithEmailAndPassword, sendEmailVerification } from "firebase/auth";
+import { doc, setDoc, getDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -40,24 +40,29 @@ export default function SignupPage() {
         try {
             const cred = await createUserWithEmailAndPassword(auth, email, password);
 
-            // Configure action code settings to redirect back to the app
-            const actionCodeSettings: ActionCodeSettings = {
-                url: `${window.location.origin}/auth/action`,
-                handleCodeInApp: true,
-            };
+            // Send email verification (uses Firebase's default handler)
+            await sendEmailVerification(cred.user);
 
-            // Send email verification with redirect settings
-            await sendEmailVerification(cred.user, actionCodeSettings);
+            // Check if this email was previously deleted (to prevent abuse)
+            const emailLower = email.toLowerCase();
+            const deletedEmailRef = doc(db, "deletedEmails", emailLower);
+            const deletedEmailSnap = await getDoc(deletedEmailRef);
+            const previousData = deletedEmailSnap.exists() ? deletedEmailSnap.data() : null;
 
-            // Create a Firestore user doc
+            // Create a Firestore user doc (restore prompt count if previously deleted)
             await setDoc(doc(db, "users", cred.user.uid), {
                 email,
-                planType: "free",
-                monthlyPromptCount: 0,
-                promptPeriodStart: serverTimestamp(),
+                planType: previousData?.planType || "free",
+                monthlyPromptCount: previousData?.monthlyPromptCount || 0,
+                promptPeriodStart: previousData?.promptPeriodStart || serverTimestamp(),
                 createdAt: serverTimestamp(),
                 emailVerified: false,
             });
+
+            // Clean up the deletedEmails record
+            if (previousData) {
+                await deleteDoc(deletedEmailRef);
+            }
 
             showToast("Account created! Check your email to verify.", "success");
 

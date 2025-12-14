@@ -452,6 +452,16 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
     avoidKeywords: ["coleslaw with dressing", "egg rolls"],
     preferAttributes: ["fresh", "whole"]
   },
+  {
+    id: "mixed_vegetables",
+    canonicalName: "Mixed Vegetables",
+    category: "produce",
+    krogerDeptHint: "Produce",
+    matchKeywords: ["mixed vegetables", "mixed veggies", "seasonal vegetables", "vegetable medley", "stir fry vegetables", "mixed seasonal vegetables"],
+    avoidKeywords: ["fruit", "melon", "berry", "apple", "grape", "mango", "pineapple", "watermelon", "cantaloupe", "honeydew", "peach", "pear", "with sauce", "cream sauce", "cheese sauce", "in butter sauce"],
+    preferAttributes: ["fresh", "fresh cut", "stir fry", "medley"],
+    notes: "Fresh mixed vegetables only, no fruits"
+  },
 
   // ========= CARBS / GRAINS =========
   {

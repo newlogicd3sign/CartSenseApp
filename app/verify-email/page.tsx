@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { auth, db } from "@/lib/firebaseClient";
-import { onAuthStateChanged, sendEmailVerification, signOut, type User, ActionCodeSettings } from "firebase/auth";
+import { onAuthStateChanged, sendEmailVerification, signOut, type User } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
@@ -54,13 +54,8 @@ export default function VerifyEmailPage() {
         setResending(true);
 
         try {
-            // Configure action code settings to redirect back to the app
-            const actionCodeSettings: ActionCodeSettings = {
-                url: `${window.location.origin}/auth/action`,
-                handleCodeInApp: true,
-            };
-
-            await sendEmailVerification(user, actionCodeSettings);
+            // Send email verification (uses Firebase's default handler)
+            await sendEmailVerification(user);
             showToast("Verification email sent! Check your inbox.", "success");
         } catch (error: any) {
             if (error.code === "auth/too-many-requests") {

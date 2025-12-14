@@ -12,7 +12,7 @@ import {
     loadGeneratedMeals,
     clearLastViewedMeal,
 } from "@/lib/mealStorage";
-import { ArrowLeft, Heart, Sparkles, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Heart, Sparkles, ShieldCheck, Home } from "lucide-react";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { MealCard } from "@/components/MealCard";
@@ -52,6 +52,7 @@ type MealsMeta = {
     usedDoctorInstructions?: boolean;
     blockedIngredientsFromDoctor?: string[];
     blockedGroupsFromDoctor?: string[];
+    pantryMode?: boolean;
 };
 
 type StoredMealsPayload =
@@ -74,6 +75,7 @@ function MealsPageContent() {
     const searchParams = useSearchParams();
     const promptFromUrl = searchParams.get("prompt") || "";
     const shouldStream = searchParams.get("stream") === "true";
+    const pantryMode = searchParams.get("pantryMode") === "true";
 
     const [user, setUser] = useState<User | null>(null);
     const [prefs, setPrefs] = useState<Record<string, unknown> | null>(null);
@@ -126,7 +128,7 @@ function MealsPageContent() {
     }, [router]);
 
     // Stream meals from API
-    const streamMeals = useCallback(async (uid: string, userPrefs: Record<string, unknown>, prompt: string) => {
+    const streamMeals = useCallback(async (uid: string, userPrefs: Record<string, unknown>, prompt: string, isPantryMode: boolean) => {
         // Prevent duplicate streams for the same prompt
         if (hasStartedStreaming.current === prompt) return;
         hasStartedStreaming.current = prompt;
@@ -138,7 +140,7 @@ function MealsPageContent() {
             const res = await fetch("/api/meals/stream", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ prompt, prefs: userPrefs, uid }),
+                body: JSON.stringify({ prompt, prefs: userPrefs, uid, pantryMode: isPantryMode }),
             });
 
             if (!res.ok || !res.body) {
@@ -247,7 +249,7 @@ function MealsPageContent() {
         // If we should stream, start the stream and clear any previous "last viewed" state
         if (shouldStream && promptFromUrl) {
             clearLastViewedMeal();
-            streamMeals(user.uid, prefs, decodeURIComponent(promptFromUrl));
+            streamMeals(user.uid, prefs, decodeURIComponent(promptFromUrl), pantryMode);
             return;
         }
 
@@ -266,7 +268,7 @@ function MealsPageContent() {
         }
 
         setLoadingMeals(false);
-    }, [user, prefs, shouldStream, promptFromUrl, streamMeals]);
+    }, [user, prefs, shouldStream, promptFromUrl, pantryMode, streamMeals]);
 
     if (loadingUser) {
         return <LoadingScreen message="Loading your profile..." />;
@@ -310,6 +312,23 @@ function MealsPageContent() {
                     </p>
                 </div>
             </div>
+
+            {/* Pantry Mode Banner */}
+            {mealsMeta?.pantryMode && (
+                <div className="px-6 pt-4">
+                    <div className="max-w-3xl mx-auto">
+                        <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
+                                <Home className="w-5 h-5 text-amber-600" />
+                            </div>
+                            <div>
+                                <h3 className="font-medium text-amber-800 text-sm">Pantry Mode Active</h3>
+                                <p className="text-xs text-amber-600">Recipes only — cook with what you have at home</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Doctor Note Applied Banner */}
             {doctorApplied && (

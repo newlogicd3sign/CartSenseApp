@@ -551,7 +551,7 @@ function isBroadMealPlanRequest(prompt: string): boolean {
     return false;
 }
 
-function buildSystemPrompt(prompt: string, restrictions: CombinedDietaryRestrictions, isPremium: boolean): string {
+function buildSystemPrompt(prompt: string, restrictions: CombinedDietaryRestrictions, isPremium: boolean, pantryMode: boolean = false): string {
     // Build household section if multiple members
     const householdSection = restrictions.householdMembers.length > 1
         ? `\nHousehold (${restrictions.householdMembers.length}): ${restrictions.householdMembers.map(m => `${m.name}${m.dietType ? ` (${m.dietType})` : ""}`).join(", ")}`
@@ -580,6 +580,25 @@ function buildSystemPrompt(prompt: string, restrictions: CombinedDietaryRestrict
         ? `RESTRICTIONS:${householdSection}\n${restrictionParts.map(r => `- ${r}`).join("\n")}`
         : "";
 
+    // Ingredient quality rules - only apply when user will be shopping (not pantry mode)
+    const qualityRulesText = pantryMode ? "" : `
+INGREDIENT QUALITY RULES (FOR SHOPPING):
+- PROTEINS: Prefer fresh, lean cuts. Avoid breaded, battered, fried, nuggets, or pre-seasoned meats. Prefer boneless/skinless chicken, lean ground turkey/beef (90%+ lean), fresh fish fillets.
+- DAIRY: Prefer plain, unsweetened options. Avoid flavored yogurt, sweetened milk, or dessert cheeses. Prefer plain Greek yogurt, unflavored milk/alternatives.
+- PRODUCE: Use fresh or plain frozen. Avoid fruits in syrup, candied items, or vegetables with sauce/cheese.
+- GRAINS: Prefer whole grain options when available.
+- FATS: Use healthy oils and natural nut butters. Avoid hydrogenated oils.
+- BEANS: Prefer no-salt-added or low-sodium canned, or dried beans.
+- SNACKS/NUTS: Prefer raw or dry roasted unsalted.`;
+
+    // Pantry mode specific guidance
+    const pantryModeText = pantryMode ? `
+PANTRY MODE: The user is cooking with ingredients they already have at home.
+- Create recipes using ONLY the ingredients they mention (plus basic pantry staples like salt, pepper, oil)
+- Be flexible and practical - work with what they have
+- Suggest simple recipes achievable with basic home equipment
+- Do NOT suggest they buy additional ingredients` : "";
+
     // Meal count based on request type
     const isBroadRequest = isBroadMealPlanRequest(prompt);
     let mealCountInstruction: string;
@@ -596,6 +615,8 @@ function buildSystemPrompt(prompt: string, restrictions: CombinedDietaryRestrict
 RULES: Respect allergies/doctor restrictions (STRICT). Heart-conscious by default. U.S. grocery ingredients.
 ${cookingGuidance}
 ${restrictionsText}
+${qualityRulesText}
+${pantryModeText}
 
 JSON output:
 {"meals":[{"mealType":"breakfast|lunch|dinner|snack","name":"","description":"","servings":N,"macros":{"calories":N,"protein":N,"carbs":N,"fiber":N,"fat":N},"cookTimeRange":{"min":N,"max":N},"ingredients":[{"name":"display name","quantity":"","grocerySearchTerm":"raw product","preparation":""}],"steps":[""]}]}
@@ -631,10 +652,11 @@ export async function POST(request: Request) {
     (async () => {
         try {
             const body = await request.json();
-            const { prompt, prefs, uid } = body as {
+            const { prompt, prefs, uid, pantryMode } = body as {
                 prompt?: string;
                 prefs?: UserPrefs;
                 uid?: string;
+                pantryMode?: boolean;
             };
 
             // Validation
@@ -722,7 +744,7 @@ export async function POST(request: Request) {
                 response_format: { type: "json_object" },
                 stream: true,
                 messages: [
-                    { role: "system", content: buildSystemPrompt(prompt, combinedRestrictions, isPremium) },
+                    { role: "system", content: buildSystemPrompt(prompt, combinedRestrictions, isPremium, Boolean(pantryMode)) },
                     { role: "user", content: JSON.stringify({ userPrompt: prompt, prefs: prefs || {}, history, familyRestrictions: combinedRestrictions }) },
                 ],
             });
@@ -808,6 +830,7 @@ export async function POST(request: Request) {
                     monthlyPromptCount: newMonthlyPromptCount,
                     monthlyPromptLimit: FREE_TIER_MONTHLY_LIMIT,
                     daysUntilReset,
+                    pantryMode: Boolean(pantryMode),
                 },
             }));
 
