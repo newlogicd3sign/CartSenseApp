@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { auth } from "@/lib/firebaseClient";
 import { onAuthStateChanged } from "firebase/auth";
@@ -15,6 +15,7 @@ import {
     ArrowLeft,
     Users,
 } from "lucide-react";
+import { getRandomAccentColor } from "@/lib/utils";
 
 type PlanType = "individual" | "family";
 
@@ -79,6 +80,9 @@ export default function UpgradePage() {
     const [user, setUser] = useState<{ uid: string; email: string | null } | null>(null);
     const canceled = searchParams.get("canceled") === "true";
 
+    // Random color for back button
+    const backButtonColor = useMemo(() => getRandomAccentColor(), []);
+
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, (firebaseUser) => {
             if (firebaseUser) {
@@ -123,10 +127,14 @@ export default function UpgradePage() {
             <div className="px-6 pt-6 pb-4">
                 <button
                     onClick={() => router.back()}
-                    className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-xl transition-all hover:opacity-80 shadow-sm"
+                    style={{
+                        backgroundColor: `${backButtonColor.primary}15`,
+                        color: backButtonColor.dark,
+                    }}
                 >
                     <ArrowLeft className="w-5 h-5" />
-                    <span className="text-sm font-medium">Back</span>
+                    <span className="font-medium">Back</span>
                 </button>
             </div>
 

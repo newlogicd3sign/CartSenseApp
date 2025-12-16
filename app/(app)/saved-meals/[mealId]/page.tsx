@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
 import { onAuthStateChanged, type User } from "firebase/auth";
@@ -18,6 +18,7 @@ import {
     isStapleItem,
     isSameIngredient,
     isExcludedIngredient,
+    getRandomAccentColor,
 } from "@/lib/utils";
 import { getIngredientCategory } from "@/lib/ingredientQualityRules";
 import {
@@ -161,6 +162,9 @@ export default function SavedMealDetailPage() {
     const [loadingSwapSuggestions, setLoadingSwapSuggestions] = useState(false);
     const [showSwapOptions, setShowSwapOptions] = useState(false);
     const [swappingIngredient, setSwappingIngredient] = useState(false);
+
+    // Random color for back button
+    const backButtonColor = useMemo(() => getRandomAccentColor(), []);
 
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -684,10 +688,14 @@ export default function SavedMealDetailPage() {
                 <div className="max-w-3xl mx-auto">
                     <button
                         onClick={() => router.push("/saved-meals")}
-                        className="flex items-center gap-2 text-gray-500 hover:text-gray-700 transition-colors"
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-xl transition-all hover:opacity-80"
+                        style={{
+                            backgroundColor: `${backButtonColor.primary}15`,
+                            color: backButtonColor.dark,
+                        }}
                     >
                         <ArrowLeft className="w-5 h-5" />
-                        <span className="text-sm">Back to saved meals</span>
+                        <span className="font-medium">Back to saved meals</span>
                     </button>
                 </div>
             </div>
