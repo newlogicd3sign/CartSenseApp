@@ -3,17 +3,24 @@ import { stripe } from "@/lib/stripe";
 import { adminDb } from "@/lib/firebaseAdmin";
 
 const PRICE_IDS = {
-    individual: process.env.STRIPE_PRICE_ID_INDIVIDUAL || process.env.STRIPE_PRICE_ID,
-    family: process.env.STRIPE_PRICE_ID_FAMILY,
+    individual: {
+        monthly: process.env.STRIPE_PRICE_ID_INDIVIDUAL_MONTHLY || process.env.STRIPE_PRICE_ID,
+        yearly: process.env.STRIPE_PRICE_ID_INDIVIDUAL_YEARLY,
+    },
+    family: {
+        monthly: process.env.STRIPE_PRICE_ID_FAMILY_MONTHLY || process.env.STRIPE_PRICE_ID_FAMILY,
+        yearly: process.env.STRIPE_PRICE_ID_FAMILY_YEARLY,
+    },
 };
 
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { uid, email, plan = "individual" } = body as {
+        const { uid, email, plan = "individual", billingCycle = "yearly" } = body as {
             uid?: string;
             email?: string;
             plan?: "individual" | "family";
+            billingCycle?: "monthly" | "yearly";
         };
 
         if (!uid || !email) {
@@ -23,9 +30,9 @@ export async function POST(request: Request) {
             );
         }
 
-        const priceId = PRICE_IDS[plan];
+        const priceId = PRICE_IDS[plan]?.[billingCycle];
         if (!priceId) {
-            console.error(`[STRIPE] Missing price ID for plan: ${plan}`);
+            console.error(`[STRIPE] Missing price ID for plan: ${plan}, billingCycle: ${billingCycle}`);
             return NextResponse.json(
                 { error: "Stripe not configured for this plan" },
                 { status: 500 }
@@ -72,11 +79,13 @@ export async function POST(request: Request) {
             metadata: {
                 firebaseUid: uid,
                 plan,
+                billingCycle,
             },
             subscription_data: {
                 metadata: {
                     firebaseUid: uid,
                     plan,
+                    billingCycle,
                 },
             },
         });

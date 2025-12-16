@@ -1,0 +1,16 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Cart body - centered -->
+  <path d="M88 35C94.5 35 99 41.7 97 48L89 73C87.7 76.8 84 79.5 80 79.5H48C43.9 79.5 40.2 76.6 39 72.7L29 35H88Z" stroke="#5FD3CA" stroke-width="6"/>
+  <!-- Cart handle -->
+  <path d="M20 28H42" stroke="#A39E9E" stroke-width="6" stroke-linecap="round"/>
+  <!-- Cart wheels -->
+  <path d="M85 85C84.7 88.3 81.8 91 78.3 91C74.8 91 71.9 88.3 71.6 85H85Z" fill="#5FD3CA"/>
+  <path d="M56 85C55.7 88.3 52.8 91 49.3 91C45.8 91 42.9 88.3 42.6 85H56Z" fill="#5FD3CA"/>
+  <!-- Three dots -->
+  <circle cx="52" cy="59" r="4" fill="#5FD3CA"/>
+  <circle cx="64" cy="59" r="4" fill="#5FD3CA"/>
+  <circle cx="76" cy="59" r="4" fill="#5FD3CA"/>
+  <!-- Star badge -->
+  <circle cx="100" cy="28" r="18" fill="#FFD700"/>
+  <polygon points="100,14 103,23 113,23 105,29 108,39 100,33 92,39 95,29 87,23 97,23" fill="#1a1a1a"/>
+</svg>
