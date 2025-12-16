@@ -938,7 +938,7 @@ export default function Home() {
                   href="/signup"
                   className="inline-flex items-center gap-2 text-[#8B5CF6] font-semibold hover:underline text-sm sm:text-base"
                 >
-                  Try Family plan free for 7 days
+                  Try Family plan free
                   <ArrowRight className="w-4 h-4" />
                 </Link>
               </div>

@@ -40,7 +40,7 @@ export const metadata: Metadata = {
     description: "Tell CartSense what you're craving. Get personalized meals with recipes, then add all ingredients to your Kroger cart with one click.",
     images: [
       {
-        url: "/og-image.png",
+        url: "https://cartsense.app/og-image.png",
         width: 1200,
         height: 630,
         alt: "CartSense - AI Meal Planning and Grocery Shopping",
@@ -51,7 +51,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "CartSense – AI Meal Planning That Adds Groceries to Your Cart",
     description: "Tell CartSense what you're craving. Get personalized meals with recipes, then add all ingredients to your Kroger cart with one click.",
-    images: ["/og-image.png"],
+    images: ["https://cartsense.app/og-image.png"],
   },
   robots: {
     index: true,

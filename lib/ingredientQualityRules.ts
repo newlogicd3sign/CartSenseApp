@@ -55,6 +55,11 @@ export const CATEGORY_QUALITY_RULES = {
     preferKeywords: ["cage free", "free range", "pasture raised", "organic"],
     avoidKeywords: ["egg substitute", "liquid egg product"],
     notes: "Fresh eggs, preferably cage-free or better"
+  },
+  pantry: {
+    preferKeywords: ["pure", "ground", "organic"],
+    avoidKeywords: ["seasoning blend", "mix"],
+    notes: "Spices, seasonings, and pantry staples"
   }
 } as const;
 
@@ -945,7 +950,7 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
   {
     id: "black_pepper",
     canonicalName: "Black Pepper",
-    category: "fats_oils",
+    category: "pantry",
     krogerDeptHint: "Spices",
     matchKeywords: ["black pepper", "ground black pepper", "cracked black pepper"],
     avoidKeywords: ["lemon pepper", "garlic pepper", "seasoned pepper", "pepper blend", "steak seasoning", "and spices"],
@@ -955,7 +960,7 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
   {
     id: "salt",
     canonicalName: "Salt",
-    category: "fats_oils",
+    category: "pantry",
     krogerDeptHint: "Spices",
     matchKeywords: ["salt", "table salt", "sea salt", "kosher salt"],
     avoidKeywords: ["seasoned salt", "garlic salt", "onion salt", "salt substitute", "popcorn salt"],
@@ -965,7 +970,7 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
   {
     id: "garlic_powder",
     canonicalName: "Garlic Powder",
-    category: "fats_oils",
+    category: "pantry",
     krogerDeptHint: "Spices",
     matchKeywords: ["garlic powder"],
     avoidKeywords: ["garlic salt", "garlic bread seasoning", "garlic pepper"],
@@ -975,7 +980,7 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
   {
     id: "onion_powder",
     canonicalName: "Onion Powder",
-    category: "fats_oils",
+    category: "pantry",
     krogerDeptHint: "Spices",
     matchKeywords: ["onion powder"],
     avoidKeywords: ["onion salt", "onion soup mix"],
@@ -985,7 +990,7 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
   {
     id: "paprika",
     canonicalName: "Paprika",
-    category: "fats_oils",
+    category: "pantry",
     krogerDeptHint: "Spices",
     matchKeywords: ["paprika", "smoked paprika"],
     avoidKeywords: ["seasoning blend", "rub"],
@@ -995,7 +1000,7 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
   {
     id: "cumin",
     canonicalName: "Cumin",
-    category: "fats_oils",
+    category: "pantry",
     krogerDeptHint: "Spices",
     matchKeywords: ["cumin", "ground cumin"],
     avoidKeywords: ["taco seasoning", "chili seasoning"],
@@ -1005,7 +1010,7 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
   {
     id: "italian_seasoning",
     canonicalName: "Italian Seasoning",
-    category: "fats_oils",
+    category: "pantry",
     krogerDeptHint: "Spices",
     matchKeywords: ["italian seasoning", "italian herbs"],
     avoidKeywords: ["dressing mix", "pasta sauce seasoning"],
@@ -1015,7 +1020,7 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
   {
     id: "chili_powder",
     canonicalName: "Chili Powder",
-    category: "fats_oils",
+    category: "pantry",
     krogerDeptHint: "Spices",
     matchKeywords: ["chili powder"],
     avoidKeywords: ["chili seasoning packet", "taco seasoning", "chili starter"],
@@ -1025,7 +1030,7 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
   {
     id: "cinnamon",
     canonicalName: "Cinnamon",
-    category: "fats_oils",
+    category: "pantry",
     krogerDeptHint: "Spices",
     matchKeywords: ["cinnamon", "ground cinnamon"],
     avoidKeywords: ["cinnamon sugar", "cinnamon roll", "cinnamon toast"],
@@ -1184,7 +1189,7 @@ export function getQualityPenalty(
  * Get category for an ingredient name
  * Returns a category type for icon mapping
  */
-export function getIngredientCategory(ingredientName: string): CategoryType | "pantry" {
+export function getIngredientCategory(ingredientName: string): CategoryType {
   const normalized = ingredientName.toLowerCase().trim();
 
   // First try to find a specific rule

@@ -49,6 +49,7 @@ import { useToast } from "@/components/Toast";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { Modal } from "@/components/Modal";
 import { StoreSearchModal } from "@/components/StoreSearchModal";
+import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { getStoreBrand } from "@/lib/utils";
 import { warmLocationInBackground } from "@/lib/krogerWarm";
 import type { FamilyMember } from "@/types/family";
@@ -239,6 +240,9 @@ function AccountPageContent() {
 
     // Store search modal state
     const [showStoreSearchModal, setShowStoreSearchModal] = useState(false);
+
+    // Upgrade modal state for household members
+    const [showHouseholdUpgradeModal, setShowHouseholdUpgradeModal] = useState(false);
 
     const formatDoctorUpdatedAt = (value?: any) => {
         if (!value) return "";
@@ -775,7 +779,7 @@ function AccountPageContent() {
     const handleOpenAddMember = () => {
         if (familyMembers.length >= MAX_HOUSEHOLD_MEMBERS) {
             if (userDoc?.planType !== "family") {
-                showToast("Upgrade to Family & Friends plan to add more members.", "error");
+                setShowHouseholdUpgradeModal(true);
             } else {
                 showToast(`You can add up to ${MAX_HOUSEHOLD_MEMBERS} household members.`, "error");
             }
@@ -2001,6 +2005,16 @@ function AccountPageContent() {
                         onSetDefault={handleSetDefault}
                         onRemoveStore={handleRemoveStore}
                     />
+
+                    {/* Household Member Upgrade Modal */}
+                    {showHouseholdUpgradeModal && (
+                        <UpgradePrompt
+                            feature="household_members"
+                            onClose={() => setShowHouseholdUpgradeModal(false)}
+                            variant="modal"
+                            reason="limit_reached"
+                        />
+                    )}
 
                     {/* Premium Subscription Card */}
                     {userDoc?.isPremium && (
