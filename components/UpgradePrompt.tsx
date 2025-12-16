@@ -1,9 +1,9 @@
 "use client";
 
-import { X, Sparkles, MessageSquare, Camera, Bookmark, ShoppingCart } from "lucide-react";
+import { X, Sparkles, MessageSquare, Camera, Bookmark, ShoppingCart, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-type FeatureType = "meal_chat" | "diet_photo" | "saved_meals" | "shopping_lists";
+type FeatureType = "meal_chat" | "diet_photo" | "saved_meals" | "shopping_lists" | "household_members";
 type VariantType = "modal" | "inline" | "full_page";
 
 type UpgradePromptProps = {
@@ -47,6 +47,13 @@ const featureConfig: Record<FeatureType, {
         voluntaryDescription: "Create unlimited shopping lists for all your meal planning needs.",
         icon: ShoppingCart,
         benefit: "Premium users get unlimited shopping lists",
+    },
+    household_members: {
+        title: "Add More Household Members",
+        limitDescription: "You've reached the limit of 1 household member on the free tier.",
+        voluntaryDescription: "Add up to 5 household members with individual dietary profiles.",
+        icon: Users,
+        benefit: "Family plan includes up to 5 household members",
     },
 };
 

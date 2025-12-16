@@ -1,12 +1,12 @@
 "use client";
 
-import { Suspense, useEffect, useState, useRef, useCallback } from "react";
+import { Suspense, useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { logUserEvent } from "@/lib/logUserEvent";
-import { ACCENT_COLORS, type AccentColor } from "@/lib/utils";
+import { ACCENT_COLORS, type AccentColor, getRandomAccentColor } from "@/lib/utils";
 import {
     saveGeneratedMeals,
     loadGeneratedMeals,
@@ -93,6 +93,9 @@ function MealsPageContent() {
     const hasStartedStreaming = useRef<string | null>(null);
     const mealsMetaRef = useRef<MealsMeta | null>(null);
     const colorIndexRef = useRef(0);
+
+    // Random color for back button
+    const backButtonColor = useMemo(() => getRandomAccentColor(), []);
 
     // Cycle through colors while streaming
     useEffect(() => {
@@ -313,10 +316,14 @@ function MealsPageContent() {
                 <div className="max-w-3xl mx-auto">
                     <button
                         onClick={() => router.push("/prompt")}
-                        className="flex items-center gap-2 text-gray-500 hover:text-gray-700 transition-colors mb-3"
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-xl transition-all hover:opacity-80 mb-3"
+                        style={{
+                            backgroundColor: `${backButtonColor.primary}15`,
+                            color: backButtonColor.dark,
+                        }}
                     >
                         <ArrowLeft className="w-5 h-5" />
-                        <span className="text-sm">Back to search</span>
+                        <span className="font-medium">Back to search</span>
                     </button>
                     <h1 className="text-xl lg:text-2xl text-gray-900">Your Meal Suggestions</h1>
                     <p className="text-sm text-gray-500 mt-1">
@@ -401,6 +408,22 @@ function MealsPageContent() {
                     ) : meals.length === 0 && streamStatus ? (
                         /* Skeleton placeholder cards while loading */
                         <div className="flex flex-col gap-3">
+                            {/* Status indicator above skeletons */}
+                            <div className="flex items-center gap-2 py-3">
+                                <div
+                                    className="w-6 h-6 rounded-full flex items-center justify-center transition-colors duration-500"
+                                    style={{ backgroundColor: statusColor.primary }}
+                                >
+                                    <Sparkles className="w-3.5 h-3.5 text-white animate-pulse" />
+                                </div>
+                                <span
+                                    className="text-sm font-medium transition-colors duration-500"
+                                    style={{ color: statusColor.primary }}
+                                >
+                                    {streamStatus}
+                                </span>
+                            </div>
+
                             {[0, 1].map((i) => (
                                 <div
                                     key={i}
@@ -430,22 +453,6 @@ function MealsPageContent() {
                                     </div>
                                 </div>
                             ))}
-
-                            {/* Status indicator below skeletons */}
-                            <div className="flex items-center gap-2 py-3">
-                                <div
-                                    className="w-6 h-6 rounded-full flex items-center justify-center transition-colors duration-500"
-                                    style={{ backgroundColor: statusColor.primary }}
-                                >
-                                    <Sparkles className="w-3.5 h-3.5 text-white animate-pulse" />
-                                </div>
-                                <span
-                                    className="text-sm font-medium transition-colors duration-500"
-                                    style={{ color: statusColor.primary }}
-                                >
-                                    {streamStatus}
-                                </span>
-                            </div>
                         </div>
                     ) : (
                         <div className="flex flex-col gap-3">
