@@ -18,6 +18,7 @@ import {
 import { getRandomAccentColor } from "@/lib/utils";
 
 type PlanType = "individual" | "family";
+type BillingCycle = "yearly" | "monthly";
 
 const getFeatures = (plan: PlanType) => [
     {
@@ -51,15 +52,17 @@ const plans = [
     {
         id: "individual" as PlanType,
         name: "Individual",
-        price: "$9.99",
+        monthlyPrice: "$9.99",
+        yearlyPrice: "$90.00",
         description: "Perfect for single users",
         highlight: false,
         features: null,
     },
     {
         id: "family" as PlanType,
-        name: "Family & Friends",
-        price: "$14.99",
+        name: "Household",
+        monthlyPrice: "$14.99",
+        yearlyPrice: "$135.00",
         description: "For the whole household",
         highlight: true,
         features: [
@@ -77,6 +80,7 @@ export default function UpgradePage() {
     const searchParams = useSearchParams();
     const [loading, setLoading] = useState(false);
     const [selectedPlan, setSelectedPlan] = useState<PlanType>("individual");
+    const [billingCycle, setBillingCycle] = useState<BillingCycle>("yearly");
     const [user, setUser] = useState<{ uid: string; email: string | null } | null>(null);
     const canceled = searchParams.get("canceled") === "true";
 
@@ -104,6 +108,7 @@ export default function UpgradePage() {
                     uid: user.uid,
                     email: user.email,
                     plan: selectedPlan,
+                    billingCycle: billingCycle,
                 }),
             });
 
@@ -162,6 +167,33 @@ export default function UpgradePage() {
                     </p>
                 </div>
 
+                {/* Billing Cycle Toggle */}
+                <div className="flex justify-center mb-6">
+                    <div className="inline-flex bg-gray-100 rounded-xl p-1">
+                        <button
+                            onClick={() => setBillingCycle("yearly")}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                                billingCycle === "yearly"
+                                    ? "bg-white text-gray-900 shadow-sm"
+                                    : "text-gray-500 hover:text-gray-700"
+                            }`}
+                        >
+                            Yearly
+                            <span className="ml-1 text-xs text-green-600 font-semibold">Save 25%</span>
+                        </button>
+                        <button
+                            onClick={() => setBillingCycle("monthly")}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                                billingCycle === "monthly"
+                                    ? "bg-white text-gray-900 shadow-sm"
+                                    : "text-gray-500 hover:text-gray-700"
+                            }`}
+                        >
+                            Monthly
+                        </button>
+                    </div>
+                </div>
+
                 {/* Plan Selection */}
                 <div className="space-y-3 mb-6">
                     {plans.map((plan) => (
@@ -203,8 +235,12 @@ export default function UpgradePage() {
                                 </div>
                                 <div className="text-right flex-shrink-0 ml-4">
                                     <div className="flex items-baseline gap-0.5">
-                                        <span className="text-2xl font-bold text-gray-900">{plan.price}</span>
-                                        <span className="text-gray-500 text-sm">/mo</span>
+                                        <span className="text-2xl font-bold text-gray-900">
+                                            {billingCycle === "yearly" ? plan.yearlyPrice : plan.monthlyPrice}
+                                        </span>
+                                        <span className="text-gray-500 text-sm">
+                                            {billingCycle === "yearly" ? "/yr" : "/mo"}
+                                        </span>
                                     </div>
                                     {selectedPlan === plan.id && (
                                         <div className="mt-1 flex justify-end">
