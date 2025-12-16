@@ -3,13 +3,15 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { auth } from "@/lib/firebaseClient";
+import { auth, db } from "@/lib/firebaseClient";
 import { signOut, onAuthStateChanged } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 import { Search, List, BookmarkCheck, User, LogOut } from "lucide-react";
 import { getRandomAccentColor, type AccentColor } from "@/lib/utils";
 import { clearAllMealStorage, loadGeneratedMeals } from "@/lib/mealStorage";
 import Image from "next/image";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
+import CartSenseProLogo from "@/app/CartSensePro.svg";
 import { LoadingScreen } from "@/components/LoadingScreen";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -21,10 +23,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const [navAnimating, setNavAnimating] = useState(false);
     const previousPathRef = useRef<string | null>(null);
     const [authChecked, setAuthChecked] = useState(false);
+    const [isPremiumUser, setIsPremiumUser] = useState(false);
 
     // Check for authentication and email verification
     useEffect(() => {
-        const unsub = onAuthStateChanged(auth, (user) => {
+        const unsub = onAuthStateChanged(auth, async (user) => {
             if (!user) {
                 // Not logged in
                 router.push("/login");
@@ -35,6 +38,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             if (!user.emailVerified) {
                 router.push("/verify-email");
                 return;
+            }
+
+            // Fetch user subscription status
+            try {
+                const userDocRef = doc(db, "users", user.uid);
+                const userSnap = await getDoc(userDocRef);
+                if (userSnap.exists()) {
+                    const data = userSnap.data();
+                    const isPremium = data.isPremium === true;
+                    const planType = data.planType as string | undefined;
+                    // Show Pro logo for premium users or family plan members
+                    setIsPremiumUser(isPremium || planType === "individual" || planType === "family");
+                }
+            } catch (error) {
+                console.error("Error fetching user subscription status:", error);
             }
 
             setAuthChecked(true);
@@ -138,7 +156,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         }`}
                     >
                         <div className="flex items-center gap-2">
-                            <Image src={CartSenseLogo} alt="CartSense" className="h-8 w-auto" />
+                            <Image src={isPremiumUser ? CartSenseProLogo : CartSenseLogo} alt="CartSense" className="h-8 w-auto" />
                         </div>
 
                         <nav className="flex items-center gap-1">
