@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
-import { searchKrogerProducts } from "@/lib/kroger";
+import { searchKrogerProducts } from "@/lib/product-engine/kroger";
 
 type SwapRequest = {
     userId: string;

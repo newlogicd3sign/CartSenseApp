@@ -1,8 +1,8 @@
-// lib/krogerWarm.ts
+// lib/product-engine/krogerWarm.ts
 // Client-side helper to trigger on-demand cache warming for Kroger locations
 
 import { httpsCallable } from "firebase/functions";
-import { functions } from "./firebaseClient";
+import { functions } from "../firebaseClient";
 
 interface WarmLocationResult {
     success: boolean;

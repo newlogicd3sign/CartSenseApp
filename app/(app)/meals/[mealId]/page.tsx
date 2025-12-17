@@ -61,7 +61,7 @@ import {
     isExcludedIngredient,
     getRandomAccentColor,
 } from "@/lib/utils";
-import { getIngredientCategory } from "@/lib/ingredientQualityRules";
+import { getIngredientCategory } from "@/lib/product-engine/ingredientQualityRules";
 
 type Ingredient = {
     name: string;

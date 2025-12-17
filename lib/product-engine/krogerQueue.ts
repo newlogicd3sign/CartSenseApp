@@ -1,4 +1,4 @@
-// lib/krogerQueue.ts
+// lib/product-engine/krogerQueue.ts
 // Request queue with concurrency control for Kroger API calls
 import "server-only";
 import { KROGER_RATE_LIMITS, QUEUE_PRIORITY } from "./krogerConfig";

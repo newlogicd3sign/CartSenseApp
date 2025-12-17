@@ -1,7 +1,7 @@
-// lib/krogerRateLimiter.ts
+// lib/product-engine/krogerRateLimiter.ts
 // Sliding window rate limiter for Kroger API using Firestore
 import "server-only";
-import { adminDb } from "./firebaseAdmin";
+import { adminDb } from "../firebaseAdmin";
 import admin from "firebase-admin";
 import { KROGER_RATE_LIMITS } from "./krogerConfig";
 
