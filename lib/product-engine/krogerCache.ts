@@ -1,6 +1,6 @@
-// lib/krogerCache.ts
+// lib/product-engine/krogerCache.ts
 import "server-only";
-import { adminDb } from "./firebaseAdmin";
+import { adminDb } from "../firebaseAdmin";
 import admin from "firebase-admin";
 
 export interface CachedKrogerProduct {

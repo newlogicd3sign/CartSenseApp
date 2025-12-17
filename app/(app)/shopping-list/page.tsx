@@ -44,7 +44,7 @@ import {
     Apple,
 } from "lucide-react";
 import { getRandomAccentColor, getStoreBrand, type AccentColor, type StoreBrandInfo } from "@/lib/utils";
-import { getIngredientCategory } from "@/lib/ingredientQualityRules";
+import { getIngredientCategory } from "@/lib/product-engine/ingredientQualityRules";
 import { useToast } from "@/components/Toast";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { EmptyState } from "@/components/EmptyState";

@@ -1,9 +1,9 @@
 // app/(app)/api/kroger/cart/route.ts
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
-import { searchKrogerProduct, searchAlternativeProduct, getKrogerApiStatus, type KrogerProductMatch } from "@/lib/kroger";
+import { searchKrogerProduct, searchAlternativeProduct, getKrogerApiStatus, type KrogerProductMatch } from "@/lib/product-engine/kroger";
 import { isExcludedIngredient, calculateUnitsNeeded } from "@/lib/utils";
-import { KROGER_RATE_LIMITS } from "@/lib/krogerConfig";
+import { KROGER_RATE_LIMITS } from "@/lib/product-engine/krogerConfig";
 
 const TOKEN_URL = process.env.KROGER_TOKEN_URL ?? "https://api-ce.kroger.com/v1/connect/oauth2/token";
 const API_BASE_URL = process.env.KROGER_API_BASE_URL ?? "https://api-ce.kroger.com/v1";
