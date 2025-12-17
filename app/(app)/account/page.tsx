@@ -136,6 +136,7 @@ type UserPrefsDoc = {
     dislikedFoods?: string[];
     defaultKrogerLocationId?: string | null;
     krogerLinked?: boolean;
+    shoppingPreference?: "kroger" | "instacart";
     doctorDietInstructions?: DoctorDietInstructions | null;
     monthlyPromptCount?: number;
     promptPeriodStart?: any;
@@ -197,6 +198,9 @@ function AccountPageContent() {
     const [krogerProfile, setKrogerProfile] = useState<{ firstName?: string; lastName?: string } | null>(null);
     const [loadingKrogerProfile, setLoadingKrogerProfile] = useState(false);
     const [unlinkingKroger, setUnlinkingKroger] = useState(false);
+
+    // Shopping preference state
+    const [savingShoppingPreference, setSavingShoppingPreference] = useState(false);
 
     // Password change state
     const [editingPassword, setEditingPassword] = useState(false);
@@ -759,6 +763,29 @@ function AccountPageContent() {
             showToast("Something went wrong. Please try again.", "error");
         } finally {
             setUnlinkingKroger(false);
+        }
+    };
+
+    const handleChangeShoppingPreference = async (newPreference: "kroger" | "instacart") => {
+        if (!user || savingShoppingPreference) return;
+        if (newPreference === userDoc?.shoppingPreference) return;
+
+        try {
+            setSavingShoppingPreference(true);
+
+            await setDoc(
+                doc(db, "users", user.uid),
+                { shoppingPreference: newPreference },
+                { merge: true }
+            );
+
+            setUserDoc((prev) => prev ? { ...prev, shoppingPreference: newPreference } : prev);
+            showToast(`Shopping preference updated to ${newPreference === "instacart" ? "Instacart" : "Kroger"}.`, "success");
+        } catch (err) {
+            console.error("Error updating shopping preference:", err);
+            showToast("Failed to update shopping preference. Please try again.", "error");
+        } finally {
+            setSavingShoppingPreference(false);
         }
     };
 
@@ -1750,6 +1777,9 @@ function AccountPageContent() {
                                 </div>
                             ) : (
                                 <div className="space-y-3">
+                                    <p className="text-xs text-gray-500 mb-2">
+                                        Toggle members on or off to include or exclude them from meal planning.
+                                    </p>
                                     {familyMembers.map((member) => (
                                         <div
                                             key={member.id}
@@ -1887,8 +1917,65 @@ function AccountPageContent() {
                         </div>
                     </div>
 
-                    {/* Store & Account Card - Compact */}
-                    {(() => {
+                    {/* Shopping Preference Card */}
+                    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                        <div className="px-5 py-4 border-b border-gray-100">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-[#43B02A]/10 rounded-xl flex items-center justify-center">
+                                    <ShoppingCart className="w-5 h-5 text-[#43B02A]" />
+                                </div>
+                                <div>
+                                    <h2 className="font-medium text-gray-900">Shopping Preference</h2>
+                                    <p className="text-xs text-gray-500">Choose how you prefer to shop for groceries</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="px-5 py-4">
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => void handleChangeShoppingPreference("instacart")}
+                                    disabled={savingShoppingPreference}
+                                    className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all ${
+                                        (userDoc?.shoppingPreference || "instacart") === "instacart"
+                                            ? "border-[#43B02A] bg-[#43B02A]/5"
+                                            : "border-gray-200 hover:border-gray-300"
+                                    }`}
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <div className="text-left">
+                                            <p className="font-medium text-gray-900">Instacart</p>
+                                            <p className="text-xs text-gray-500">Multiple stores, delivery</p>
+                                        </div>
+                                        {(userDoc?.shoppingPreference || "instacart") === "instacart" && (
+                                            <CheckCircle className="w-5 h-5 text-[#43B02A]" />
+                                        )}
+                                    </div>
+                                </button>
+                                <button
+                                    onClick={() => void handleChangeShoppingPreference("kroger")}
+                                    disabled={savingShoppingPreference}
+                                    className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all ${
+                                        userDoc?.shoppingPreference === "kroger"
+                                            ? "border-[#0056a3] bg-[#0056a3]/5"
+                                            : "border-gray-200 hover:border-gray-300"
+                                    }`}
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <div className="text-left">
+                                            <p className="font-medium text-gray-900">Kroger Direct</p>
+                                            <p className="text-xs text-gray-500">Add to Kroger cart</p>
+                                        </div>
+                                        {userDoc?.shoppingPreference === "kroger" && (
+                                            <CheckCircle className="w-5 h-5 text-[#0056a3]" />
+                                        )}
+                                    </div>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Store & Account Card - Only show for Kroger preference */}
+                    {userDoc?.shoppingPreference === "kroger" && (() => {
                         const defaultLocation = locations.find(loc => loc.krogerLocationId === userDoc?.defaultKrogerLocationId);
                         const storeBrand = defaultLocation ? getStoreBrand(defaultLocation.name) : { displayName: "Kroger", tagline: "Kroger Family of Stores" };
                         const isGenericKroger = !defaultLocation;
@@ -1982,13 +2069,27 @@ function AccountPageContent() {
 
                             {/* Info text when not fully set up */}
                             {(!defaultLocation || !userDoc?.krogerLinked) && (
-                                <p className="text-xs text-gray-500 bg-gray-50 p-3 rounded-xl">
-                                    {!defaultLocation && !userDoc?.krogerLinked
-                                        ? "Select a store and connect your account to add items directly to your cart."
-                                        : !defaultLocation
-                                        ? "Select a store to see local prices and availability."
-                                        : "Connect your account to add items directly to your cart."}
-                                </p>
+                                <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl">
+                                    <p className="text-xs text-amber-800 font-medium mb-1">
+                                        {!defaultLocation && !userDoc?.krogerLinked
+                                            ? "Complete setup to unlock full features"
+                                            : !defaultLocation
+                                            ? "Select a store to continue"
+                                            : "Connect your account to unlock full features"}
+                                    </p>
+                                    <ul className="text-xs text-amber-700 space-y-0.5 list-disc list-inside">
+                                        {!userDoc?.krogerLinked && (
+                                            <>
+                                                <li>Add items directly to your Kroger cart</li>
+                                                <li>See exact prices and availability</li>
+                                                <li>View aisle locations</li>
+                                            </>
+                                        )}
+                                        {!defaultLocation && (
+                                            <li>Get local store pricing and stock</li>
+                                        )}
+                                    </ul>
+                                </div>
                             )}
                         </div>
                     </div>
