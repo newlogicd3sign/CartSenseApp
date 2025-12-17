@@ -10,7 +10,7 @@ import Image from "next/image";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
 import { getRandomAccentColor, getStoreBrand, type AccentColor } from "@/lib/utils";
 import { useToast } from "@/components/Toast";
-import { warmLocationInBackground } from "@/lib/krogerWarm";
+import { warmLocationInBackground } from "@/lib/product-engine/krogerWarm";
 
 const ALLERGY_OPTIONS = [
     "Dairy",

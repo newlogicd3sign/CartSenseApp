@@ -4,9 +4,9 @@
 
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
-import { searchKrogerProduct, searchAlternativeProduct, getKrogerApiStatus } from "@/lib/kroger";
+import { searchKrogerProduct, searchAlternativeProduct, getKrogerApiStatus } from "@/lib/product-engine/kroger";
 import { isExcludedIngredient } from "@/lib/utils";
-import { KROGER_RATE_LIMITS } from "@/lib/krogerConfig";
+import { KROGER_RATE_LIMITS } from "@/lib/product-engine/krogerConfig";
 
 type Ingredient = {
     name: string;

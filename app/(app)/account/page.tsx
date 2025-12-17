@@ -51,7 +51,7 @@ import { Modal } from "@/components/Modal";
 import { StoreSearchModal } from "@/components/StoreSearchModal";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { getStoreBrand } from "@/lib/utils";
-import { warmLocationInBackground } from "@/lib/krogerWarm";
+import { warmLocationInBackground } from "@/lib/product-engine/krogerWarm";
 import type { FamilyMember } from "@/types/family";
 
 const ALLERGY_OPTIONS = [

@@ -1,4 +1,4 @@
-// lib/krogerConfig.ts
+// lib/product-engine/krogerConfig.ts
 // Centralized configuration for Kroger Rate-Safe architecture
 
 export const KROGER_RATE_LIMITS = {

@@ -1,6 +1,6 @@
 // app/api/kroger/locations/route.ts
 import { NextResponse } from "next/server";
-import { searchKrogerLocationsByZip } from "@/lib/kroger";
+import { searchKrogerLocationsByZip } from "@/lib/product-engine/kroger";
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
