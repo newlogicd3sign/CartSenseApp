@@ -2,8 +2,65 @@ import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebaseAdmin";
+import type { FoodEventType, FoodEventContext, FoodEventPayload } from "@/types/preferences";
 
 const db = adminDb;
+
+// Helper to normalize ingredient key for preference tracking
+function normalizeIngredientKey(name: string): string {
+    return name
+        .toLowerCase()
+        .trim()
+        .replace(/^[\d./-]+\s*/, "")
+        .replace(/^(fresh|dried|ground|minced|chopped|diced|sliced|whole|organic|large|medium|small|extra|virgin|raw|cooked|frozen|canned|boneless|skinless|lean)\s+/gi, "")
+        .replace(/,.*$/, "")
+        .replace(/\s*\([^)]*\)/g, "")
+        .replace(/[\s-]+/g, "_")
+        .replace(/[^a-z0-9_]/g, "")
+        .replace(/_+/g, "_")
+        .replace(/^_|_$/g, "");
+}
+
+// Server-side food event logger
+async function logFoodEventServer(
+    userId: string,
+    type: FoodEventType,
+    mealId?: string,
+    payload?: FoodEventPayload,
+    mealType?: string
+): Promise<void> {
+    try {
+        const now = new Date();
+        const hour = now.getHours();
+        const day = now.getDay();
+
+        const mealTime = mealType || (
+            hour >= 5 && hour < 11 ? "breakfast" :
+            hour >= 11 && hour < 15 ? "lunch" :
+            hour >= 17 && hour < 21 ? "dinner" : "snack"
+        );
+
+        const context: FoodEventContext = {
+            mealTime: mealTime as FoodEventContext["mealTime"],
+            dayType: day === 0 || day === 6 ? "weekend" : "weekday",
+        };
+
+        const eventDoc = {
+            createdAt: FieldValue.serverTimestamp(),
+            type,
+            mealId: mealId || null,
+            source: "prompt" as const,
+            context,
+            payload: payload || {},
+            clientEventId: `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
+        };
+
+        const eventsCol = db.collection("foodEvents").doc(userId).collection("events");
+        await eventsCol.add(eventDoc);
+    } catch (err) {
+        console.error("logFoodEventServer error:", err);
+    }
+}
 
 const FREE_CHAT_MONTHLY_LIMIT = 6;
 
@@ -51,6 +108,7 @@ type UserPrefs = {
         allergies?: string[];
         sensitivities?: string[];
     };
+    dislikedFoods?: string[];
 };
 
 type MealThreadReply = {
@@ -80,10 +138,11 @@ const openai = new OpenAI({
 const SYSTEM_PROMPT = `You are CartSense, an AI meal editor. Customize the given meal based on user requests.
 
 RULES:
-- Respect allergies/sensitivities (STRICT)
+- Respect allergies/sensitivities/dislikes (STRICT)
 - Minimal edits - only change what's needed
 - Heart-conscious by default
 - If change is major (new recipe), use "new_meal_variant"
+- IMPORTANT: Be semantic about dislikes. If someone dislikes "tomatoes", they typically still enjoy tomato sauce, ketchup, or cooked tomato products. If they dislike "mushrooms", they mean whole mushrooms, not mushroom powder/extract in sauces. Apply common sense.
 
 JSON response:
 {"reply":"explanation","action":"no_change|update_meal|new_meal_variant","updatedMeal":{...if action != no_change}}
@@ -171,6 +230,7 @@ export async function POST(request: Request) {
                 sensitivities:
                     prefs?.allergiesAndSensitivities?.sensitivities ?? [],
             },
+            dislikedFoods: prefs?.dislikedFoods ?? [],
         };
 
         // Build conversation history for OpenAI (limit to last 5 exchanges to keep costs low)
@@ -277,6 +337,44 @@ export async function POST(request: Request) {
                     monthlyChatCount: FieldValue.increment(1),
                 });
                 newMonthlyChatCount = monthlyChatCount + 1;
+            }
+        }
+
+        // Log food events for preference learning when meal is edited
+        if (parsed.action === "update_meal" || parsed.action === "new_meal_variant") {
+            // Log MEAL_EDITED event
+            void logFoodEventServer(userId, "MEAL_EDITED", meal.id, {}, meal.mealType);
+
+            // Detect ingredient changes if we have an updated meal
+            if (parsed.updatedMeal) {
+                const originalIngredients = new Set(meal.ingredients.map((i) => normalizeIngredientKey(i.name)));
+                const newIngredients = new Set(parsed.updatedMeal.ingredients.map((i) => normalizeIngredientKey(i.name)));
+
+                // Find removed ingredients
+                for (const ingredientKey of originalIngredients) {
+                    if (!newIngredients.has(ingredientKey)) {
+                        const original = meal.ingredients.find(
+                            (i) => normalizeIngredientKey(i.name) === ingredientKey
+                        );
+                        void logFoodEventServer(userId, "INGREDIENT_REMOVED", meal.id, {
+                            ingredientKey,
+                            ingredientText: original?.name,
+                        }, meal.mealType);
+                    }
+                }
+
+                // Find added ingredients
+                for (const ingredientKey of newIngredients) {
+                    if (!originalIngredients.has(ingredientKey)) {
+                        const added = parsed.updatedMeal.ingredients.find(
+                            (i) => normalizeIngredientKey(i.name) === ingredientKey
+                        );
+                        void logFoodEventServer(userId, "INGREDIENT_ADDED", meal.id, {
+                            ingredientKey,
+                            ingredientText: added?.name,
+                        }, meal.mealType);
+                    }
+                }
             }
         }
 

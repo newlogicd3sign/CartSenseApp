@@ -8,6 +8,7 @@ import { doc, setDoc, getDoc, collection, addDoc, serverTimestamp, getDocs, quer
 import { ArrowRight, AlertCircle, ShoppingCart, MapPin, CheckCircle, ExternalLink, Search } from "lucide-react";
 import Image from "next/image";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
+import InstacartCarrot from "@/app/🥕 Instacart Logos/Logos - Carrot/RGB/PNG/Instacart_Carrot.png";
 import { getRandomAccentColor, getStoreBrand, type AccentColor } from "@/lib/utils";
 import { useToast } from "@/components/Toast";
 import { warmLocationInBackground } from "@/lib/product-engine/krogerWarm";
@@ -83,7 +84,30 @@ type KrogerLocationSearchResult = {
     zipCode: string;
 };
 
-const TOTAL_STEPS = 6;
+const SHOPPING_PREFERENCE_OPTIONS = [
+    {
+        value: "instacart",
+        label: "Instacart",
+        description: "Shop from multiple stores with delivery",
+        pros: [
+            "Shop from Costco, Walmart, local grocers & more",
+            "Same-day delivery available",
+            "No store account linking required",
+        ],
+    },
+    {
+        value: "kroger",
+        label: "Kroger Direct",
+        description: "Link your Kroger account for the best experience",
+        pros: [
+            "See real-time pricing from your local store",
+            "Add items directly to your Kroger cart",
+            "Check product availability at your store",
+        ],
+    },
+];
+
+const TOTAL_STEPS = 7;
 
 function SetupPageContent() {
     const router = useRouter();
@@ -104,6 +128,7 @@ function SetupPageContent() {
     const [customSensitivity, setCustomSensitivity] = useState("");
     const [saving, setSaving] = useState(false);
     const [accentColor, setAccentColor] = useState<AccentColor>({ primary: "#3b82f6", dark: "#2563eb" });
+    const [shoppingPreference, setShoppingPreference] = useState<"kroger" | "instacart">("instacart");
 
     // Kroger state
     const [krogerLinked, setKrogerLinked] = useState(false);
@@ -130,6 +155,7 @@ function SetupPageContent() {
                 if (data.selectedAllergies) setSelectedAllergies(data.selectedAllergies);
                 if (data.selectedSensitivities) setSelectedSensitivities(data.selectedSensitivities);
                 if (data.selectedDislikedFoods) setSelectedDislikedFoods(data.selectedDislikedFoods);
+                if (data.shoppingPreference) setShoppingPreference(data.shoppingPreference);
                 console.log("Restored form data from localStorage:", data);
             } catch (e) {
                 console.error("Failed to restore form data:", e);
@@ -146,9 +172,10 @@ function SetupPageContent() {
             selectedAllergies,
             selectedSensitivities,
             selectedDislikedFoods,
+            shoppingPreference,
         };
         localStorage.setItem("setupFormData", JSON.stringify(formData));
-    }, [name, dietType, cookingExperience, selectedAllergies, selectedSensitivities, selectedDislikedFoods]);
+    }, [name, dietType, cookingExperience, selectedAllergies, selectedSensitivities, selectedDislikedFoods, shoppingPreference]);
 
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -205,7 +232,7 @@ function SetupPageContent() {
             if (returnStep) {
                 setStep(parseInt(returnStep, 10));
             } else {
-                setStep(6); // Kroger linking step
+                setStep(7); // Kroger linking step
             }
             router.replace("/setup");
         } else if (krogerError) {
@@ -327,6 +354,7 @@ function SetupPageContent() {
                     sensitivities: selectedSensitivities,
                 },
                 dislikedFoods: selectedDislikedFoods,
+                shoppingPreference: shoppingPreference || "kroger",
             };
 
             await setDoc(
@@ -347,7 +375,7 @@ function SetupPageContent() {
             localStorage.setItem("pendingStoreData", JSON.stringify(selectedStore));
         }
         // Redirect to Kroger OAuth with return URL to setup
-        window.location.href = `/api/kroger/auth?userId=${user.uid}&returnTo=setup&step=6`;
+        window.location.href = `/api/kroger/auth?userId=${user.uid}&returnTo=setup&step=7`;
     };
 
     const handleSearchStoresByZip = async () => {
@@ -453,6 +481,7 @@ function SetupPageContent() {
                 sensitivities: selectedSensitivities,
             },
             dislikedFoods: selectedDislikedFoods,
+            shoppingPreference: shoppingPreference
         };
 
         console.log("Data to save:", dataToSave);
@@ -835,8 +864,61 @@ function SetupPageContent() {
                                 </div>
                             )}
 
-                            {/* Step 5: Select Store (moved before Kroger linking) */}
+                            {/* Step 5: Shopping Preference */}
                             {step === 5 && (
+                                <div className="space-y-6">
+                                    <div>
+                                        <h2 className="font-medium text-gray-900 mb-1">How do you prefer to shop?</h2>
+                                        <p className="text-sm text-gray-500">Choose how you&apos;d like to add ingredients to your cart</p>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        {SHOPPING_PREFERENCE_OPTIONS.map((option) => (
+                                            <button
+                                                key={option.value}
+                                                type="button"
+                                                onClick={() => setShoppingPreference(option.value as "kroger" | "instacart")}
+                                                className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
+                                                    shoppingPreference === option.value
+                                                        ? "border-gray-900 bg-gray-50"
+                                                        : "border-gray-200 hover:border-gray-300"
+                                                }`}
+                                            >
+                                                <div className="flex items-start justify-between mb-2">
+                                                    <div>
+                                                        <h3 className="font-semibold text-gray-900">{option.label}</h3>
+                                                        <p className="text-sm text-gray-500">{option.description}</p>
+                                                    </div>
+                                                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                                                        shoppingPreference === option.value
+                                                            ? "border-gray-900 bg-gray-900"
+                                                            : "border-gray-300"
+                                                    }`}>
+                                                        {shoppingPreference === option.value && (
+                                                            <div className="w-2 h-2 bg-white rounded-full" />
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <ul className="space-y-1.5 mt-3">
+                                                    {option.pros.map((pro, idx) => (
+                                                        <li key={idx} className="flex items-start gap-2 text-sm text-gray-600">
+                                                            <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
+                                                            <span>{pro}</span>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    <p className="text-sm text-gray-400 text-center">
+                                        You can change this preference later in settings.
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Step 6: Select Store (only for Kroger preference) */}
+                            {step === 6 && shoppingPreference === "kroger" && (
                                 <div className="space-y-6">
                                     <div>
                                         <h2 className="font-medium text-gray-900 mb-1">Choose Your Store</h2>
@@ -947,8 +1029,46 @@ function SetupPageContent() {
                                 </div>
                             )}
 
-                            {/* Step 6: Link Kroger Account (now shows store-specific branding) */}
-                            {step === 6 && (() => {
+                            {/* Step 6: Instacart confirmation (for Instacart preference) */}
+                            {step === 6 && shoppingPreference === "instacart" && (
+                                <div className="space-y-6">
+                                    <div>
+                                        <h2 className="font-medium text-gray-900 mb-1">You&apos;re all set!</h2>
+                                        <p className="text-sm text-gray-500">Shop through Instacart when you&apos;re ready to buy ingredients</p>
+                                    </div>
+
+                                    <div className="bg-[#003D29]/5 border border-[#003D29]/20 rounded-xl p-6 text-center">
+                                        <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-sm">
+                                            <Image src={InstacartCarrot} alt="Instacart" className="w-8 h-8" />
+                                        </div>
+                                        <h3 className="font-medium text-[#003D29] mb-1">Instacart Shopping</h3>
+                                        <p className="text-sm text-[#003D29]/70 mb-4">
+                                            When viewing your shopping list, tap &quot;Get Recipe Ingredients&quot; to add items from any supported store.
+                                        </p>
+                                        <ul className="text-left space-y-2 text-sm text-[#003D29]/70">
+                                            <li className="flex items-start gap-2">
+                                                <CheckCircle className="w-4 h-4 text-[#003D29] flex-shrink-0 mt-0.5" />
+                                                <span>Choose from multiple stores</span>
+                                            </li>
+                                            <li className="flex items-start gap-2">
+                                                <CheckCircle className="w-4 h-4 text-[#003D29] flex-shrink-0 mt-0.5" />
+                                                <span>Same-day delivery or pickup</span>
+                                            </li>
+                                            <li className="flex items-start gap-2">
+                                                <CheckCircle className="w-4 h-4 text-[#003D29] flex-shrink-0 mt-0.5" />
+                                                <span>No account linking required</span>
+                                            </li>
+                                        </ul>
+                                    </div>
+
+                                    <p className="text-sm text-gray-400 text-center">
+                                        You can switch to Kroger direct shopping anytime in settings.
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Step 7: Link Kroger Account (only for Kroger preference) */}
+                            {step === 7 && shoppingPreference === "kroger" && (() => {
                                 const storeBrand = selectedStore ? getStoreBrand(selectedStore.name) : { displayName: "Kroger", tagline: "Kroger Family of Stores" };
                                 const isGenericKroger = !selectedStore;
                                 return (
@@ -1028,7 +1148,8 @@ function SetupPageContent() {
 
                         {/* Navigation Buttons */}
                         <div className="mt-8 space-y-3">
-                            {step < TOTAL_STEPS ? (
+                            {/* Instacart users finish at step 6, Kroger users finish at step 7 */}
+                            {((shoppingPreference === "instacart" && step < 6) || (shoppingPreference === "kroger" && step < TOTAL_STEPS)) ? (
                                 <button
                                     type="button"
                                     onClick={nextStep}

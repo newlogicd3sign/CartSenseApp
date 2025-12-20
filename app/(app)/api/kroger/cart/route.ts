@@ -4,6 +4,7 @@ import { adminDb } from "@/lib/firebaseAdmin";
 import { searchKrogerProduct, searchAlternativeProduct, getKrogerApiStatus, type KrogerProductMatch } from "@/lib/product-engine/kroger";
 import { isExcludedIngredient, calculateUnitsNeeded } from "@/lib/utils";
 import { KROGER_RATE_LIMITS } from "@/lib/product-engine/krogerConfig";
+import { addToPantry } from "@/lib/pantry";
 
 const TOKEN_URL = process.env.KROGER_TOKEN_URL ?? "https://api-ce.kroger.com/v1/connect/oauth2/token";
 const API_BASE_URL = process.env.KROGER_API_BASE_URL ?? "https://api-ce.kroger.com/v1";
@@ -377,6 +378,18 @@ export async function POST(request: Request) {
             await Promise.all(updatePromises);
         } catch (updateErr) {
             console.error("Error updating shopping list items with Kroger data:", updateErr);
+            // Don't fail the request - items were added to cart successfully
+        }
+
+        // Save items to pantry for future reference
+        try {
+            const pantryItems = foundItems.map((item) => ({
+                name: item.product?.name || item.originalName,
+                quantity: item.calculatedUnits || item.count,
+            }));
+            await addToPantry(userId, pantryItems, "cart_added");
+        } catch (pantryErr) {
+            console.error("Error saving to pantry:", pantryErr);
             // Don't fail the request - items were added to cart successfully
         }
 

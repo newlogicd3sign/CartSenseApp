@@ -456,6 +456,24 @@ function MealsPageContent() {
                         </div>
                     ) : (
                         <div className="flex flex-col gap-3">
+                            {/* Status indicator at the top while streaming */}
+                            {streamStatus && !streamComplete && (
+                                <div className="flex items-center gap-2 py-3">
+                                    <div
+                                        className="w-6 h-6 rounded-full flex items-center justify-center transition-colors duration-500"
+                                        style={{ backgroundColor: statusColor.primary }}
+                                    >
+                                        <Sparkles className="w-3.5 h-3.5 text-white animate-pulse" />
+                                    </div>
+                                    <span
+                                        className="text-sm font-medium transition-colors duration-500"
+                                        style={{ color: statusColor.primary }}
+                                    >
+                                        {streamStatus}
+                                    </span>
+                                </div>
+                            )}
+
                             {/* Meal cards with staggered animation */}
                             {meals.map((meal, index) => (
                                 <MealCard
@@ -479,24 +497,6 @@ function MealsPageContent() {
                                     }
                                 />
                             ))}
-
-                            {/* Small left-aligned status indicator at the bottom */}
-                            {streamStatus && !streamComplete && (
-                                <div className="flex items-center gap-2 py-3">
-                                    <div
-                                        className="w-6 h-6 rounded-full flex items-center justify-center transition-colors duration-500"
-                                        style={{ backgroundColor: statusColor.primary }}
-                                    >
-                                        <Sparkles className="w-3.5 h-3.5 text-white animate-pulse" />
-                                    </div>
-                                    <span
-                                        className="text-sm font-medium transition-colors duration-500"
-                                        style={{ color: statusColor.primary }}
-                                    >
-                                        {streamStatus}
-                                    </span>
-                                </div>
-                            )}
                         </div>
                     )}
                 </div>
