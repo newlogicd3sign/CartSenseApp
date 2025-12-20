@@ -19,12 +19,16 @@ export type InstacartIngredient = {
   display_text?: string;
 };
 
+export type InstacartLinkType = "recipe" | "shopping_list";
+
 export type InstacartLinkRequest = {
   title: string;
   ingredients: InstacartIngredient[];
   image_url?: string;
   partner_linkback_url?: string;
   enable_pantry_items?: boolean;
+  link_type?: InstacartLinkType;
+  instructions?: string[]; // Recipe cooking instructions/steps
 };
 
 export type InstacartLinkResponse = {
@@ -105,17 +109,17 @@ export async function generateInstacartLink(
         name: ing.name,
       };
 
-      // Parse quantity if provided as string
+      // Parse quantity if provided as string - measurements must be an array per Instacart API
       if (ing.quantity !== undefined || ing.unit) {
-        const measurements: Record<string, unknown> = {};
+        const measurement: Record<string, unknown> = {};
         if (ing.quantity !== undefined) {
-          measurements.quantity = ing.quantity;
+          measurement.quantity = ing.quantity;
         }
         if (ing.unit && SUPPORTED_UNITS.has(ing.unit.toLowerCase())) {
-          measurements.unit = ing.unit.toLowerCase();
+          measurement.unit = ing.unit.toLowerCase();
         }
-        if (Object.keys(measurements).length > 0) {
-          item.measurements = measurements;
+        if (Object.keys(measurement).length > 0) {
+          item.measurements = [measurement]; // Must be an array
         }
       }
 
@@ -127,31 +131,58 @@ export async function generateInstacartLink(
       return item;
     });
 
+    // Determine link type - default to recipe for backwards compatibility
+    const linkType = request.link_type || "recipe";
+    const isShoppingList = linkType === "shopping_list";
+
+    // Build the request body - field names differ between recipe and shopping_list
     const body: Record<string, unknown> = {
       title: request.title || "Shopping List",
-      ingredients: lineItems,
+      link_type: linkType,
     };
+
+    // Recipes use "ingredients", shopping lists use "line_items"
+    if (isShoppingList) {
+      body.line_items = lineItems;
+    } else {
+      body.ingredients = lineItems;
+      // Add instructions for recipes (Instacart expects an array of step strings)
+      if (request.instructions && request.instructions.length > 0) {
+        body.instructions = request.instructions;
+      }
+    }
 
     // Optional fields
     if (request.image_url) {
       body.image_url = request.image_url;
+      console.log("[Instacart] Including image_url:", request.image_url);
+    } else {
+      console.log("[Instacart] No image_url provided");
     }
 
     // Landing page configuration
+    // Note: enable_pantry_items is only supported for recipe link_type
     const landingConfig: Record<string, unknown> = {};
     if (request.partner_linkback_url) {
       landingConfig.partner_linkback_url = request.partner_linkback_url;
     }
-    if (request.enable_pantry_items !== undefined) {
+    if (!isShoppingList && request.enable_pantry_items !== undefined) {
+      // Only add pantry items config for recipes
       landingConfig.enable_pantry_items = request.enable_pantry_items;
     }
     if (Object.keys(landingConfig).length > 0) {
       body.landing_page_configuration = landingConfig;
     }
 
-    console.log("[Instacart] Generating link for", lineItems.length, "items");
+    // Use the correct endpoint based on link type
+    const endpoint = isShoppingList
+      ? `${INSTACART_API_BASE}/idp/v1/products/products_link`
+      : `${INSTACART_API_BASE}/idp/v1/products/recipe`;
 
-    const response = await fetch(`${INSTACART_API_BASE}/idp/v1/products/recipe`, {
+    console.log("[Instacart] Generating", linkType, "link for", lineItems.length, "items");
+    console.log("[Instacart] Request body:", JSON.stringify(body, null, 2));
+
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -211,6 +242,17 @@ export async function generateInstacartLink(
 }
 
 /**
+ * Strip leading quantity/measurement from an ingredient name
+ * e.g. "1 cup quinoa" -> "quinoa", "2 lbs chicken breast" -> "chicken breast"
+ */
+function stripQuantityFromName(name: string): string {
+  // Pattern matches: optional number (with fractions), optional unit, optional "of"
+  const pattern = /^[\d.\/]+\s*(?:cups?|lbs?|oz|tsps?|tbsps?|teaspoons?|tablespoons?|g|kg|ml|l|bunch(?:es)?|heads?|cloves?|pieces?|slices?|cans?|jars?|packages?|bags?|bottles?|box(?:es)?|dozen|each|large|medium|small|sprigs?|sticks?|strips?|pints?|quarts?|gallons?|liters?|fl\s*oz|containers?|cartons?|loaf|loaves|sheets?|drops?|units?)?\s*(?:of\s+)?/i;
+
+  return name.replace(pattern, '').trim() || name;
+}
+
+/**
  * Helper to convert shopping list items to Instacart ingredients format
  */
 export function convertToInstacartIngredients(
@@ -219,11 +261,14 @@ export function convertToInstacartIngredients(
   return items.map((item) => {
     const parsed = parseQuantity(item.quantity || "");
 
+    // Clean the name to ensure it doesn't contain quantity prefixes
+    const cleanName = stripQuantityFromName(item.name);
+
     return {
-      name: item.name,
+      name: cleanName,
       quantity: parsed.quantity ?? item.count ?? 1,
       unit: parsed.unit,
-      display_text: item.quantity ? `${item.quantity} ${item.name}` : item.name,
+      display_text: cleanName,
     };
   });
 }

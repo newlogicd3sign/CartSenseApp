@@ -8,6 +8,7 @@ import { doc, setDoc, getDoc, collection, addDoc, serverTimestamp, getDocs, quer
 import { ArrowRight, AlertCircle, ShoppingCart, MapPin, CheckCircle, ExternalLink, Search } from "lucide-react";
 import Image from "next/image";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
+import InstacartCarrot from "@/app/🥕 Instacart Logos/Logos - Carrot/RGB/PNG/Instacart_Carrot.png";
 import { getRandomAccentColor, getStoreBrand, type AccentColor } from "@/lib/utils";
 import { useToast } from "@/components/Toast";
 import { warmLocationInBackground } from "@/lib/product-engine/krogerWarm";
@@ -1036,25 +1037,25 @@ function SetupPageContent() {
                                         <p className="text-sm text-gray-500">Shop through Instacart when you&apos;re ready to buy ingredients</p>
                                     </div>
 
-                                    <div className="bg-orange-50 border border-orange-100 rounded-xl p-6 text-center">
-                                        <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                            <ShoppingCart className="w-6 h-6 text-orange-600" />
+                                    <div className="bg-[#003D29]/5 border border-[#003D29]/20 rounded-xl p-6 text-center">
+                                        <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-sm">
+                                            <Image src={InstacartCarrot} alt="Instacart" className="w-8 h-8" />
                                         </div>
-                                        <h3 className="font-medium text-orange-900 mb-1">Instacart Shopping</h3>
-                                        <p className="text-sm text-orange-700 mb-4">
-                                            When viewing your shopping list, tap &quot;Shop with Instacart&quot; to add items from any supported store.
+                                        <h3 className="font-medium text-[#003D29] mb-1">Instacart Shopping</h3>
+                                        <p className="text-sm text-[#003D29]/70 mb-4">
+                                            When viewing your shopping list, tap &quot;Get Recipe Ingredients&quot; to add items from any supported store.
                                         </p>
-                                        <ul className="text-left space-y-2 text-sm text-orange-700">
+                                        <ul className="text-left space-y-2 text-sm text-[#003D29]/70">
                                             <li className="flex items-start gap-2">
-                                                <CheckCircle className="w-4 h-4 text-orange-500 flex-shrink-0 mt-0.5" />
+                                                <CheckCircle className="w-4 h-4 text-[#003D29] flex-shrink-0 mt-0.5" />
                                                 <span>Choose from multiple stores</span>
                                             </li>
                                             <li className="flex items-start gap-2">
-                                                <CheckCircle className="w-4 h-4 text-orange-500 flex-shrink-0 mt-0.5" />
+                                                <CheckCircle className="w-4 h-4 text-[#003D29] flex-shrink-0 mt-0.5" />
                                                 <span>Same-day delivery or pickup</span>
                                             </li>
                                             <li className="flex items-start gap-2">
-                                                <CheckCircle className="w-4 h-4 text-orange-500 flex-shrink-0 mt-0.5" />
+                                                <CheckCircle className="w-4 h-4 text-[#003D29] flex-shrink-0 mt-0.5" />
                                                 <span>No account linking required</span>
                                             </li>
                                         </ul>

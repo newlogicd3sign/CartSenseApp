@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+import InstacartCarrot from "@/app/🥕 Instacart Logos/Logos - Carrot/RGB/PNG/Instacart_Carrot.png";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
@@ -42,12 +44,14 @@ import {
     Bean,
     FlaskConical,
     Apple,
+    AlertTriangle,
 } from "lucide-react";
 import { getRandomAccentColor, getStoreBrand, type AccentColor, type StoreBrandInfo } from "@/lib/utils";
 import { getIngredientCategory } from "@/lib/product-engine/ingredientQualityRules";
 import { getIngredientImageUrl } from "@/lib/ingredientImages";
 import { getEstimatedPrice } from "@/lib/priceEstimates";
 import { useToast } from "@/components/Toast";
+import { logCartRemoved, logCartAdded } from "@/lib/logFoodEvent";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { ConfirmationModal } from "@/components/ConfirmationModal";
@@ -82,6 +86,10 @@ type KrogerProduct = {
     price?: number;
     size?: string;
     aisle?: string;
+    avoidWarning?: {
+        rule: "NEVER_INCLUDE" | "AVOID";
+        note?: string;
+    };
 };
 
 type EnrichedItem = {
@@ -148,6 +156,11 @@ export default function ShoppingListPage() {
     const [loadingSwapSuggestions, setLoadingSwapSuggestions] = useState(false);
     const [showSwapOptions, setShowSwapOptions] = useState(false);
     const [swappingItem, setSwappingItem] = useState(false);
+    const [swapSearchWarning, setSwapSearchWarning] = useState<{
+        ingredient: string;
+        rule: "NEVER_INCLUDE" | "AVOID";
+        note?: string;
+    } | null>(null);
 
     // Kroger link modal state
     const [showLinkModal, setShowLinkModal] = useState(false);
@@ -341,6 +354,11 @@ export default function ShoppingListPage() {
                 }
             } else {
                 showToast(data.message || "Items added to your Kroger cart!", "success");
+
+                // Log food event for preference learning
+                logCartAdded(user.uid, "kroger").catch((err) => {
+                    console.error("Failed to log CART_ADDED event:", err);
+                });
             }
 
             if (data.enrichedItems && data.enrichedItems.length > 0) {
@@ -374,6 +392,8 @@ export default function ShoppingListPage() {
                 body: JSON.stringify({
                     items: cartItems,
                     title: "CartSense Shopping List",
+                    linkType: "shopping_list", // Use shopping list format (not recipe)
+                    userId: user?.uid, // Save items to pantry
                 }),
             });
 
@@ -388,6 +408,13 @@ export default function ShoppingListPage() {
             if (data.url) {
                 window.open(data.url, "_blank", "noopener,noreferrer");
                 showToast(`Opening Instacart with ${data.itemCount} items...`, "success");
+
+                // Log food event for preference learning
+                if (user) {
+                    logCartAdded(user.uid, "instacart").catch((err) => {
+                        console.error("Failed to log CART_ADDED event:", err);
+                    });
+                }
             }
         } catch (err) {
             console.error("Error generating Instacart link:", err);
@@ -400,8 +427,20 @@ export default function ShoppingListPage() {
     const handleRemoveItem = async (itemId: string) => {
         if (!user) return;
 
+        // Find the item to get its name for logging
+        const itemToRemove = items.find((i) => i.id === itemId);
+
         try {
             await deleteDoc(doc(db, "shoppingLists", user.uid, "items", itemId));
+
+            // Log food event for preference learning
+            if (itemToRemove) {
+                logCartRemoved(user.uid, itemToRemove.name, itemToRemove.mealId).catch(
+                    (err) => {
+                        console.error("Failed to log CART_REMOVED event:", err);
+                    }
+                );
+            }
         } catch (err) {
             console.error("Error deleting shopping list item", err);
         }
@@ -424,6 +463,7 @@ export default function ShoppingListPage() {
 
         setLoadingSwapSuggestions(true);
         setSwapAlternatives(null);
+        setSwapSearchWarning(null);
 
         try {
             const res = await fetch("/api/swap-suggestions", {
@@ -445,6 +485,11 @@ export default function ShoppingListPage() {
                     return;
                 }
                 throw new Error(data.message || "Failed to get swap suggestions");
+            }
+
+            // Store the search term warning if present
+            if (data.searchTermWarning) {
+                setSwapSearchWarning(data.searchTermWarning);
             }
 
             if (data.alternatives && data.alternatives.length > 0) {
@@ -873,16 +918,16 @@ export default function ShoppingListPage() {
                                                         <button
                                                             onClick={() => void handleAddToInstacart(allDateItems)}
                                                             disabled={addingToInstacart}
-                                                            className="px-3 py-1.5 h-8 bg-[#43B02A] text-white rounded-lg text-xs sm:text-sm font-medium hover:bg-[#3A9A24] transition-colors disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-1.5"
+                                                            className="h-[46px] px-[18px] bg-[#003D29] text-[#FAF1E5] rounded-full text-xs sm:text-sm font-medium hover:bg-[#004D35] transition-colors disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2"
                                                         >
                                                             {addingToInstacart ? (
                                                                 <>
-                                                                    <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                                    <div className="w-[22px] h-[22px] border-2 border-[#FAF1E5]/30 border-t-[#FAF1E5] rounded-full animate-spin" />
                                                                     <span>Opening...</span>
                                                                 </>
                                                             ) : (
                                                                 <>
-                                                                    <ExternalLink className="w-3.5 h-3.5" />
+                                                                    <Image src={InstacartCarrot} alt="Instacart" className="w-[22px] h-[22px]" />
                                                                     <span>Shop with Instacart</span>
                                                                 </>
                                                             )}
@@ -1390,13 +1435,50 @@ export default function ShoppingListPage() {
                             {showSwapOptions && swapAlternatives ? (
                                 <>
                                     <p className="text-sm text-gray-600 font-medium mb-2">Choose a different product:</p>
+
+                                    {/* Warning banner if searching for an avoided/allergy ingredient */}
+                                    {swapSearchWarning && (
+                                        <div className={`p-3 rounded-xl flex items-start gap-2 mb-3 ${
+                                            swapSearchWarning.rule === "NEVER_INCLUDE"
+                                                ? "bg-red-50 border border-red-200"
+                                                : "bg-amber-50 border border-amber-200"
+                                        }`}>
+                                            <AlertTriangle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${
+                                                swapSearchWarning.rule === "NEVER_INCLUDE" ? "text-red-500" : "text-amber-500"
+                                            }`} />
+                                            <div>
+                                                <p className={`text-sm font-medium ${
+                                                    swapSearchWarning.rule === "NEVER_INCLUDE" ? "text-red-700" : "text-amber-700"
+                                                }`}>
+                                                    {swapSearchWarning.rule === "NEVER_INCLUDE"
+                                                        ? "Allergy alert"
+                                                        : "You avoid this"}
+                                                </p>
+                                                <p className={`text-xs ${
+                                                    swapSearchWarning.rule === "NEVER_INCLUDE" ? "text-red-600" : "text-amber-600"
+                                                }`}>
+                                                    {swapSearchWarning.rule === "NEVER_INCLUDE"
+                                                        ? `You've marked "${swapSearchWarning.ingredient.replace(/_/g, " ")}" as an allergy.`
+                                                        : `You've set "${swapSearchWarning.ingredient.replace(/_/g, " ")}" as something you avoid.`}
+                                                    {swapSearchWarning.note && ` (${swapSearchWarning.note})`}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <div className="space-y-2 max-h-64 overflow-y-auto">
                                         {swapAlternatives.map((product) => (
                                             <button
                                                 key={product.krogerProductId}
                                                 onClick={() => handleSelectSwap(product)}
                                                 disabled={swappingItem}
-                                                className="w-full p-3 bg-gray-50 hover:bg-[#4A90E2]/10 border border-gray-200 hover:border-[#4A90E2] rounded-xl text-left transition-colors disabled:opacity-50 flex items-center gap-3"
+                                                className={`w-full p-3 border rounded-xl text-left transition-colors disabled:opacity-50 flex items-center gap-3 ${
+                                                    product.avoidWarning
+                                                        ? product.avoidWarning.rule === "NEVER_INCLUDE"
+                                                            ? "bg-red-50 border-red-200 hover:border-red-300"
+                                                            : "bg-amber-50 border-amber-200 hover:border-amber-300"
+                                                        : "bg-gray-50 border-gray-200 hover:bg-[#4A90E2]/10 hover:border-[#4A90E2]"
+                                                }`}
                                             >
                                                 {product.imageUrl ? (
                                                     <div className="w-14 h-14 rounded-lg overflow-hidden bg-white flex-shrink-0">
@@ -1413,7 +1495,19 @@ export default function ShoppingListPage() {
                                                     </div>
                                                 )}
                                                 <div className="flex-1 min-w-0">
-                                                    <div className="font-medium text-gray-900 text-sm line-clamp-2">{product.name}</div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-medium text-gray-900 text-sm line-clamp-2">{product.name}</span>
+                                                        {product.avoidWarning && (
+                                                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 ${
+                                                                product.avoidWarning.rule === "NEVER_INCLUDE"
+                                                                    ? "bg-red-100 text-red-700"
+                                                                    : "bg-amber-100 text-amber-700"
+                                                            }`}>
+                                                                <AlertTriangle className="w-3 h-3" />
+                                                                {product.avoidWarning.rule === "NEVER_INCLUDE" ? "Allergy" : "Avoid"}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     <div className="text-xs text-gray-500 mt-0.5">
                                                         {product.size && <span>{product.size}</span>}
                                                         {product.aisle && <span> • {product.aisle}</span>}
@@ -1431,6 +1525,7 @@ export default function ShoppingListPage() {
                                         onClick={() => {
                                             setShowSwapOptions(false);
                                             setSwapAlternatives(null);
+                                            setSwapSearchWarning(null);
                                         }}
                                         className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl font-medium"
                                     >
@@ -1457,7 +1552,10 @@ export default function ShoppingListPage() {
                                         )}
                                     </button>
                                     <button
-                                        onClick={handleCloseItemDetail}
+                                        onClick={() => {
+                                            handleCloseItemDetail();
+                                            setSwapSearchWarning(null);
+                                        }}
                                         disabled={loadingSwapSuggestions}
                                         className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl font-medium disabled:opacity-50"
                                     >

@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+import InstacartCarrot from "@/app/🥕 Instacart Logos/Logos - Carrot/RGB/PNG/Instacart_Carrot.png";
 import { Suspense, useEffect, useState, useRef, useMemo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
@@ -15,6 +17,12 @@ import {
     setDoc,
 } from "firebase/firestore";
 import { logUserEvent } from "@/lib/logUserEvent";
+import {
+    logMealAccepted,
+    logMealSaved,
+    logCartAdded,
+    logProductSwapped,
+} from "@/lib/logFoodEvent";
 import {
     loadGeneratedMeals,
     updateMealInStorage,
@@ -37,6 +45,7 @@ import {
     ExternalLink,
     X,
     AlertCircle,
+    AlertTriangle,
     Sparkles,
     RefreshCw,
     PencilRuler,
@@ -64,6 +73,7 @@ import {
 import { getIngredientCategory } from "@/lib/product-engine/ingredientQualityRules";
 import { getIngredientImageUrl } from "@/lib/ingredientImages";
 import { getEstimatedPrice } from "@/lib/priceEstimates";
+import { normalizeIngredientKey } from "@/lib/ingredientNormalization";
 
 type Ingredient = {
     name: string;
@@ -204,6 +214,7 @@ function MealDetailPageContent() {
     const [hasLoggedView, setHasLoggedView] = useState(false);
     const [selectedIngredients, setSelectedIngredients] = useState<Set<number>>(new Set());
     const [failedIngredientImages, setFailedIngredientImages] = useState<Set<number>>(new Set());
+    const [pantryIngredients, setPantryIngredients] = useState<Set<string>>(new Set()); // Ingredient keys in pantry
 
     // Kroger cart state
     const [krogerStoreSet, setKrogerStoreSet] = useState(false);
@@ -238,9 +249,18 @@ function MealDetailPageContent() {
         price?: number;
         size?: string;
         aisle?: string;
+        avoidWarning?: {
+            rule: "NEVER_INCLUDE" | "AVOID";
+            note?: string;
+        };
     }[] | null>(null);
     const [loadingSwapSuggestions, setLoadingSwapSuggestions] = useState(false);
     const [showSwapOptions, setShowSwapOptions] = useState(false);
+    const [swapSearchWarning, setSwapSearchWarning] = useState<{
+        ingredient: string;
+        rule: "NEVER_INCLUDE" | "AVOID";
+        note?: string;
+    } | null>(null);
 
     // Random color for back button
     const backButtonColor = useMemo(() => getRandomAccentColor(), []);
@@ -345,12 +365,52 @@ function MealDetailPageContent() {
         checkIfSaved();
     }, [user, meal]);
 
-    // Initialize all ingredients as selected when meal loads
+    // Initialize ingredients as selected when meal loads, pre-unchecking pantry items
     useEffect(() => {
-        if (meal) {
-            setSelectedIngredients(new Set(meal.ingredients.map((_, idx) => idx)));
-        }
-    }, [meal]);
+        if (!meal || !user) return;
+
+        const checkPantryAndSelect = async () => {
+            try {
+                // Get ingredient names to check
+                const ingredientNames = meal.ingredients.map((ing) => ing.name);
+
+                // Check which ingredients are in pantry
+                const res = await fetch("/api/pantry/check", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        userId: user.uid,
+                        ingredients: ingredientNames,
+                    }),
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    const inPantry = new Set<string>(data.inPantry || []);
+                    setPantryIngredients(inPantry);
+
+                    // Select all ingredients EXCEPT those in pantry
+                    const selectedIndices = new Set<number>();
+                    meal.ingredients.forEach((ing, idx) => {
+                        const key = normalizeIngredientKey(ing.name);
+                        if (!inPantry.has(key)) {
+                            selectedIndices.add(idx);
+                        }
+                    });
+                    setSelectedIngredients(selectedIndices);
+                } else {
+                    // Fallback: select all if pantry check fails
+                    setSelectedIngredients(new Set(meal.ingredients.map((_, idx) => idx)));
+                }
+            } catch (err) {
+                console.error("Error checking pantry:", err);
+                // Fallback: select all
+                setSelectedIngredients(new Set(meal.ingredients.map((_, idx) => idx)));
+            }
+        };
+
+        checkPantryAndSelect();
+    }, [meal, user]);
 
     // Scroll chat container to bottom when messages change (without affecting page scroll)
     useEffect(() => {
@@ -589,7 +649,7 @@ function MealDetailPageContent() {
 
             showToast(toastMessage, "success");
 
-            // Log both events
+            // Log both events (legacy)
             logUserEvent(user.uid, {
                 type: "added_to_shopping_list",
                 mealId: meal.id,
@@ -602,6 +662,18 @@ function MealDetailPageContent() {
                 mealId: meal.id,
             }).catch((err) => {
                 console.error("Failed to log meal_saved event:", err);
+            });
+
+            // Log food events for preference learning
+            logMealAccepted(user.uid, {
+                id: meal.id,
+                name: meal.name,
+                description: meal.description,
+                mealType: meal.mealType,
+                cookTimeRange: meal.cookTimeRange,
+                ingredients: meal.ingredients,
+            }, "prompt").catch((err) => {
+                console.error("Failed to log MEAL_ACCEPTED event:", err);
             });
         } catch (err) {
             console.error("Error adding to shopping list", err);
@@ -639,6 +711,18 @@ function MealDetailPageContent() {
                 mealId: meal.id,
             }).catch((err) => {
                 console.error("Failed to log meal_saved event:", err);
+            });
+
+            // Log food event for preference learning
+            logMealSaved(user.uid, {
+                id: meal.id,
+                name: meal.name,
+                description: meal.description,
+                mealType: meal.mealType,
+                cookTimeRange: meal.cookTimeRange,
+                ingredients: meal.ingredients,
+            }, "prompt").catch((err) => {
+                console.error("Failed to log MEAL_SAVED event:", err);
             });
         } catch (err) {
             console.error("Error saving meal", err);
@@ -704,6 +788,18 @@ function MealDetailPageContent() {
                 }).catch((err) => {
                     console.error("Failed to log added_to_kroger_cart event:", err);
                 });
+
+                // Log food event for preference learning
+                logCartAdded(user.uid, "kroger", {
+                    id: meal.id,
+                    name: meal.name,
+                    description: meal.description,
+                    mealType: meal.mealType,
+                    cookTimeRange: meal.cookTimeRange,
+                    ingredients: meal.ingredients,
+                }).catch((err) => {
+                    console.error("Failed to log CART_ADDED event:", err);
+                });
             }
 
             if (data.enrichedItems && data.enrichedItems.length > 0) {
@@ -742,6 +838,9 @@ function MealDetailPageContent() {
                 body: JSON.stringify({
                     items: cartItems,
                     title: meal.name,
+                    imageUrl: meal.imageUrl,
+                    userId: user?.uid, // Save items to pantry
+                    instructions: meal.steps, // Include recipe cooking instructions
                 }),
             });
 
@@ -774,6 +873,18 @@ function MealDetailPageContent() {
                 }).catch((err) => {
                     console.error("Failed to log added_to_instacart event:", err);
                 });
+
+                // Log food event for preference learning
+                logCartAdded(user.uid, "instacart", {
+                    id: meal.id,
+                    name: meal.name,
+                    description: meal.description,
+                    mealType: meal.mealType,
+                    cookTimeRange: meal.cookTimeRange,
+                    ingredients: meal.ingredients,
+                }).catch((err) => {
+                    console.error("Failed to log CART_ADDED event:", err);
+                });
             }
         } catch (err) {
             console.error("Error adding to Instacart:", err);
@@ -797,6 +908,7 @@ function MealDetailPageContent() {
 
         setLoadingSwapSuggestions(true);
         setSwapAlternatives(null);
+        setSwapSearchWarning(null);
 
         try {
             const res = await fetch("/api/swap-suggestions", {
@@ -818,6 +930,11 @@ function MealDetailPageContent() {
                     return;
                 }
                 throw new Error(data.message || "Failed to get swap suggestions");
+            }
+
+            // Store the search term warning if present
+            if (data.searchTermWarning) {
+                setSwapSearchWarning(data.searchTermWarning);
             }
 
             if (data.alternatives && data.alternatives.length > 0) {
@@ -913,7 +1030,7 @@ function MealDetailPageContent() {
 
         showToast(`Swapped to ${product.name}!`, "success");
 
-        // Log the swap event
+        // Log the swap event (legacy)
         if (user) {
             logUserEvent(user.uid, {
                 type: "ingredient_swapped",
@@ -922,6 +1039,17 @@ function MealDetailPageContent() {
                 newIngredient: product.name,
             }).catch((err) => {
                 console.error("Failed to log ingredient_swapped event:", err);
+            });
+
+            // Log food event for preference learning
+            logProductSwapped(
+                user.uid,
+                oldIngredient.name,
+                oldIngredient.krogerProductId || "",
+                product.krogerProductId,
+                "kroger"
+            ).catch((err) => {
+                console.error("Failed to log PRODUCT_SWAPPED event:", err);
             });
         }
 
@@ -1102,7 +1230,7 @@ function MealDetailPageContent() {
             </div>
 
             {/* Hero Section - Image Left, Content Right */}
-            <div className="px-6 py-6">
+            <div className="px-6 pt-6">
                 <div className="max-w-3xl mx-auto">
                     <div className="bg-white rounded-2xl border border-gray-100 p-4 flex gap-4">
                         {/* Thumbnail - Left */}
@@ -1136,7 +1264,7 @@ function MealDetailPageContent() {
             </div>
 
             {/* Content */}
-            <div className="px-6 py-6">
+            <div className="px-6 pb-6">
                 <div className="max-w-3xl mx-auto space-y-6">
                     {/* Status Badges */}
                     <div className="flex flex-wrap gap-2">
@@ -1397,6 +1525,11 @@ function MealDetailPageContent() {
                                         <div className="flex-1 min-w-0">
                                             <div>
                                                 <span className={`font-medium ${selectedIngredients.has(idx) ? "text-gray-900" : "text-gray-500 line-through"}`}>{ing.name}</span>
+                                                {pantryIngredients.has(normalizeIngredientKey(ing.name)) && (
+                                                    <span className="inline-block ml-2 text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap align-middle bg-emerald-100 text-emerald-700">
+                                                        In pantry
+                                                    </span>
+                                                )}
                                                 {prefs?.shoppingPreference !== "instacart" && krogerConnected && ing.stockLevel && ing.stockLevel !== "HIGH" && (
                                                     <span className={`inline-block ml-2 text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap align-middle ${
                                                         ing.stockLevel === "LOW"
@@ -1514,17 +1647,17 @@ function MealDetailPageContent() {
                             <button
                                 onClick={handleAddToInstacart}
                                 disabled={addingToInstacart || selectedIngredients.size === 0}
-                                className="w-full py-4 bg-gradient-to-r from-[#43B02A] to-[#3A9A24] text-white rounded-2xl shadow-lg hover:shadow-xl transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                className="w-full h-[46px] bg-[#003D29] text-[#FAF1E5] rounded-full px-[18px] shadow-lg hover:shadow-xl hover:bg-[#004D35] transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                             >
                                 {addingToInstacart ? (
                                     <>
-                                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                        <div className="w-[22px] h-[22px] border-2 border-[#FAF1E5]/30 border-t-[#FAF1E5] rounded-full animate-spin" />
                                         <span>Opening Instacart...</span>
                                     </>
                                 ) : (
                                     <>
-                                        <ExternalLink className="w-5 h-5" />
-                                        <span>Shop with Instacart</span>
+                                        <Image src={InstacartCarrot} alt="Instacart" className="w-[22px] h-[22px]" />
+                                        <span>Get Recipe Ingredients</span>
                                     </>
                                 )}
                             </button>
@@ -1818,13 +1951,50 @@ function MealDetailPageContent() {
                             {showSwapOptions && swapAlternatives ? (
                                 <>
                                     <p className="text-sm text-gray-600 font-medium mb-2">Choose a different product:</p>
+
+                                    {/* Warning banner if searching for an avoided/allergy ingredient */}
+                                    {swapSearchWarning && (
+                                        <div className={`p-3 rounded-xl flex items-start gap-2 mb-3 ${
+                                            swapSearchWarning.rule === "NEVER_INCLUDE"
+                                                ? "bg-red-50 border border-red-200"
+                                                : "bg-amber-50 border border-amber-200"
+                                        }`}>
+                                            <AlertTriangle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${
+                                                swapSearchWarning.rule === "NEVER_INCLUDE" ? "text-red-500" : "text-amber-500"
+                                            }`} />
+                                            <div>
+                                                <p className={`text-sm font-medium ${
+                                                    swapSearchWarning.rule === "NEVER_INCLUDE" ? "text-red-700" : "text-amber-700"
+                                                }`}>
+                                                    {swapSearchWarning.rule === "NEVER_INCLUDE"
+                                                        ? "Allergy alert"
+                                                        : "You avoid this"}
+                                                </p>
+                                                <p className={`text-xs ${
+                                                    swapSearchWarning.rule === "NEVER_INCLUDE" ? "text-red-600" : "text-amber-600"
+                                                }`}>
+                                                    {swapSearchWarning.rule === "NEVER_INCLUDE"
+                                                        ? `You've marked "${swapSearchWarning.ingredient.replace(/_/g, " ")}" as an allergy.`
+                                                        : `You've set "${swapSearchWarning.ingredient.replace(/_/g, " ")}" as something you avoid.`}
+                                                    {swapSearchWarning.note && ` (${swapSearchWarning.note})`}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <div className="space-y-2 max-h-64 overflow-y-auto">
                                         {swapAlternatives.map((product) => (
                                             <button
                                                 key={product.krogerProductId}
                                                 onClick={() => handleSelectSwap(product)}
                                                 disabled={swappingIngredient}
-                                                className="w-full p-3 bg-gray-50 hover:bg-[#4A90E2]/10 border border-gray-200 hover:border-[#4A90E2] rounded-xl text-left transition-colors disabled:opacity-50 flex items-center gap-3"
+                                                className={`w-full p-3 border rounded-xl text-left transition-colors disabled:opacity-50 flex items-center gap-3 ${
+                                                    product.avoidWarning
+                                                        ? product.avoidWarning.rule === "NEVER_INCLUDE"
+                                                            ? "bg-red-50 border-red-200 hover:border-red-300"
+                                                            : "bg-amber-50 border-amber-200 hover:border-amber-300"
+                                                        : "bg-gray-50 border-gray-200 hover:bg-[#4A90E2]/10 hover:border-[#4A90E2]"
+                                                }`}
                                             >
                                                 {product.imageUrl ? (
                                                     <div className="w-14 h-14 rounded-lg overflow-hidden bg-white flex-shrink-0">
@@ -1841,7 +2011,19 @@ function MealDetailPageContent() {
                                                     </div>
                                                 )}
                                                 <div className="flex-1 min-w-0">
-                                                    <div className="font-medium text-gray-900 text-sm line-clamp-2">{product.name}</div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-medium text-gray-900 text-sm line-clamp-2">{product.name}</span>
+                                                        {product.avoidWarning && (
+                                                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 ${
+                                                                product.avoidWarning.rule === "NEVER_INCLUDE"
+                                                                    ? "bg-red-100 text-red-700"
+                                                                    : "bg-amber-100 text-amber-700"
+                                                            }`}>
+                                                                <AlertTriangle className="w-3 h-3" />
+                                                                {product.avoidWarning.rule === "NEVER_INCLUDE" ? "Allergy" : "Avoid"}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     <div className="text-xs text-gray-500 mt-0.5">
                                                         {product.size && <span>{product.size}</span>}
                                                         {product.aisle && <span> • {product.aisle}</span>}
@@ -1859,6 +2041,7 @@ function MealDetailPageContent() {
                                         onClick={() => {
                                             setShowSwapOptions(false);
                                             setSwapAlternatives(null);
+                                            setSwapSearchWarning(null);
                                         }}
                                         className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl font-medium"
                                     >
@@ -1895,6 +2078,7 @@ function MealDetailPageContent() {
                                             setSelectedIngredientIndex(null);
                                             setShowSwapOptions(false);
                                             setSwapAlternatives(null);
+                                            setSwapSearchWarning(null);
                                         }}
                                         disabled={loadingSwapSuggestions}
                                         className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl font-medium disabled:opacity-50"

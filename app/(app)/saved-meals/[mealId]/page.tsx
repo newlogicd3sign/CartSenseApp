@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+import InstacartCarrot from "@/app/🥕 Instacart Logos/Logos - Carrot/RGB/PNG/Instacart_Carrot.png";
 import { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
@@ -450,6 +452,8 @@ export default function SavedMealDetailPage() {
                 body: JSON.stringify({
                     items: cartItems,
                     title: meal.name,
+                    imageUrl: meal.imageUrl,
+                    instructions: meal.steps, // Include recipe cooking instructions
                 }),
             });
 
@@ -1152,17 +1156,17 @@ export default function SavedMealDetailPage() {
                             <button
                                 onClick={handleAddToInstacart}
                                 disabled={addingToInstacart || selectedIngredients.size === 0}
-                                className="w-full py-4 bg-gradient-to-r from-[#43B02A] to-[#3A9A24] text-white rounded-2xl shadow-lg hover:shadow-xl transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                className="w-full h-[46px] bg-[#003D29] text-[#FAF1E5] rounded-full px-[18px] shadow-lg hover:shadow-xl hover:bg-[#004D35] transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                             >
                                 {addingToInstacart ? (
                                     <>
-                                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                        <div className="w-[22px] h-[22px] border-2 border-[#FAF1E5]/30 border-t-[#FAF1E5] rounded-full animate-spin" />
                                         <span>Opening Instacart...</span>
                                     </>
                                 ) : (
                                     <>
-                                        <ExternalLink className="w-5 h-5" />
-                                        <span>Shop with Instacart</span>
+                                        <Image src={InstacartCarrot} alt="Instacart" className="w-[22px] h-[22px]" />
+                                        <span>Get Recipe Ingredients</span>
                                     </>
                                 )}
                             </button>

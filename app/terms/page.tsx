@@ -132,14 +132,30 @@ export default function TermsPage() {
                                 <p className="text-gray-600">We do not control Kroger's data, pricing, outages, or cart behavior.</p>
                             </SubSection>
 
-                            <SubSection title="6.2 OpenAI">
+                            <SubSection title="6.2 Instacart Integration">
+                                <p className="text-gray-600 mb-2">CartSense allows you to:</p>
+                                <ul className="list-disc list-inside text-gray-600 mb-4 space-y-1">
+                                    <li>Generate shoppable recipe and shopping list links via Instacart</li>
+                                    <li>View and purchase ingredients through Instacart's platform</li>
+                                    <li>Complete grocery orders through Instacart's checkout</li>
+                                </ul>
+                                <p className="text-gray-600 mb-2">Instacart integrations require you to:</p>
+                                <ul className="list-disc list-inside text-gray-600 mb-4 space-y-1">
+                                    <li>Have or create an Instacart account to complete purchases</li>
+                                    <li>Comply with Instacart's terms of service</li>
+                                    <li>Understand that CartSense is not affiliated with Instacart</li>
+                                </ul>
+                                <p className="text-gray-600">We do not control Instacart's product availability, pricing, delivery options, or service outages. All purchases are completed directly through Instacart.</p>
+                            </SubSection>
+
+                            <SubSection title="6.3 OpenAI">
                                 <p className="text-gray-600 mb-4">
                                     OpenAI processes your prompts to provide meal suggestions.
                                     We do not send your personal profile information to OpenAI beyond what is needed for meal generation.
                                 </p>
                             </SubSection>
 
-                            <SubSection title="6.3 Firebase">
+                            <SubSection title="6.4 Firebase">
                                 <p className="text-gray-600">Used for authentication, storage, analytics, and security.</p>
                             </SubSection>
                         </Section>

@@ -6,6 +6,7 @@ import { randomUUID, createHash } from "crypto";
 import { adminDb } from "@/lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
 import { v2 as cloudinary } from "cloudinary";
+import type { PreferenceData } from "@/types/preferences";
 
 // Configure Cloudinary
 cloudinary.config({
@@ -336,6 +337,35 @@ async function getOrGenerateImage(meal: Meal): Promise<string | undefined> {
 
 // ---------- Data loading ----------
 
+// Log MEAL_GENERATED events for variety tracking
+async function logMealGenerated(uid: string, meal: Meal): Promise<void> {
+    try {
+        const now = new Date();
+        const hour = now.getHours();
+        const day = now.getDay();
+
+        const eventDoc = {
+            createdAt: FieldValue.serverTimestamp(),
+            type: "MEAL_GENERATED",
+            mealId: meal.id,
+            source: "prompt" as const,
+            context: {
+                mealTime: meal.mealType,
+                dayType: day === 0 || day === 6 ? "weekend" : "weekday",
+            },
+            payload: {
+                mealName: meal.name,
+            },
+            clientEventId: `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
+        };
+
+        const eventsCol = adminDb.collection("foodEvents").doc(uid).collection("events");
+        await eventsCol.add(eventDoc);
+    } catch (err) {
+        console.error("logMealGenerated error:", err);
+    }
+}
+
 async function loadUserHistoryForModel(uid?: string): Promise<HistoryEventForModel[]> {
     if (!uid) return [];
     try {
@@ -404,6 +434,197 @@ async function loadActiveFamilyMembers(uid?: string): Promise<FamilyMemberData[]
     }
 }
 
+async function loadRecentMealNames(uid?: string): Promise<{ name: string; daysAgo: number }[]> {
+    if (!uid) return [];
+
+    try {
+        const fourteenDaysAgo = new Date();
+        fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+
+        const eventsRef = adminDb
+            .collection("foodEvents")
+            .doc(uid)
+            .collection("events");
+
+        const snapshot = await eventsRef
+            .where("type", "==", "MEAL_GENERATED")
+            .where("createdAt", ">=", fourteenDaysAgo)
+            .orderBy("createdAt", "desc")
+            .limit(50)
+            .get();
+
+        const now = new Date();
+        const meals: { name: string; daysAgo: number }[] = [];
+        const seenNames = new Set<string>();
+
+        for (const doc of snapshot.docs) {
+            const data = doc.data();
+            const mealName = data.payload?.mealName;
+            if (mealName && !seenNames.has(mealName.toLowerCase())) {
+                seenNames.add(mealName.toLowerCase());
+                const createdAt = data.createdAt?.toDate?.() || new Date();
+                const daysAgo = Math.floor((now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
+                meals.push({ name: mealName, daysAgo });
+            }
+        }
+
+        return meals;
+    } catch (err) {
+        console.error("Error loading recent meal names:", err);
+        return [];
+    }
+}
+
+async function loadUserPreferences(uid?: string): Promise<PreferenceData | null> {
+    if (!uid) return null;
+
+    try {
+        // Fetch aggregated preferences from the aggregate API
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.VERCEL_URL
+            ? `https://${process.env.VERCEL_URL}`
+            : "http://localhost:3000";
+
+        // Directly query Firestore instead of making HTTP request to avoid self-referencing issues
+        const ninetyDaysAgo = new Date();
+        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+
+        const eventsRef = adminDb
+            .collection("foodEvents")
+            .doc(uid)
+            .collection("events");
+
+        const snapshot = await eventsRef
+            .where("createdAt", ">=", ninetyDaysAgo)
+            .orderBy("createdAt", "desc")
+            .limit(500)
+            .get();
+
+        if (snapshot.empty) return null;
+
+        // Score weights
+        const SCORE_WEIGHTS: Record<string, number> = {
+            MEAL_ACCEPTED: 1,
+            MEAL_REJECTED: -2,
+            MEAL_SAVED: 2,
+            MEAL_REPEATED: 3,
+            INGREDIENT_ADDED: 1.5,
+            INGREDIENT_REMOVED: -1.5,
+            CART_ADDED: 0.5,
+            CART_REMOVED: -0.5,
+        };
+
+        const ingredientScores: Record<string, number> = {};
+        const tagScores: Record<string, number> = {};
+
+        for (const doc of snapshot.docs) {
+            const event = doc.data();
+            const weight = SCORE_WEIGHTS[event.type] ?? 0;
+            const payload = event.payload || {};
+
+            // Score ingredients
+            if (payload.ingredientKey && weight !== 0) {
+                ingredientScores[payload.ingredientKey] =
+                    (ingredientScores[payload.ingredientKey] || 0) + weight;
+            }
+
+            // Handle swaps
+            if (event.type === "INGREDIENT_SWAPPED" || event.type === "PRODUCT_SWAPPED") {
+                if (payload.fromIngredientKey) {
+                    ingredientScores[payload.fromIngredientKey] =
+                        (ingredientScores[payload.fromIngredientKey] || 0) - 1;
+                }
+                if (payload.toIngredientKey) {
+                    ingredientScores[payload.toIngredientKey] =
+                        (ingredientScores[payload.toIngredientKey] || 0) + 1;
+                }
+            }
+
+            // Score tags
+            if (payload.mealTags && Array.isArray(payload.mealTags)) {
+                if (event.type === "MEAL_ACCEPTED" || event.type === "MEAL_SAVED" || event.type === "MEAL_REPEATED") {
+                    for (const tag of payload.mealTags) {
+                        tagScores[tag] = (tagScores[tag] || 0) + weight;
+                    }
+                } else if (event.type === "MEAL_REJECTED") {
+                    for (const tag of payload.mealTags) {
+                        tagScores[tag] = (tagScores[tag] || 0) + weight;
+                    }
+                }
+            }
+        }
+
+        // Also check preference locks
+        const locksRef = adminDb.collection("preferenceLocks").doc(uid).collection("locks");
+        const locksSnapshot = await locksRef.get();
+
+        const LOCK_BOOSTS: Record<string, number> = {
+            ALWAYS_INCLUDE: 10,
+            NEVER_INCLUDE: -10,
+            PREFER: 5,
+            AVOID: -5,
+        };
+
+        for (const lockDoc of locksSnapshot.docs) {
+            const lock = lockDoc.data();
+            const boost = LOCK_BOOSTS[lock.rule] ?? 0;
+
+            if (lock.scope === "ingredient" && lock.key) {
+                ingredientScores[lock.key] = (ingredientScores[lock.key] || 0) + boost;
+            } else if ((lock.scope === "tag" || lock.scope === "cuisine" || lock.scope === "method") && lock.key) {
+                tagScores[lock.key] = (tagScores[lock.key] || 0) + boost;
+            }
+        }
+
+        // Extract preferences
+        const preferredIngredients: string[] = [];
+        const avoidIngredients: string[] = [];
+        const transparencyNotes: string[] = [];
+
+        for (const [key, score] of Object.entries(ingredientScores)) {
+            const displayName = key.replace(/_/g, " ");
+            if (score >= 2) {
+                preferredIngredients.push(displayName);
+                if (score >= 5) {
+                    transparencyNotes.push(`You seem to enjoy ${displayName}`);
+                }
+            } else if (score <= -2) {
+                avoidIngredients.push(displayName);
+                if (score <= -5) {
+                    transparencyNotes.push(`You tend to avoid ${displayName}`);
+                }
+            }
+        }
+
+        const preferredTags: string[] = [];
+        const avoidTags: string[] = [];
+
+        for (const [key, score] of Object.entries(tagScores)) {
+            if (score >= 2) {
+                preferredTags.push(key);
+            } else if (score <= -2) {
+                avoidTags.push(key);
+            }
+        }
+
+        // Return null if no significant preferences
+        if (preferredIngredients.length === 0 && avoidIngredients.length === 0 &&
+            preferredTags.length === 0 && avoidTags.length === 0) {
+            return null;
+        }
+
+        return {
+            preferredIngredients: preferredIngredients.slice(0, 10),
+            avoidIngredients: avoidIngredients.slice(0, 10),
+            preferredTags: preferredTags.slice(0, 5),
+            avoidTags: avoidTags.slice(0, 5),
+            transparencyNotes: transparencyNotes.slice(0, 3),
+        };
+    } catch (err) {
+        console.error("Error loading user preferences:", err);
+        return null;
+    }
+}
+
 // Combine all dietary restrictions from user and active family members
 type CombinedDietaryRestrictions = {
     householdMembers: { name: string; dietType?: string; restrictions: string[] }[];
@@ -414,6 +635,12 @@ type CombinedDietaryRestrictions = {
     combinedDoctorBlockedGroups: string[];
     dietTypes: string[];
     cookingExperience?: string;
+};
+
+// Validation result type
+type ValidationResult = {
+    isValid: boolean;
+    violations: string[];
 };
 
 function combineFamilyRestrictions(
@@ -498,6 +725,74 @@ function combineFamilyRestrictions(
     };
 }
 
+// Validate a meal against dietary restrictions
+function validateMealAgainstRestrictions(meal: Meal, restrictions: CombinedDietaryRestrictions): ValidationResult {
+    const violations: string[] = [];
+
+    // Create a combined list of all ingredient names and search terms (lowercase for comparison)
+    const ingredientTexts = meal.ingredients.flatMap(ing => [
+        ing.name.toLowerCase(),
+        ing.grocerySearchTerm?.toLowerCase() || "",
+        ing.preparation?.toLowerCase() || ""
+    ]).filter(Boolean);
+
+    const mealNameLower = meal.name.toLowerCase();
+    const mealDescriptionLower = meal.description.toLowerCase();
+    const allMealText = [mealNameLower, mealDescriptionLower, ...ingredientTexts].join(" ");
+
+    // Check CRITICAL allergies (strictest check)
+    for (const allergen of restrictions.combinedAllergies) {
+        const allergenLower = allergen.toLowerCase();
+
+        // Check for direct mentions or common derivatives
+        if (allMealText.includes(allergenLower)) {
+            violations.push(`Contains allergen: ${allergen}`);
+        }
+
+        // Check for common derivatives
+        const derivatives: Record<string, string[]> = {
+            "dairy": ["milk", "cheese", "yogurt", "butter", "cream", "whey", "casein", "lactose"],
+            "eggs": ["egg", "mayonnaise"],
+            "peanuts": ["peanut"],
+            "tree nuts": ["almond", "walnut", "cashew", "pecan", "pistachio", "hazelnut", "macadamia"],
+            "wheat": ["wheat", "flour", "bread", "pasta", "noodle"],
+            "gluten": ["wheat", "barley", "rye", "flour", "bread", "pasta"],
+            "soy": ["soy", "tofu", "edamame", "miso", "tempeh"],
+            "shellfish": ["shrimp", "crab", "lobster", "crawfish", "prawn"],
+            "fish": ["salmon", "tuna", "cod", "tilapia", "halibut", "mackerel"],
+            "sesame": ["sesame", "tahini"],
+        };
+
+        const derivativeList = derivatives[allergenLower] || [];
+        for (const derivative of derivativeList) {
+            if (allMealText.includes(derivative)) {
+                violations.push(`Contains ${allergen} derivative: ${derivative}`);
+            }
+        }
+    }
+
+    // Check doctor-blocked ingredients (strict)
+    for (const blocked of restrictions.combinedDoctorBlockedIngredients) {
+        const blockedLower = blocked.toLowerCase();
+        if (allMealText.includes(blockedLower)) {
+            violations.push(`Contains doctor-blocked ingredient: ${blocked}`);
+        }
+    }
+
+    // Check doctor-blocked food groups (strict)
+    for (const group of restrictions.combinedDoctorBlockedGroups) {
+        const groupLower = group.toLowerCase();
+        if (allMealText.includes(groupLower)) {
+            violations.push(`Contains doctor-blocked food group: ${group}`);
+        }
+    }
+
+    return {
+        isValid: violations.length === 0,
+        violations
+    };
+}
+
 // ---------- OpenAI streaming ----------
 
 // Detect if prompt is a broad meal plan request vs specific recipe search
@@ -551,7 +846,7 @@ function isBroadMealPlanRequest(prompt: string): boolean {
     return false;
 }
 
-function buildSystemPrompt(prompt: string, restrictions: CombinedDietaryRestrictions, isPremium: boolean, pantryMode: boolean = false): string {
+function buildSystemPrompt(prompt: string, restrictions: CombinedDietaryRestrictions, isPremium: boolean, pantryMode: boolean = false, preferences: PreferenceData | null = null, recentMeals: { name: string; daysAgo: number }[] = []): string {
     // Build household section if multiple members
     const householdSection = restrictions.householdMembers.length > 1
         ? `\nHousehold (${restrictions.householdMembers.length}): ${restrictions.householdMembers.map(m => `${m.name}${m.dietType ? ` (${m.dietType})` : ""}`).join(", ")}`
@@ -569,12 +864,28 @@ function buildSystemPrompt(prompt: string, restrictions: CombinedDietaryRestrict
 
     // Build restrictions - only include non-empty sections
     const restrictionParts: string[] = [];
-    if (restrictions.combinedAllergies.length) restrictionParts.push(`ALLERGIES (STRICT): ${restrictions.combinedAllergies.join(", ")}`);
     if (restrictions.combinedDoctorBlockedIngredients.length) restrictionParts.push(`Doctor-blocked (STRICT): ${restrictions.combinedDoctorBlockedIngredients.join(", ")}`);
     if (restrictions.combinedDoctorBlockedGroups.length) restrictionParts.push(`Blocked groups (STRICT): ${restrictions.combinedDoctorBlockedGroups.join(", ")}`);
     if (restrictions.combinedSensitivities.length) restrictionParts.push(`Sensitivities: ${restrictions.combinedSensitivities.join(", ")}`);
-    if (restrictions.combinedDislikes.length) restrictionParts.push(`Dislikes: ${restrictions.combinedDislikes.join(", ")}`);
+    if (restrictions.combinedDislikes.length) {
+        restrictionParts.push(`Dislikes (avoid whole/raw forms, cooked/processed OK): ${restrictions.combinedDislikes.join(", ")}`);
+    }
     if (restrictions.dietTypes.length) restrictionParts.push(`Diets: ${restrictions.dietTypes.join(", ")}`);
+
+    // Build allergy warning as a separate, prominent section
+    const allergyWarning = restrictions.combinedAllergies.length > 0
+        ? `\n⚠️ CRITICAL ALLERGIES - DO NOT USE THESE INGREDIENTS UNDER ANY CIRCUMSTANCES:\n${restrictions.combinedAllergies.map(a => `• ${a} (and all ${a}-derived ingredients)`).join("\n")}\nThese allergies are potentially life-threatening. NEVER suggest meals containing these allergens or their derivatives.\n`
+        : "";
+
+    // Build dislikes guidance for semantic understanding
+    const dislikesGuidance = restrictions.combinedDislikes.length > 0
+        ? `\n🔸 IMPORTANT - SEMANTIC UNDERSTANDING OF DISLIKES:\nWhen someone dislikes an ingredient, they typically mean the whole/raw form, NOT processed or cooked versions:
+- "Tomatoes" disliked → AVOID whole/raw tomatoes, but tomato sauce, ketchup, marinara, and cooked tomato products are FINE
+- "Mushrooms" disliked → AVOID whole mushrooms, but mushroom powder/extract in sauces is FINE
+- "Onions" disliked → AVOID visible onion pieces, but onion powder and well-cooked onions in sauces are usually FINE
+- "Peppers" disliked → AVOID bell peppers/chunks, but pepper powder and hot sauces may be FINE
+Apply common sense: if they dislike the texture/appearance of something, the processed version is usually acceptable.\n`
+        : "";
 
     const restrictionsText = restrictionParts.length > 0
         ? `RESTRICTIONS:${householdSection}\n${restrictionParts.map(r => `- ${r}`).join("\n")}`
@@ -599,6 +910,49 @@ PANTRY MODE: The user is cooking with ingredients they already have at home.
 - Suggest simple recipes achievable with basic home equipment
 - Do NOT suggest they buy additional ingredients` : "";
 
+    // Build learned preferences section
+    let preferencesSection = "";
+    if (preferences) {
+        const parts: string[] = [];
+
+        if (preferences.preferredIngredients.length > 0) {
+            parts.push(`PREFERRED INGREDIENTS (user tends to enjoy): ${preferences.preferredIngredients.join(", ")}`);
+        }
+        if (preferences.avoidIngredients.length > 0) {
+            parts.push(`LEARNED AVOIDANCES (user tends to skip, not strict): ${preferences.avoidIngredients.join(", ")}`);
+        }
+        if (preferences.preferredTags.length > 0) {
+            parts.push(`PREFERRED STYLES: ${preferences.preferredTags.join(", ")}`);
+        }
+        if (preferences.avoidTags.length > 0) {
+            parts.push(`LESS PREFERRED STYLES: ${preferences.avoidTags.join(", ")}`);
+        }
+
+        if (parts.length > 0) {
+            preferencesSection = `
+USER PREFERENCES (learned from your meal history):
+${parts.join("\n")}
+${preferences.transparencyNotes.length > 0 ? `\nNote: ${preferences.transparencyNotes.join(". ")}.` : ""}
+These are soft preferences - prioritize them when possible but don't force them if they conflict with the request.
+`;
+        }
+    }
+
+    // Build recent meals section to avoid repetitive suggestions
+    let recentMealsSection = "";
+    if (recentMeals.length > 0) {
+        const mealList = recentMeals
+            .slice(0, 20) // Limit to 20 most recent
+            .map(m => `- ${m.name}${m.daysAgo === 0 ? " (today)" : m.daysAgo === 1 ? " (yesterday)" : ` (${m.daysAgo} days ago)`}`)
+            .join("\n");
+        recentMealsSection = `
+RECENTLY SUGGESTED RECIPES (avoid repeating these exact meals):
+${mealList}
+
+VARIETY RULE: Do NOT suggest these exact recipes again. You CAN use the same ingredients - just make different dishes. For example, if "Honey Garlic Chicken" was suggested recently, you can still suggest other chicken dishes like "Lemon Herb Chicken" or "Chicken Stir Fry".
+`;
+    }
+
     // Meal count based on request type
     const isBroadRequest = isBroadMealPlanRequest(prompt);
     let mealCountInstruction: string;
@@ -612,9 +966,16 @@ PANTRY MODE: The user is cooking with ingredients they already have at home.
 
     return `You are CartSense, an AI meal planner. Be concise.
 
+TOPIC VALIDATION (FIRST PRIORITY):
+Before generating meals, determine if the user's request is related to food, cooking, meals, recipes, nutrition, or grocery shopping.
+- If the request is NOT food-related (e.g., health advice, quitting habits, relationship questions, coding help, general life advice, medical conditions not related to diet), respond ONLY with: {"error": "off_topic", "message": "I'm a meal planning assistant. I can help you with recipes, meal ideas, and grocery planning. What would you like to eat?"}
+- If the request IS food-related, proceed with meal generation.
+
 RULES: Respect allergies/doctor restrictions (STRICT). Heart-conscious by default. U.S. grocery ingredients.
-${cookingGuidance}
+${allergyWarning}${dislikesGuidance}${cookingGuidance}
 ${restrictionsText}
+${preferencesSection}
+${recentMealsSection}
 ${qualityRulesText}
 ${pantryModeText}
 
@@ -726,11 +1087,13 @@ export async function POST(request: Request) {
 
             await writer.write(sendEvent({ type: "status", message: "Loading your preferences..." }));
 
-            // Load history, doctor context, and family members in parallel
-            const [history, doctorContext, familyMembers] = await Promise.all([
+            // Load history, doctor context, family members, learned preferences, and recent meals in parallel
+            const [history, doctorContext, familyMembers, userPreferences, recentMeals] = await Promise.all([
                 loadUserHistoryForModel(uid),
                 loadDoctorInstructions(uid),
                 loadActiveFamilyMembers(uid),
+                loadUserPreferences(uid),
+                loadRecentMealNames(uid),
             ]);
 
             // Combine all family dietary restrictions
@@ -744,7 +1107,7 @@ export async function POST(request: Request) {
                 response_format: { type: "json_object" },
                 stream: true,
                 messages: [
-                    { role: "system", content: buildSystemPrompt(prompt, combinedRestrictions, isPremium, Boolean(pantryMode)) },
+                    { role: "system", content: buildSystemPrompt(prompt, combinedRestrictions, isPremium, Boolean(pantryMode), userPreferences, recentMeals) },
                     { role: "user", content: JSON.stringify({ userPrompt: prompt, prefs: prefs || {}, history, familyRestrictions: combinedRestrictions }) },
                 ],
             });
@@ -758,7 +1121,7 @@ export async function POST(request: Request) {
             }
 
             // Parse the complete response
-            let parsed: { meals?: unknown[] };
+            let parsed: { meals?: unknown[]; error?: string; message?: string };
             try {
                 parsed = JSON.parse(fullContent);
             } catch {
@@ -767,11 +1130,42 @@ export async function POST(request: Request) {
                 return;
             }
 
+            // Handle off-topic queries detected by the AI
+            if (parsed.error === "off_topic") {
+                await writer.write(sendEvent({
+                    type: "error",
+                    error: "OFF_TOPIC",
+                    message: parsed.message || "I'm a meal planning assistant. Please ask me about recipes, meals, or food!"
+                }));
+                await writer.close();
+                return;
+            }
+
             const rawMeals = Array.isArray(parsed.meals) ? parsed.meals : [];
-            const meals: Meal[] = rawMeals.map((m) => normalizeMeal(m));
+            let meals: Meal[] = rawMeals.map((m) => normalizeMeal(m));
+
+            // Validate meals against dietary restrictions
+            const validatedMeals: Meal[] = [];
+            const rejectedMeals: { meal: Meal; violations: string[] }[] = [];
+
+            for (const meal of meals) {
+                const validation = validateMealAgainstRestrictions(meal, combinedRestrictions);
+                if (validation.isValid) {
+                    validatedMeals.push(meal);
+                } else {
+                    rejectedMeals.push({ meal, violations: validation.violations });
+                    console.log(`[VALIDATION] Rejected meal "${meal.name}":`, validation.violations);
+                }
+            }
+
+            // Update meals to only include validated ones
+            meals = validatedMeals;
 
             if (meals.length === 0) {
-                await writer.write(sendEvent({ type: "error", error: "NO_MEALS", message: "No meals were generated. Please try again." }));
+                const violationSummary = rejectedMeals.length > 0
+                    ? `All generated meals contained restricted ingredients. Please try a different request or check your dietary restrictions.`
+                    : "No meals were generated. Please try again.";
+                await writer.write(sendEvent({ type: "error", error: "NO_MEALS", message: violationSummary }));
                 await writer.close();
                 return;
             }
@@ -781,6 +1175,13 @@ export async function POST(request: Request) {
 
             for (let i = 0; i < meals.length; i++) {
                 await writer.write(sendEvent({ type: "meal", meal: meals[i], index: i }));
+            }
+
+            // Log MEAL_GENERATED events for variety tracking (fire and forget)
+            if (uid) {
+                for (const meal of meals) {
+                    void logMealGenerated(uid, meal);
+                }
             }
 
             // Generate images in parallel for all meals, then update

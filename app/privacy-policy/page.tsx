@@ -98,7 +98,15 @@ export default function PrivacyPolicyPage() {
                                     <li>Selected store information</li>
                                     <li>Product data (pricing, aisle, availability)</li>
                                 </ul>
-                                <p className="text-gray-600 font-medium">CartSense does not store your Kroger login credentials.</p>
+                                <p className="text-gray-600 font-medium mb-6">CartSense does not store your Kroger login credentials.</p>
+
+                                <p className="text-gray-600 mb-4">If you use Instacart through CartSense:</p>
+                                <h4 className="font-semibold text-gray-800 mb-2">Instacart API Data</h4>
+                                <ul className="list-disc list-inside text-gray-600 mb-4 space-y-1">
+                                    <li>Recipe and shopping list information (ingredient names, quantities)</li>
+                                    <li>Generated shopping links</li>
+                                </ul>
+                                <p className="text-gray-600 font-medium">CartSense does not have access to your Instacart account credentials or purchase history. All transactions are completed directly on Instacart's platform.</p>
                             </SubSection>
                         </Section>
 
@@ -159,6 +167,14 @@ export default function PrivacyPolicyPage() {
                                 <li>Your authenticated access token</li>
                             </ul>
                             <p className="text-gray-600 mb-4">We do not share personal profile data with Kroger beyond what is required to complete API actions.</p>
+
+                            <h4 className="font-semibold text-gray-800 mb-2">With Instacart</h4>
+                            <p className="text-gray-600 mb-2">To generate shopping links, we share:</p>
+                            <ul className="list-disc list-inside text-gray-600 mb-4 space-y-1">
+                                <li>Ingredient names and quantities</li>
+                                <li>Recipe titles and instructions (when applicable)</li>
+                            </ul>
+                            <p className="text-gray-600 mb-4">We do not share personal profile data, email addresses, or account information with Instacart. All purchases are completed directly on Instacart's platform.</p>
 
                             <h4 className="font-semibold text-gray-800 mb-2">With OpenAI</h4>
                             <p className="text-gray-600 mb-4">Only prompt-related text is shared (see Section 3).</p>

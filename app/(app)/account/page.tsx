@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+import InstacartCarrot from "@/app/🥕 Instacart Logos/Logos - Carrot/RGB/PNG/Instacart_Carrot.png";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
@@ -1937,17 +1939,20 @@ function AccountPageContent() {
                                     disabled={savingShoppingPreference}
                                     className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all ${
                                         (userDoc?.shoppingPreference || "instacart") === "instacart"
-                                            ? "border-[#43B02A] bg-[#43B02A]/5"
+                                            ? "border-[#003D29] bg-[#003D29]/5"
                                             : "border-gray-200 hover:border-gray-300"
                                     }`}
                                 >
                                     <div className="flex items-center justify-between">
-                                        <div className="text-left">
-                                            <p className="font-medium text-gray-900">Instacart</p>
-                                            <p className="text-xs text-gray-500">Multiple stores, delivery</p>
+                                        <div className="flex items-center gap-2 text-left">
+                                            <Image src={InstacartCarrot} alt="Instacart" className="w-6 h-6" />
+                                            <div>
+                                                <p className="font-medium text-gray-900">Instacart</p>
+                                                <p className="text-xs text-gray-500">Multiple stores, delivery</p>
+                                            </div>
                                         </div>
                                         {(userDoc?.shoppingPreference || "instacart") === "instacart" && (
-                                            <CheckCircle className="w-5 h-5 text-[#43B02A]" />
+                                            <CheckCircle className="w-5 h-5 text-[#003D29]" />
                                         )}
                                     </div>
                                 </button>
