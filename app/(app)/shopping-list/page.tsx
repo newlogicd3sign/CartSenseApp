@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+import InstacartCarrot from "@/app/🥕 Instacart Logos/Logos - Carrot/RGB/PNG/Instacart_Carrot.png";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
@@ -14,6 +16,7 @@ import {
     updateDoc,
     addDoc,
     getDocs,
+    getDoc,
     serverTimestamp,
 } from "firebase/firestore";
 import {
@@ -22,7 +25,6 @@ import {
     ExternalLink,
     X,
     Link,
-    Clock,
     ChefHat,
     MapPin,
     Lightbulb,
@@ -42,10 +44,14 @@ import {
     Bean,
     FlaskConical,
     Apple,
+    AlertTriangle,
 } from "lucide-react";
 import { getRandomAccentColor, getStoreBrand, type AccentColor, type StoreBrandInfo } from "@/lib/utils";
 import { getIngredientCategory } from "@/lib/product-engine/ingredientQualityRules";
+import { getIngredientImageUrl } from "@/lib/ingredientImages";
+import { getEstimatedPrice } from "@/lib/priceEstimates";
 import { useToast } from "@/components/Toast";
+import { logCartRemoved, logCartAdded } from "@/lib/logFoodEvent";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { ConfirmationModal } from "@/components/ConfirmationModal";
@@ -58,6 +64,7 @@ type ShoppingItem = {
     count?: number; // Number of this item (default 1)
     mealId?: string;
     mealName?: string;
+    mealImageUrl?: string;
     checked: boolean;
     createdAt?: unknown;
     krogerProductId?: string;
@@ -79,6 +86,10 @@ type KrogerProduct = {
     price?: number;
     size?: string;
     aisle?: string;
+    avoidWarning?: {
+        rule: "NEVER_INCLUDE" | "AVOID";
+        note?: string;
+    };
 };
 
 type EnrichedItem = {
@@ -132,9 +143,12 @@ export default function ShoppingListPage() {
     const [addingToKroger, setAddingToKroger] = useState(false);
     const [krogerResults, setKrogerResults] = useState<EnrichedItem[] | null>(null);
     const [showKrogerResults, setShowKrogerResults] = useState(false);
+    const [addingToInstacart, setAddingToInstacart] = useState(false);
+    const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
     const [accentColor, setAccentColor] = useState<AccentColor>({ primary: "#3b82f6", dark: "#2563eb" });
     const [removeConfirmDateKey, setRemoveConfirmDateKey] = useState<string | null>(null);
     const [showPantryTip, setShowPantryTip] = useState(true);
+    const [shoppingPreference, setShoppingPreference] = useState<"kroger" | "instacart" | null>(null);
 
     // Item detail modal state (same pattern as meal details)
     const [selectedItem, setSelectedItem] = useState<ShoppingItem | null>(null);
@@ -142,6 +156,11 @@ export default function ShoppingListPage() {
     const [loadingSwapSuggestions, setLoadingSwapSuggestions] = useState(false);
     const [showSwapOptions, setShowSwapOptions] = useState(false);
     const [swappingItem, setSwappingItem] = useState(false);
+    const [swapSearchWarning, setSwapSearchWarning] = useState<{
+        ingredient: string;
+        rule: "NEVER_INCLUDE" | "AVOID";
+        note?: string;
+    } | null>(null);
 
     // Kroger link modal state
     const [showLinkModal, setShowLinkModal] = useState(false);
@@ -172,7 +191,7 @@ export default function ShoppingListPage() {
         return () => unsub();
     }, [router]);
 
-    // Check Kroger status - runs on mount and when page becomes visible (for OAuth callback)
+    // Check Kroger status and shopping preference - runs on mount and when page becomes visible
     useEffect(() => {
         if (!user) return;
 
@@ -210,7 +229,30 @@ export default function ShoppingListPage() {
             }
         };
 
+        const fetchShoppingPreference = async () => {
+            try {
+                const userDoc = await getDoc(doc(db, "users", user.uid));
+                if (userDoc.exists()) {
+                    const data = userDoc.data();
+                    if (data.shoppingPreference === "instacart" || data.shoppingPreference === "kroger") {
+                        setShoppingPreference(data.shoppingPreference);
+                    } else {
+                        // Default to instacart if Kroger isn't connected, otherwise kroger
+                        const hasKroger = Boolean(data.krogerLinked) && Boolean(data.defaultKrogerLocationId);
+                        setShoppingPreference(hasKroger ? "kroger" : "instacart");
+                    }
+                } else {
+                    // No user doc means no Kroger connection, default to instacart
+                    setShoppingPreference("instacart");
+                }
+            } catch (err) {
+                console.error("Error fetching shopping preference", err);
+                setShoppingPreference("instacart");
+            }
+        };
+
         void checkKrogerStatus();
+        void fetchShoppingPreference();
 
         // Re-check when page becomes visible (handles return from OAuth flow)
         const handleVisibilityChange = () => {
@@ -312,6 +354,11 @@ export default function ShoppingListPage() {
                 }
             } else {
                 showToast(data.message || "Items added to your Kroger cart!", "success");
+
+                // Log food event for preference learning
+                logCartAdded(user.uid, "kroger").catch((err) => {
+                    console.error("Failed to log CART_ADDED event:", err);
+                });
             }
 
             if (data.enrichedItems && data.enrichedItems.length > 0) {
@@ -326,11 +373,74 @@ export default function ShoppingListPage() {
         }
     };
 
+    const handleAddToInstacart = async (itemsToAdd: ShoppingItem[]) => {
+        if (itemsToAdd.length === 0) return;
+
+        setAddingToInstacart(true);
+
+        try {
+            const cartItems = itemsToAdd.map((item) => ({
+                id: item.id,
+                name: item.name,
+                quantity: item.quantity,
+                count: item.count || 1,
+            }));
+
+            const res = await fetch("/api/instacart/link", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    items: cartItems,
+                    title: "CartSense Shopping List",
+                    linkType: "shopping_list", // Use shopping list format (not recipe)
+                    userId: user?.uid, // Save items to pantry
+                }),
+            });
+
+            const data = await res.json();
+
+            if (!res.ok || !data.success) {
+                showToast(data.error || "Failed to generate Instacart link.", "error");
+                return;
+            }
+
+            // Open Instacart in a new tab
+            if (data.url) {
+                window.open(data.url, "_blank", "noopener,noreferrer");
+                showToast(`Opening Instacart with ${data.itemCount} items...`, "success");
+
+                // Log food event for preference learning
+                if (user) {
+                    logCartAdded(user.uid, "instacart").catch((err) => {
+                        console.error("Failed to log CART_ADDED event:", err);
+                    });
+                }
+            }
+        } catch (err) {
+            console.error("Error generating Instacart link:", err);
+            showToast("Something went wrong. Please try again.", "error");
+        } finally {
+            setAddingToInstacart(false);
+        }
+    };
+
     const handleRemoveItem = async (itemId: string) => {
         if (!user) return;
 
+        // Find the item to get its name for logging
+        const itemToRemove = items.find((i) => i.id === itemId);
+
         try {
             await deleteDoc(doc(db, "shoppingLists", user.uid, "items", itemId));
+
+            // Log food event for preference learning
+            if (itemToRemove) {
+                logCartRemoved(user.uid, itemToRemove.name, itemToRemove.mealId).catch(
+                    (err) => {
+                        console.error("Failed to log CART_REMOVED event:", err);
+                    }
+                );
+            }
         } catch (err) {
             console.error("Error deleting shopping list item", err);
         }
@@ -353,6 +463,7 @@ export default function ShoppingListPage() {
 
         setLoadingSwapSuggestions(true);
         setSwapAlternatives(null);
+        setSwapSearchWarning(null);
 
         try {
             const res = await fetch("/api/swap-suggestions", {
@@ -374,6 +485,11 @@ export default function ShoppingListPage() {
                     return;
                 }
                 throw new Error(data.message || "Failed to get swap suggestions");
+            }
+
+            // Store the search term warning if present
+            if (data.searchTermWarning) {
+                setSwapSearchWarning(data.searchTermWarning);
             }
 
             if (data.alternatives && data.alternatives.length > 0) {
@@ -604,29 +720,89 @@ export default function ShoppingListPage() {
         return new Date();
     };
 
-    const grouped: Record<string, ShoppingItem[]> = items.reduce(
-        (acc, item) => {
+    // Group items by meal
+    type MealGroup = {
+        mealId: string;
+        mealName: string;
+        mealImageUrl?: string;
+        items: ShoppingItem[];
+    };
+
+    // First group by date, then within each date group by meal
+    type DateGroup = {
+        dateKey: string;
+        dateLabel: string;
+        items: ShoppingItem[];
+        mealGroups: MealGroup[];
+    };
+
+    const groupedByDate: DateGroup[] = (() => {
+        // First pass: group by date
+        const dateMap = new Map<string, ShoppingItem[]>();
+        for (const item of items) {
             const ts = toDate(item.createdAt);
             const dateKey = ts.toDateString();
-            if (!acc[dateKey]) acc[dateKey] = [];
-            acc[dateKey].push(item);
+            if (!dateMap.has(dateKey)) {
+                dateMap.set(dateKey, []);
+            }
+            dateMap.get(dateKey)!.push(item);
+        }
+
+        // Second pass: for each date, group by meal
+        const result: DateGroup[] = [];
+        for (const [dateKey, dateItems] of dateMap) {
+            const mealMap = new Map<string, MealGroup>();
+            for (const item of dateItems) {
+                const mealId = item.mealId || "other";
+                const mealName = item.mealName || "Other Items";
+                const mealImageUrl = item.mealImageUrl;
+
+                if (!mealMap.has(mealId)) {
+                    mealMap.set(mealId, {
+                        mealId,
+                        mealName,
+                        mealImageUrl,
+                        items: [],
+                    });
+                }
+                mealMap.get(mealId)!.items.push(item);
+            }
+
+            // Sort meals - put "Other Items" at the end
+            const mealGroups = Array.from(mealMap.values()).sort((a, b) => {
+                if (a.mealId === "other") return 1;
+                if (b.mealId === "other") return -1;
+                return a.mealName.localeCompare(b.mealName);
+            });
+
+            const firstTS = dateItems[0]?.createdAt;
+            const d = toDate(firstTS);
+            const dateLabel = d.toLocaleDateString([], {
+                weekday: "long",
+                month: "long",
+                day: "numeric",
+            });
+
+            result.push({
+                dateKey,
+                dateLabel,
+                items: dateItems,
+                mealGroups,
+            });
+        }
+
+        // Sort dates descending (most recent first)
+        return result.sort((a, b) => new Date(b.dateKey).getTime() - new Date(a.dateKey).getTime());
+    })();
+
+    // Keep a flat grouped record for the remove confirmation modal (by date)
+    const grouped: Record<string, ShoppingItem[]> = groupedByDate.reduce(
+        (acc, group) => {
+            acc[group.dateKey] = group.items;
             return acc;
         },
         {} as Record<string, ShoppingItem[]>
     );
-
-    const sortedDates = Object.keys(grouped).sort(
-        (a, b) => new Date(b).getTime() - new Date(a).getTime()
-    );
-
-    const formatDate = (ts: unknown) => {
-        const d = toDate(ts);
-        return d.toLocaleDateString([], {
-            weekday: "long",
-            month: "long",
-            day: "numeric",
-        });
-    };
 
     if (loadingUser || loadingItems || krogerLinkStatus === "loading") {
         return <LoadingScreen message="Loading your shopping list..." />;
@@ -654,8 +830,8 @@ export default function ShoppingListPage() {
                             </div>
                         </div>
 
-                        {/* Kroger Link Status - show link/store buttons in header when not fully set up */}
-                        {items.length > 0 && krogerLinkStatus !== "linked" && (
+                        {/* Kroger Link Status - show link/store buttons in header when not fully set up (only for Kroger preference) */}
+                        {items.length > 0 && shoppingPreference === "kroger" && krogerLinkStatus !== "linked" && (
                             <div className="flex flex-col items-end gap-2">
                                 {krogerLinkStatus === "no_store" ? (
                                     <button
@@ -708,30 +884,59 @@ export default function ShoppingListPage() {
                                 </Alert>
                             )}
 
-                            {sortedDates.map((dateKey) => {
-                                const sectionItems = grouped[dateKey];
-                                const firstTS = sectionItems[0]?.createdAt;
+                            {/* Price disclaimer for Instacart or unlinked Kroger */}
+                            {(shoppingPreference === "instacart" || (shoppingPreference === "kroger" && krogerLinkStatus !== "linked")) && (
+                                <p className="text-xs text-gray-500 italic px-1">
+                                    * Estimated prices may vary by store
+                                    {shoppingPreference === "kroger" && krogerLinkStatus !== "linked" && (
+                                        <span> — <a href="/account" className="text-[#0056a3] underline hover:no-underline">Link your Kroger account</a> to see exact prices</span>
+                                    )}
+                                </p>
+                            )}
+
+                            {groupedByDate.map((dateGroup) => {
+                                const { dateKey, dateLabel, items: allDateItems, mealGroups } = dateGroup;
 
                                 return (
                                     <div key={dateKey} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-                                        {/* Date Header */}
+                                        {/* Date Header with Actions */}
                                         <div className="px-4 sm:px-5 py-3 sm:py-4 bg-gray-50 border-b border-gray-100">
                                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                                                 {/* Date and item count */}
                                                 <div className="flex items-center gap-2">
-                                                    <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" />
                                                     <span className="font-medium text-gray-900 text-sm sm:text-base">
-                                                        {formatDate(firstTS)}
+                                                        {dateLabel}
                                                     </span>
                                                     <span className="text-xs sm:text-sm text-gray-500">
-                                                        ({sectionItems.length} item{sectionItems.length !== 1 ? "s" : ""})
+                                                        ({allDateItems.length} item{allDateItems.length !== 1 ? "s" : ""})
                                                     </span>
                                                 </div>
-                                                {/* Actions */}
+                                                {/* Actions for entire date */}
                                                 <div className="flex items-center gap-2">
-                                                    {krogerLinkStatus === "linked" && (
+                                                    {/* Instacart Button - only for Instacart preference */}
+                                                    {shoppingPreference === "instacart" && (
                                                         <button
-                                                            onClick={() => void handleAddToKrogerCart(sectionItems)}
+                                                            onClick={() => void handleAddToInstacart(allDateItems)}
+                                                            disabled={addingToInstacart}
+                                                            className="h-[46px] px-[18px] bg-[#003D29] text-[#FAF1E5] rounded-full text-xs sm:text-sm font-medium hover:bg-[#004D35] transition-colors disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2"
+                                                        >
+                                                            {addingToInstacart ? (
+                                                                <>
+                                                                    <div className="w-[22px] h-[22px] border-2 border-[#FAF1E5]/30 border-t-[#FAF1E5] rounded-full animate-spin" />
+                                                                    <span>Opening...</span>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <Image src={InstacartCarrot} alt="Instacart" className="w-[22px] h-[22px]" />
+                                                                    <span>Shop with Instacart</span>
+                                                                </>
+                                                            )}
+                                                        </button>
+                                                    )}
+                                                    {/* Kroger Button - only for Kroger preference when linked */}
+                                                    {shoppingPreference === "kroger" && krogerLinkStatus === "linked" && (
+                                                        <button
+                                                            onClick={() => void handleAddToKrogerCart(allDateItems)}
                                                             disabled={addingToKroger}
                                                             className="px-3 py-1.5 h-8 bg-[#0056a3] text-white rounded-lg text-xs sm:text-sm font-medium hover:bg-[#004080] transition-colors disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-1.5"
                                                         >
@@ -743,7 +948,7 @@ export default function ShoppingListPage() {
                                                             ) : (
                                                                 <>
                                                                     <ExternalLink className="w-3.5 h-3.5" />
-                                                                    <span>Add to Kroger</span>
+                                                                    <span>Add to {storeBrand.displayName}</span>
                                                                 </>
                                                             )}
                                                         </button>
@@ -758,29 +963,61 @@ export default function ShoppingListPage() {
                                             </div>
                                         </div>
 
-                                        {/* Items */}
-                                        <ul className="divide-y divide-gray-50">
-                                            {sectionItems.map((item) => {
-                                                const hasKrogerProduct = krogerLinkStatus === "linked" && !!item.krogerProductId;
+                                        {/* Meals within this date */}
+                                        <div className="p-3 sm:p-4 space-y-3">
+                                            {mealGroups.map((mealGroup) => {
+                                                const { mealId, mealName, mealImageUrl, items: mealItems } = mealGroup;
+                                                const isOtherItems = mealId === "other";
+
+                                                return (
+                                                    <div key={mealId} className="bg-gray-50 rounded-xl overflow-hidden border border-gray-100">
+                                                        {/* Meal Header */}
+                                                        <div className="px-3 sm:px-4 py-3 flex items-center gap-3 bg-gradient-to-r from-[#4A90E2]/5 to-transparent border-l-4 border-[#4A90E2]">
+                                                            {/* Meal Image */}
+                                                            {!isOtherItems ? (
+                                                                <div className="w-12 h-12 rounded-lg overflow-hidden bg-white shadow-sm flex-shrink-0">
+                                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                                    <img
+                                                                        src={mealImageUrl || "https://placehold.co/96x96/e5e7eb/9ca3af?text=Meal"}
+                                                                        alt={mealName}
+                                                                        className="w-full h-full object-cover"
+                                                                    />
+                                                                </div>
+                                                            ) : (
+                                                                <div className="w-12 h-12 rounded-lg bg-white shadow-sm flex-shrink-0 flex items-center justify-center">
+                                                                    <Package className="w-6 h-6 text-gray-400" />
+                                                                </div>
+                                                            )}
+
+                                                            {/* Meal Name and Item Count */}
+                                                            <div className="flex-1 min-w-0">
+                                                                <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">
+                                                                    {mealName}
+                                                                </h3>
+                                                                <span className="text-xs text-gray-500">
+                                                                    {mealItems.length} ingredient{mealItems.length !== 1 ? "s" : ""}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Ingredients for this meal */}
+                                                        <ul className="divide-y divide-gray-100 bg-white">
+                                                            {mealItems.map((item) => {
+                                                const hasKrogerProduct = shoppingPreference === "kroger" && krogerLinkStatus === "linked" && !!item.krogerProductId;
                                                 const hasProductImage = hasKrogerProduct && !!item.productImageUrl;
+                                                const hasPriceData = !!item.krogerProductId && typeof item.price === "number";
                                                 return (
                                                     <li
                                                         key={item.id}
-                                                        className="px-5 py-5 relative"
+                                                        className="px-3 sm:px-4 py-3"
                                                     >
-                                                        {/* Delete button - upper right */}
-                                                        <button
-                                                            onClick={() => handleRemoveItem(item.id)}
-                                                            className="absolute top-4 right-5 w-8 h-8 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 transition-colors"
-                                                        >
-                                                            <Trash2 className="w-4 h-4" />
-                                                        </button>
-                                                        {/* Clickable area for opening detail modal - only when Kroger is linked */}
-                                                        <div
-                                                            onClick={() => krogerLinkStatus === "linked" && handleOpenItemDetail(item)}
-                                                            className={`flex items-start gap-3 pr-10 ${krogerLinkStatus === "linked" ? "cursor-pointer" : ""}`}
-                                                        >
-                                                            {/* Product Image or Category Icon */}
+                                                        <div className="flex items-start gap-3">
+                                                            {/* Clickable area for opening detail modal - only for Kroger preference when linked */}
+                                                            <div
+                                                                onClick={() => shoppingPreference === "kroger" && krogerLinkStatus === "linked" && handleOpenItemDetail(item)}
+                                                                className={`flex items-start gap-3 flex-1 min-w-0 ${shoppingPreference === "kroger" && krogerLinkStatus === "linked" ? "cursor-pointer" : ""}`}
+                                                            >
+                                                            {/* Product Image or Generic Ingredient Image */}
                                                             {hasProductImage ? (
                                                                 <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
                                                                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -788,6 +1025,16 @@ export default function ShoppingListPage() {
                                                                         src={item.productImageUrl}
                                                                         alt={item.productName || item.name}
                                                                         className="w-full h-full object-cover"
+                                                                    />
+                                                                </div>
+                                                            ) : !failedImages.has(item.id) ? (
+                                                                <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
+                                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                                    <img
+                                                                        src={getIngredientImageUrl(item.name)}
+                                                                        alt={item.name}
+                                                                        className="w-full h-full object-cover"
+                                                                        onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
                                                                     />
                                                                 </div>
                                                             ) : (
@@ -845,7 +1092,7 @@ export default function ShoppingListPage() {
                                                                         {item.productSize}
                                                                     </div>
                                                                 )}
-                                                                {/* Kroger Product Details */}
+                                                                {/* Product Details - Kroger shows exact, Instacart shows estimate */}
                                                                 {hasKrogerProduct && (
                                                                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
                                                                         {item.productAisle && (
@@ -861,12 +1108,37 @@ export default function ShoppingListPage() {
                                                                         )}
                                                                     </div>
                                                                 )}
+                                                                {/* Estimated price for Instacart users or Kroger users without linked account */}
+                                                                {(shoppingPreference === "instacart" || (shoppingPreference === "kroger" && krogerLinkStatus !== "linked")) && (() => {
+                                                                    const hasKrogerPrice = typeof item.price === "number";
+                                                                    const estimate = hasKrogerPrice
+                                                                        ? { min: item.price!, max: item.price! * 1.15, soldByWeight: item.soldBy === "WEIGHT" }
+                                                                        : getEstimatedPrice(item.name);
+                                                                    const suffix = estimate.soldByWeight ? "/lb" : "";
+                                                                    return (
+                                                                        <div className="text-xs text-gray-500 mt-1">
+                                                                            Est. ${estimate.min.toFixed(2)} - ${estimate.max.toFixed(2)}{suffix}
+                                                                        </div>
+                                                                    );
+                                                                })()}
                                                             </div>
+                                                        </div>
+                                                            {/* Delete button */}
+                                                            <button
+                                                                onClick={() => handleRemoveItem(item.id)}
+                                                                className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg text-red-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
                                                         </div>
                                                     </li>
                                                 );
+                                                            })}
+                                                        </ul>
+                                                    </div>
+                                                );
                                             })}
-                                        </ul>
+                                        </div>
                                     </div>
                                 );
                             })}
@@ -892,8 +1164,8 @@ export default function ShoppingListPage() {
                         : "Remove items?"
                 }
                 description={
-                    removeConfirmDateKey && grouped[removeConfirmDateKey]?.[0]?.createdAt
-                        ? `You're about to remove all items from ${formatDate(grouped[removeConfirmDateKey][0].createdAt)}. This action cannot be undone.`
+                    removeConfirmDateKey && grouped[removeConfirmDateKey]
+                        ? `You're about to remove all items added on ${groupedByDate.find(g => g.dateKey === removeConfirmDateKey)?.dateLabel || "this date"}. This action cannot be undone.`
                         : "This action cannot be undone."
                 }
                 confirmLabel="Remove"
@@ -1051,13 +1323,23 @@ export default function ShoppingListPage() {
                         <div className="flex-1 overflow-y-auto p-4">
                             <div className="space-y-4">
                                 {/* Product Image */}
-                                {krogerLinkStatus === "linked" && selectedItem.productImageUrl ? (
+                                {shoppingPreference === "kroger" && krogerLinkStatus === "linked" && selectedItem.productImageUrl ? (
                                     <div className="w-full aspect-square max-w-[200px] mx-auto rounded-xl overflow-hidden bg-gray-100">
                                         {/* eslint-disable-next-line @next/next/no-img-element */}
                                         <img
                                             src={selectedItem.productImageUrl}
                                             alt={selectedItem.productName || selectedItem.name}
                                             className="w-full h-full object-cover"
+                                        />
+                                    </div>
+                                ) : !failedImages.has(selectedItem.id) ? (
+                                    <div className="w-full aspect-square max-w-[200px] mx-auto rounded-xl overflow-hidden bg-gray-100">
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img
+                                            src={getIngredientImageUrl(selectedItem.name)}
+                                            alt={selectedItem.name}
+                                            className="w-full h-full object-cover"
+                                            onError={() => setFailedImages(prev => new Set(prev).add(selectedItem.id))}
                                         />
                                     </div>
                                 ) : (
@@ -1095,13 +1377,13 @@ export default function ShoppingListPage() {
                                 {/* Item Name */}
                                 <div className="text-center">
                                     <h4 className="text-lg font-medium text-gray-900">{selectedItem.name}</h4>
-                                    {krogerLinkStatus === "linked" && selectedItem.productName && selectedItem.productName !== selectedItem.name && (
+                                    {shoppingPreference === "kroger" && krogerLinkStatus === "linked" && selectedItem.productName && selectedItem.productName !== selectedItem.name && (
                                         <p className="text-sm text-gray-500 mt-1">{selectedItem.productName}</p>
                                     )}
                                 </div>
 
-                                {/* Details Grid - only show Kroger details when linked */}
-                                {krogerLinkStatus === "linked" && (
+                                {/* Details Grid - only show Kroger details when Kroger preference and linked */}
+                                {shoppingPreference === "kroger" && krogerLinkStatus === "linked" && (
                                     <div className="bg-gray-50 rounded-xl p-4 space-y-3">
                                         {selectedItem.productSize && (
                                             <div className="flex justify-between">
@@ -1153,13 +1435,50 @@ export default function ShoppingListPage() {
                             {showSwapOptions && swapAlternatives ? (
                                 <>
                                     <p className="text-sm text-gray-600 font-medium mb-2">Choose a different product:</p>
+
+                                    {/* Warning banner if searching for an avoided/allergy ingredient */}
+                                    {swapSearchWarning && (
+                                        <div className={`p-3 rounded-xl flex items-start gap-2 mb-3 ${
+                                            swapSearchWarning.rule === "NEVER_INCLUDE"
+                                                ? "bg-red-50 border border-red-200"
+                                                : "bg-amber-50 border border-amber-200"
+                                        }`}>
+                                            <AlertTriangle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${
+                                                swapSearchWarning.rule === "NEVER_INCLUDE" ? "text-red-500" : "text-amber-500"
+                                            }`} />
+                                            <div>
+                                                <p className={`text-sm font-medium ${
+                                                    swapSearchWarning.rule === "NEVER_INCLUDE" ? "text-red-700" : "text-amber-700"
+                                                }`}>
+                                                    {swapSearchWarning.rule === "NEVER_INCLUDE"
+                                                        ? "Allergy alert"
+                                                        : "You avoid this"}
+                                                </p>
+                                                <p className={`text-xs ${
+                                                    swapSearchWarning.rule === "NEVER_INCLUDE" ? "text-red-600" : "text-amber-600"
+                                                }`}>
+                                                    {swapSearchWarning.rule === "NEVER_INCLUDE"
+                                                        ? `You've marked "${swapSearchWarning.ingredient.replace(/_/g, " ")}" as an allergy.`
+                                                        : `You've set "${swapSearchWarning.ingredient.replace(/_/g, " ")}" as something you avoid.`}
+                                                    {swapSearchWarning.note && ` (${swapSearchWarning.note})`}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <div className="space-y-2 max-h-64 overflow-y-auto">
                                         {swapAlternatives.map((product) => (
                                             <button
                                                 key={product.krogerProductId}
                                                 onClick={() => handleSelectSwap(product)}
                                                 disabled={swappingItem}
-                                                className="w-full p-3 bg-gray-50 hover:bg-[#4A90E2]/10 border border-gray-200 hover:border-[#4A90E2] rounded-xl text-left transition-colors disabled:opacity-50 flex items-center gap-3"
+                                                className={`w-full p-3 border rounded-xl text-left transition-colors disabled:opacity-50 flex items-center gap-3 ${
+                                                    product.avoidWarning
+                                                        ? product.avoidWarning.rule === "NEVER_INCLUDE"
+                                                            ? "bg-red-50 border-red-200 hover:border-red-300"
+                                                            : "bg-amber-50 border-amber-200 hover:border-amber-300"
+                                                        : "bg-gray-50 border-gray-200 hover:bg-[#4A90E2]/10 hover:border-[#4A90E2]"
+                                                }`}
                                             >
                                                 {product.imageUrl ? (
                                                     <div className="w-14 h-14 rounded-lg overflow-hidden bg-white flex-shrink-0">
@@ -1176,7 +1495,19 @@ export default function ShoppingListPage() {
                                                     </div>
                                                 )}
                                                 <div className="flex-1 min-w-0">
-                                                    <div className="font-medium text-gray-900 text-sm line-clamp-2">{product.name}</div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-medium text-gray-900 text-sm line-clamp-2">{product.name}</span>
+                                                        {product.avoidWarning && (
+                                                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 ${
+                                                                product.avoidWarning.rule === "NEVER_INCLUDE"
+                                                                    ? "bg-red-100 text-red-700"
+                                                                    : "bg-amber-100 text-amber-700"
+                                                            }`}>
+                                                                <AlertTriangle className="w-3 h-3" />
+                                                                {product.avoidWarning.rule === "NEVER_INCLUDE" ? "Allergy" : "Avoid"}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     <div className="text-xs text-gray-500 mt-0.5">
                                                         {product.size && <span>{product.size}</span>}
                                                         {product.aisle && <span> • {product.aisle}</span>}
@@ -1194,6 +1525,7 @@ export default function ShoppingListPage() {
                                         onClick={() => {
                                             setShowSwapOptions(false);
                                             setSwapAlternatives(null);
+                                            setSwapSearchWarning(null);
                                         }}
                                         className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl font-medium"
                                     >
@@ -1220,7 +1552,10 @@ export default function ShoppingListPage() {
                                         )}
                                     </button>
                                     <button
-                                        onClick={handleCloseItemDetail}
+                                        onClick={() => {
+                                            handleCloseItemDetail();
+                                            setSwapSearchWarning(null);
+                                        }}
                                         disabled={loadingSwapSuggestions}
                                         className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl font-medium disabled:opacity-50"
                                     >

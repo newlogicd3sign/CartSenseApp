@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
+import InstacartCarrot from "@/app/🥕 Instacart Logos/Logos - Carrot/RGB/PNG/Instacart_Carrot.png";
 import {
   ShoppingCart,
   Target,
@@ -27,7 +28,9 @@ import {
   ChefHat,
   UserPlus,
   Ban,
-  Leaf
+  Leaf,
+  Package,
+  RefreshCw
 } from "lucide-react";
 
 const jsonLd = {
@@ -36,7 +39,7 @@ const jsonLd = {
   name: "CartSense",
   applicationCategory: "LifestyleApplication",
   operatingSystem: "Web",
-  description: "AI-powered meal planning app that generates personalized recipes and adds ingredients directly to your Kroger cart.",
+  description: "AI-powered meal planning app that generates personalized recipes and adds ingredients directly to your grocery cart via Instacart or Kroger.",
   offers: {
     "@type": "Offer",
     price: "0",
@@ -51,6 +54,7 @@ const jsonLd = {
   featureList: [
     "AI-generated personalized meals",
     "Automatic grocery list creation",
+    "Instacart integration with delivery",
     "Kroger cart integration",
     "Diet restriction support",
     "Family meal planning",
@@ -155,9 +159,9 @@ export default function Home() {
                     {/* Meal Cards - matching MealCard component */}
                     <div className="p-2 sm:p-3 space-y-2">
                       {[
-                        { name: "Honey Garlic Chicken", type: "dinner", desc: "Tender chicken in a savory-sweet glaze", cal: 420, protein: 38, carbs: 18, fat: 14, img: "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=120&h=120&fit=crop" },
-                        { name: "Greek Chicken Bowl", type: "lunch", desc: "Fresh Mediterranean flavors with feta", cal: 385, protein: 42, carbs: 24, fat: 12, img: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=120&h=120&fit=crop" },
-                        { name: "Lemon Herb Salmon", type: "dinner", desc: "Flaky salmon with bright citrus notes", cal: 380, protein: 35, carbs: 8, fat: 22, img: "https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=120&h=120&fit=crop" },
+                        { name: "Honey Garlic Chicken", type: "dinner", desc: "Tender chicken in a savory-sweet glaze", cal: 420, protein: 38, carbs: 18, fat: 14, time: "20-25", img: "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=120&h=120&fit=crop" },
+                        { name: "Greek Chicken Bowl", type: "lunch", desc: "Fresh Mediterranean flavors with feta", cal: 385, protein: 42, carbs: 24, fat: 12, time: "15-20", img: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=120&h=120&fit=crop" },
+                        { name: "Lemon Herb Salmon", type: "dinner", desc: "Flaky salmon with bright citrus notes", cal: 380, protein: 35, carbs: 8, fat: 22, time: "25-30", img: "https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=120&h=120&fit=crop" },
                       ].map((meal, i) => (
                         <div key={i} className="bg-white rounded-xl sm:rounded-2xl p-2 sm:p-3 shadow-sm border border-gray-100 flex gap-2 sm:gap-3">
                           <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-lg sm:rounded-xl overflow-hidden bg-gray-100 flex-shrink-0">
@@ -168,6 +172,10 @@ export default function Home() {
                             <div className="flex items-center gap-1.5 mb-0.5">
                               <span className="px-1 sm:px-1.5 py-0.5 bg-gray-100 rounded text-[8px] sm:text-[9px] font-medium text-gray-600 capitalize">
                                 {meal.type}
+                              </span>
+                              <span className="flex items-center gap-0.5 px-1 sm:px-1.5 py-0.5 bg-[#4A90E2]/10 text-[#4A90E2] rounded text-[8px] sm:text-[9px] font-medium">
+                                <Clock className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                                {meal.time} min
                               </span>
                             </div>
                             <p className="text-xs sm:text-sm font-medium text-gray-900 truncate">{meal.name}</p>
@@ -196,11 +204,15 @@ export default function Home() {
                       ))}
                     </div>
 
-                    {/* Add to Cart */}
-                    <div className="p-2 sm:p-3 bg-white border-t border-gray-100">
+                    {/* Add to Cart Options */}
+                    <div className="p-2 sm:p-3 bg-white border-t border-gray-100 space-y-1.5">
+                      <div className="h-[46px] bg-[#003D29] text-[#FAF1E5] rounded-full py-4 px-[18px] flex items-center justify-center gap-2 text-xs sm:text-sm font-medium">
+                        <Image src={InstacartCarrot} alt="Instacart" className="w-[22px] h-[22px]" />
+                        Get Recipe Ingredients
+                      </div>
                       <div className="bg-[#0056a3] text-white rounded-lg sm:rounded-xl py-2 sm:py-2.5 px-3 sm:px-4 flex items-center justify-center gap-2 text-xs sm:text-sm font-medium">
                         <ShoppingCart className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                        Add All to Kroger Cart
+                        Shop with Kroger
                       </div>
                     </div>
                   </div>
@@ -214,7 +226,7 @@ export default function Home() {
                     </div>
                     <div>
                       <p className="text-[10px] sm:text-xs font-medium text-gray-900">12 items added</p>
-                      <p className="text-[8px] sm:text-[10px] text-gray-500">to your Kroger cart</p>
+                      <p className="text-[8px] sm:text-[10px] text-gray-500">to your grocery cart</p>
                     </div>
                   </div>
                 </div>
@@ -377,9 +389,15 @@ export default function Home() {
                       </div>
                     ))}
                   </div>
-                  <div className="bg-[#0056a3] text-white text-[9px] py-1.5 rounded-lg flex items-center justify-center gap-1">
-                    <ShoppingCart className="w-2.5 h-2.5" />
-                    Add to Kroger
+                  <div className="space-y-1">
+                    <div className="h-[28px] bg-[#003D29] text-[#FAF1E5] text-[9px] rounded-full px-3 flex items-center justify-center gap-1">
+                      <Image src={InstacartCarrot} alt="Instacart" className="w-[14px] h-[14px]" />
+                      Get Recipe Ingredients
+                    </div>
+                    <div className="bg-[#0056a3] text-white text-[9px] py-1.5 rounded-lg flex items-center justify-center gap-1">
+                      <ShoppingCart className="w-2.5 h-2.5" />
+                      Shop with Kroger
+                    </div>
                   </div>
                 </div>
               </div>
@@ -473,9 +491,15 @@ export default function Home() {
                     />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <span className="inline-block px-1.5 py-0.5 bg-gray-100 rounded text-[8px] sm:text-[10px] font-medium text-gray-600 capitalize mb-1">
-                      dinner
-                    </span>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <span className="inline-block px-1.5 py-0.5 bg-gray-100 rounded text-[8px] sm:text-[10px] font-medium text-gray-600 capitalize">
+                        dinner
+                      </span>
+                      <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-[#4A90E2]/10 text-[#4A90E2] rounded text-[8px] sm:text-[10px] font-medium">
+                        <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                        20-25 min
+                      </span>
+                    </div>
                     <p className="text-xs sm:text-sm font-medium text-gray-900">Honey Garlic Chicken</p>
                     <p className="text-[10px] sm:text-xs text-gray-500 line-clamp-2">Tender chicken in a savory-sweet glaze</p>
                   </div>
@@ -566,9 +590,13 @@ export default function Home() {
                     <List className="w-4 h-4" />
                     Add to Shopping List
                   </button>
+                  <button className="w-full h-[46px] bg-[#003D29] text-[#FAF1E5] text-xs sm:text-sm font-medium rounded-full px-[18px] flex items-center justify-center gap-2">
+                    <Image src={InstacartCarrot} alt="Instacart" className="w-[22px] h-[22px]" />
+                    Get Recipe Ingredients
+                  </button>
                   <button className="w-full py-2.5 sm:py-3 bg-[#0056a3] text-white text-xs sm:text-sm font-medium rounded-xl flex items-center justify-center gap-2">
                     <ShoppingCart className="w-4 h-4" />
-                    Add to Kroger Cart
+                    Shop with Kroger
                   </button>
                 </div>
 
@@ -580,7 +608,7 @@ export default function Home() {
                     </div>
                     <div>
                       <p className="text-[10px] sm:text-xs font-medium text-gray-900">12 items added</p>
-                      <p className="text-[8px] sm:text-[10px] text-gray-500">to your Kroger cart</p>
+                      <p className="text-[8px] sm:text-[10px] text-gray-500">to your grocery cart</p>
                     </div>
                   </div>
                 </div>
@@ -721,19 +749,64 @@ export default function Home() {
               <div>
                 <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-[#4A90E2]/10 text-[#4A90E2] rounded-full text-xs sm:text-sm font-medium mb-4 sm:mb-6">
                   <ShoppingCart className="w-3 h-3 sm:w-4 sm:h-4" />
-                  The Missing Link
+                  Shop Your Way
                 </div>
                 <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
                   Meals become groceries. Automatically.
                 </h2>
                 <p className="text-base sm:text-lg text-gray-600 mb-6 sm:mb-8">
-                  No copying ingredients. No wandering the store. CartSense matches every item to real products at your local grocery store and adds them to your cart.
+                  No copying ingredients. No wandering the store. CartSense matches every item to real products and lets you shop with Instacart for delivery or add directly to your Kroger cart.
                 </p>
+
+                {/* Two Shopping Options */}
+                <div className="grid sm:grid-cols-2 gap-4 mb-6 sm:mb-8">
+                  {/* Instacart Option */}
+                  <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-8 h-8 bg-[#43B02A]/10 rounded-lg flex items-center justify-center">
+                        <Store className="w-4 h-4 text-[#43B02A]" />
+                      </div>
+                      <span className="font-semibold text-gray-900">Instacart</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mb-2">Delivery from 1,000+ stores</p>
+                    <div className="flex flex-wrap gap-1">
+                      {["Costco", "Safeway", "Publix", "Sprouts"].map((store) => (
+                        <span key={store} className="px-2 py-0.5 bg-[#43B02A]/10 text-[#43B02A] text-[10px] font-medium rounded-full">
+                          {store}
+                        </span>
+                      ))}
+                      <span className="px-2 py-0.5 bg-gray-100 text-gray-500 text-[10px] font-medium rounded-full">
+                        +1000
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Kroger Option */}
+                  <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-8 h-8 bg-[#0056a3]/10 rounded-lg flex items-center justify-center">
+                        <Store className="w-4 h-4 text-[#0056a3]" />
+                      </div>
+                      <span className="font-semibold text-gray-900">Kroger</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mb-2">Direct cart integration</p>
+                    <div className="flex flex-wrap gap-1">
+                      {["Kroger", "Ralphs", "Harris Teeter", "QFC"].map((store) => (
+                        <span key={store} className="px-2 py-0.5 bg-[#0056a3]/10 text-[#0056a3] text-[10px] font-medium rounded-full">
+                          {store}
+                        </span>
+                      ))}
+                      <span className="px-2 py-0.5 bg-gray-100 text-gray-500 text-[10px] font-medium rounded-full">
+                        +20
+                      </span>
+                    </div>
+                  </div>
+                </div>
 
                 <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-6 sm:mb-8">
                   {[
                     "Real-time prices",
-                    "Aisle locations",
+                    "Delivery or pickup",
                     "Stock availability",
                     "Easy product swaps",
                   ].map((item, i) => (
@@ -744,28 +817,11 @@ export default function Home() {
                   ))}
                 </div>
 
-                <p className="text-sm sm:text-base text-gray-500 mb-3">
-                  Works with 20+ grocery stores
-                </p>
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {["Kroger", "Ralphs", "King Soopers", "Smiths", "Fry's", "Fred Meyer", "Harris Teeter", "QFC"].map((store) => (
-                    <span
-                      key={store}
-                      className="px-2.5 sm:px-3 py-1 bg-white border border-gray-200 rounded-full text-xs sm:text-sm text-gray-700 font-medium"
-                    >
-                      {store}
-                    </span>
-                  ))}
-                  <span className="px-2.5 sm:px-3 py-1 bg-gray-100 border border-gray-200 rounded-full text-xs sm:text-sm text-gray-500 font-medium">
-                    & more
-                  </span>
-                </div>
-
                 <Link
                   href="/signup"
                   className="inline-flex items-center gap-2 text-[#4A90E2] font-semibold hover:underline text-sm sm:text-base"
                 >
-                  Add everything with one click
+                  Start shopping smarter
                   <ArrowRight className="w-4 h-4" />
                 </Link>
               </div>
@@ -788,21 +844,15 @@ export default function Home() {
                 {/* Shopping List Items */}
                 <div className="divide-y divide-gray-50">
                   {[
-                    { name: "Chicken Breast", price: 8.99, aisle: "Meat", qty: 2, img: "https://images.unsplash.com/photo-1604503468506-a8da13d82791?w=100&h=100&fit=crop" },
-                    { name: "Brown Rice", price: 3.49, aisle: "Aisle 7", qty: 1, img: null },
-                    { name: "Broccoli", price: 2.99, aisle: "Produce", qty: 2, img: "https://images.unsplash.com/photo-1459411552884-841db9b3cc2a?w=100&h=100&fit=crop" },
+                    { name: "Chicken Breast", price: 8.99, aisle: "Meat", qty: 2, img: "https://img.spoonacular.com/ingredients_100x100/chicken-breasts.jpg" },
+                    { name: "Brown Rice", price: 3.49, aisle: "Aisle 7", qty: 1, img: "https://img.spoonacular.com/ingredients_100x100/uncooked-white-rice.png" },
+                    { name: "Broccoli", price: 2.99, aisle: "Produce", qty: 2, img: "https://img.spoonacular.com/ingredients_100x100/broccoli.jpg" },
                   ].map((item, i) => (
                     <div key={i} className="px-4 sm:px-5 py-3 sm:py-4 flex items-center gap-3">
-                      {item.img ? (
-                        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={item.img} alt={item.name} className="w-full h-full object-cover" />
-                        </div>
-                      ) : (
-                        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-amber-50 flex-shrink-0 flex items-center justify-center">
-                          <span className="text-amber-600 text-lg">🌾</span>
-                        </div>
-                      )}
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={item.img} alt={item.name} className="w-full h-full object-cover" />
+                      </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-gray-900 text-sm sm:text-base">{item.name}</p>
                         <div className="flex items-center gap-2 mt-0.5">
@@ -819,11 +869,15 @@ export default function Home() {
                   ))}
                 </div>
 
-                {/* Add to Cart Button */}
-                <div className="px-4 sm:px-5 py-3 sm:py-4 bg-gray-50">
+                {/* Add to Cart Buttons */}
+                <div className="px-4 sm:px-5 py-3 sm:py-4 bg-gray-50 space-y-2">
+                  <button className="w-full h-[46px] bg-[#003D29] text-[#FAF1E5] font-medium rounded-full px-[18px] text-sm sm:text-base flex items-center justify-center gap-2">
+                    <Image src={InstacartCarrot} alt="Instacart" className="w-[22px] h-[22px]" />
+                    Get Recipe Ingredients
+                  </button>
                   <button className="w-full py-2.5 sm:py-3 bg-[#0056a3] text-white font-medium rounded-xl text-sm sm:text-base flex items-center justify-center gap-2">
                     <ShoppingCart className="w-4 h-4" />
-                    Add All to Kroger Cart
+                    Shop with Kroger
                   </button>
                 </div>
               </div>
@@ -831,12 +885,105 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Household Members Section */}
+        {/* Smart Pantry Section */}
         <section className="px-4 sm:px-6 py-12 sm:py-20 bg-white">
           <div className="max-w-6xl mx-auto">
             <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
+              {/* Left: Content */}
+              <div>
+                <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-emerald-500/10 text-emerald-600 rounded-full text-xs sm:text-sm font-medium mb-4 sm:mb-6">
+                  <Package className="w-3 h-3 sm:w-4 sm:h-4" />
+                  Smart Pantry
+                </div>
+                <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+                  Never buy what you already have.
+                </h2>
+                <p className="text-base sm:text-lg text-gray-600 mb-6 sm:mb-8">
+                  CartSense remembers what you&apos;ve bought. When you view a recipe, ingredients you likely have are already unchecked — so you only buy what you actually need.
+                </p>
+
+                <div className="space-y-3 sm:space-y-4 mb-6 sm:mb-8">
+                  {[
+                    { title: "Auto-tracks purchases", desc: "Every item you add to cart is remembered" },
+                    { title: "Smart expiry dates", desc: "Knows chicken lasts 5 days, spices last months" },
+                    { title: "Pre-unchecks pantry items", desc: "Ingredients you have are already deselected" },
+                    { title: "Green \"In pantry\" badge", desc: "Easy to see what you already own" },
+                  ].map((item, i) => (
+                    <div key={i} className="flex items-start gap-3">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-medium text-gray-900">{item.title}</span>
+                        <span className="text-gray-600"> — {item.desc}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <p className="text-sm text-gray-500">
+                  Works automatically. No manual tracking needed.
+                </p>
+              </div>
+
+              {/* Right: Mockup */}
+              <div className="bg-[#f8fafb] rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xl">
+                {/* Header */}
+                <div className="flex items-center gap-2 mb-4">
+                  <List className="w-4 h-4 text-gray-400" />
+                  <span className="text-sm font-medium text-gray-900">Ingredients</span>
+                  <span className="ml-auto text-xs text-gray-500">3 of 6 selected</span>
+                </div>
+
+                {/* Ingredient List */}
+                <div className="space-y-2">
+                  {[
+                    { name: "Chicken Breast", inPantry: false, checked: true },
+                    { name: "Olive Oil", inPantry: true, checked: false },
+                    { name: "Garlic", inPantry: true, checked: false },
+                    { name: "Honey", inPantry: false, checked: true },
+                    { name: "Soy Sauce", inPantry: true, checked: false },
+                    { name: "Green Onions", inPantry: false, checked: true },
+                  ].map((ing, i) => (
+                    <div
+                      key={i}
+                      className={`flex items-center gap-3 p-3 rounded-xl transition-all ${
+                        ing.checked ? "bg-white border border-gray-200" : "bg-gray-50 border border-gray-100 opacity-60"
+                      }`}
+                    >
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                        ing.checked ? "bg-[#4A90E2] border-[#4A90E2]" : "border-gray-300 bg-white"
+                      }`}>
+                        {ing.checked && <Check className="w-3 h-3 text-white" />}
+                      </div>
+                      <span className={`flex-1 text-sm ${ing.checked ? "text-gray-900" : "text-gray-500 line-through"}`}>
+                        {ing.name}
+                      </span>
+                      {ing.inPantry && (
+                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-medium rounded-full">
+                          In pantry
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Summary */}
+                <div className="mt-4 p-3 bg-emerald-50 rounded-xl border border-emerald-100">
+                  <div className="flex items-center gap-2 text-sm text-emerald-700">
+                    <RefreshCw className="w-4 h-4" />
+                    <span><strong>3 items</strong> skipped — you bought them recently</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Household Members Section */}
+        <section className="px-4 sm:px-6 py-12 sm:py-20 bg-[#f8fafb]">
+          <div className="max-w-6xl mx-auto">
+            <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
               {/* Mockup - shows second on mobile, first on desktop */}
-              <div className="lg:order-first order-last bg-[#f8fafb] rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xl">
+              <div className="lg:order-first order-last bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xl">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-4 sm:mb-6">
                   <div className="flex items-center gap-2">
