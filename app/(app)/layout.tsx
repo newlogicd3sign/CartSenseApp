@@ -6,12 +6,12 @@ import { useRouter, usePathname } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
 import { signOut, onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
-import { Search, List, BookmarkCheck, User, LogOut } from "lucide-react";
+import { Search, List, BookmarkCheck, User, LogOut, Sparkles } from "lucide-react";
 import { getRandomAccentColor, type AccentColor } from "@/lib/utils";
 import { clearAllMealStorage, loadGeneratedMeals } from "@/lib/mealStorage";
 import Image from "next/image";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
-import CartSenseProLogo from "@/app/CartSensePro.svg";
+import CartSenseProLogo from "@/app/CartSenseProLogo.svg";
 import { LoadingScreen } from "@/components/LoadingScreen";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -63,8 +63,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     const navItems = [
         { href: "/prompt", label: "Search", icon: Search },
-        { href: "/shopping-list", label: "Shopping List", icon: List },
-        { href: "/saved-meals", label: "Saved Meals", icon: BookmarkCheck },
+        { href: "/fresh-picks", label: "Fresh Picks", icon: Sparkles },
+        { href: "/shopping-list", label: "List", icon: List },
+        { href: "/saved-meals", label: "Saved", icon: BookmarkCheck },
         { href: "/account", label: "Account", icon: User },
     ];
 
@@ -151,9 +152,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 {/* Desktop Header - Hidden on mobile and setup page */}
                 {navVisible && (
                     <header
-                        className={`hidden lg:flex items-center justify-between px-6 py-4 bg-white border-b border-gray-100 sticky top-0 z-30 ${
-                            navAnimating ? "animate-fade-in-down" : ""
-                        }`}
+                        className={`hidden lg:flex items-center justify-between px-6 py-4 bg-white border-b border-gray-100 sticky top-0 z-30 ${navAnimating ? "animate-fade-in-down" : ""
+                            }`}
                     >
                         <div className="flex items-center gap-2">
                             <Image src={isPremiumUser ? CartSenseProLogo : CartSenseLogo} alt="CartSense" className="h-8 w-auto" />
@@ -170,11 +170,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                     <button
                                         key={item.href}
                                         onClick={handleSearchNav}
-                                        className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-colors ${
-                                            active
-                                                ? ""
-                                                : "text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-                                        }`}
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-colors ${active
+                                            ? ""
+                                            : "text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                                            }`}
                                         style={active ? { backgroundColor: `${itemColor}15`, color: itemColor } : undefined}
                                     >
                                         <Icon className="w-5 h-5" />
@@ -184,11 +183,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                     <Link
                                         key={item.href}
                                         href={item.href}
-                                        className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-colors ${
-                                            active
-                                                ? ""
-                                                : "text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-                                        }`}
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-colors ${active
+                                            ? ""
+                                            : "text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                                            }`}
                                         style={active ? { backgroundColor: `${itemColor}15`, color: itemColor } : undefined}
                                     >
                                         <Icon className="w-5 h-5" />
@@ -216,12 +214,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 {/* Mobile Bottom Navigation - Hidden on desktop and setup page */}
                 {navVisible && (
                     <nav
-                        className={`fixed bottom-0 left-0 right-0 z-40 lg:hidden ${
-                            navAnimating ? "animate-fade-in-up" : ""
-                        }`}
+                        className={`fixed bottom-0 left-0 right-0 z-40 lg:hidden ${navAnimating ? "animate-fade-in-up" : ""
+                            }`}
                     >
                         <div className="max-w-[428px] mx-auto bg-white border-t border-gray-100 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] safe-area-bottom">
-                            <div className="grid grid-cols-4 gap-2 px-4 py-2">
+                            <div className="grid grid-cols-5 gap-2 px-4 py-2">
                                 {navItems.map((item) => {
                                     const Icon = item.icon;
                                     const active = isActive(item.href);

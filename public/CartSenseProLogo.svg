@@ -1,0 +1,16 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Cart body -->
+  <path d="M99.5 24C108 24 114 32.3 111.4 40.4L101 73.8C99.3 79 94.5 82.5 89 82.5H44.2C38.6 82.5 33.7 78.8 32.1 73.4L17.5 24H99.5Z" stroke="#5FD3CA" stroke-width="8"/>
+  <!-- Cart handle -->
+  <path d="M4 4H49" stroke="#A39E9E" stroke-width="8" stroke-linecap="round"/>
+  <!-- Cart wheels -->
+  <path d="M96 89C95.6 93.4 91.8 97 87.2 97C82.6 97 78.8 93.4 78.4 89H96Z" fill="#5FD3CA"/>
+  <path d="M55 89C54.6 93.4 50.8 97 46.2 97C41.6 97 37.8 93.4 37.4 89H55Z" fill="#5FD3CA"/>
+  <!-- Three dots -->
+  <circle cx="52" cy="58" r="5" fill="#5FD3CA"/>
+  <circle cx="67" cy="58" r="5" fill="#5FD3CA"/>
+  <circle cx="82" cy="58" r="5" fill="#5FD3CA"/>
+  <!-- PRO badge -->
+  <circle cx="104" cy="24" r="22" fill="#5FD3CA"/>
+  <text x="104" y="30" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff" text-anchor="middle">PRO</text>
+</svg>

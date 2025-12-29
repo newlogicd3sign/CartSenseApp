@@ -49,6 +49,7 @@ import {
 import { getRandomAccentColor, getStoreBrand, type AccentColor, type StoreBrandInfo } from "@/lib/utils";
 import { getIngredientCategory } from "@/lib/product-engine/ingredientQualityRules";
 import { getIngredientImageUrl } from "@/lib/ingredientImages";
+import { normalizeIngredientKey } from "@/lib/ingredientNormalization";
 import { getEstimatedPrice } from "@/lib/priceEstimates";
 import { useToast } from "@/components/Toast";
 import { logCartRemoved, logCartAdded } from "@/lib/logFoodEvent";
@@ -149,6 +150,8 @@ export default function ShoppingListPage() {
     const [removeConfirmDateKey, setRemoveConfirmDateKey] = useState<string | null>(null);
     const [showPantryTip, setShowPantryTip] = useState(true);
     const [shoppingPreference, setShoppingPreference] = useState<"kroger" | "instacart" | null>(null);
+    const [userDiet, setUserDiet] = useState<string | null>(null);
+    const [pantryItemKeys, setPantryItemKeys] = useState<Set<string>>(new Set());
 
     // Item detail modal state (same pattern as meal details)
     const [selectedItem, setSelectedItem] = useState<ShoppingItem | null>(null);
@@ -229,11 +232,17 @@ export default function ShoppingListPage() {
             }
         };
 
-        const fetchShoppingPreference = async () => {
+        const fetchUserPreferences = async () => {
             try {
                 const userDoc = await getDoc(doc(db, "users", user.uid));
                 if (userDoc.exists()) {
                     const data = userDoc.data();
+
+                    // Set diet type for icon customization
+                    if (data.dietType) {
+                        setUserDiet(data.dietType);
+                    }
+
                     if (data.shoppingPreference === "instacart" || data.shoppingPreference === "kroger") {
                         setShoppingPreference(data.shoppingPreference);
                     } else {
@@ -246,13 +255,13 @@ export default function ShoppingListPage() {
                     setShoppingPreference("instacart");
                 }
             } catch (err) {
-                console.error("Error fetching shopping preference", err);
+                console.error("Error fetching user preferences", err);
                 setShoppingPreference("instacart");
             }
         };
 
         void checkKrogerStatus();
-        void fetchShoppingPreference();
+        void fetchUserPreferences();
 
         // Re-check when page becomes visible (handles return from OAuth flow)
         const handleVisibilityChange = () => {
@@ -319,6 +328,39 @@ export default function ShoppingListPage() {
 
         return () => unsub();
     }, [user]);
+
+    // Check which items are already in the user's pantry
+    useEffect(() => {
+        if (!user || items.length === 0) {
+            setPantryItemKeys(new Set());
+            return;
+        }
+
+        const checkPantry = async () => {
+            try {
+                const ingredientNames = items.map((item) => item.name);
+                const res = await fetch("/api/pantry/check", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        userId: user.uid,
+                        ingredients: ingredientNames,
+                    }),
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.inPantry && Array.isArray(data.inPantry)) {
+                        setPantryItemKeys(new Set(data.inPantry));
+                    }
+                }
+            } catch (err) {
+                console.error("Error checking pantry items:", err);
+            }
+        };
+
+        void checkPantry();
+    }, [user, items]);
 
     const handleAddToKrogerCart = async (itemsToAdd: ShoppingItem[]) => {
         if (!user || itemsToAdd.length === 0) return;
@@ -880,7 +922,7 @@ export default function ShoppingListPage() {
                                     icon={<Lightbulb className="w-4 h-4" />}
                                     onClose={() => setShowPantryTip(false)}
                                 >
-                                    <span className="font-medium">Tip:</span> Remove items you already have in your pantry to avoid buying duplicates.
+                                    <span className="font-medium">Tip:</span> Items marked <span className="inline-block px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-medium">In Pantry</span> may already be in your kitchen. Tap the trash icon to remove them from your list.
                                 </Alert>
                             )}
 
@@ -889,7 +931,7 @@ export default function ShoppingListPage() {
                                 <p className="text-xs text-gray-500 italic px-1">
                                     * Estimated prices may vary by store
                                     {shoppingPreference === "kroger" && krogerLinkStatus !== "linked" && (
-                                        <span> — <a href="/account" className="text-[#0056a3] underline hover:no-underline">Link your Kroger account</a> to see exact prices</span>
+                                        <span> — <button onClick={() => router.push("/account#store-connection")} className="text-[#0056a3] underline hover:no-underline">Link your Kroger account</button> to see exact prices</span>
                                     )}
                                 </p>
                             )}
@@ -914,7 +956,7 @@ export default function ShoppingListPage() {
                                                 {/* Actions for entire date */}
                                                 <div className="flex items-center gap-2">
                                                     {/* Instacart Button - only for Instacart preference */}
-                                                    {shoppingPreference === "instacart" && (
+                                                    {shoppingPreference === "instacart" && process.env.NEXT_PUBLIC_ENABLE_INSTACART === 'true' && (
                                                         <button
                                                             onClick={() => void handleAddToInstacart(allDateItems)}
                                                             disabled={addingToInstacart}
@@ -1003,136 +1045,143 @@ export default function ShoppingListPage() {
                                                         {/* Ingredients for this meal */}
                                                         <ul className="divide-y divide-gray-100 bg-white">
                                                             {mealItems.map((item) => {
-                                                const hasKrogerProduct = shoppingPreference === "kroger" && krogerLinkStatus === "linked" && !!item.krogerProductId;
-                                                const hasProductImage = hasKrogerProduct && !!item.productImageUrl;
-                                                const hasPriceData = !!item.krogerProductId && typeof item.price === "number";
-                                                return (
-                                                    <li
-                                                        key={item.id}
-                                                        className="px-3 sm:px-4 py-3"
-                                                    >
-                                                        <div className="flex items-start gap-3">
-                                                            {/* Clickable area for opening detail modal - only for Kroger preference when linked */}
-                                                            <div
-                                                                onClick={() => shoppingPreference === "kroger" && krogerLinkStatus === "linked" && handleOpenItemDetail(item)}
-                                                                className={`flex items-start gap-3 flex-1 min-w-0 ${shoppingPreference === "kroger" && krogerLinkStatus === "linked" ? "cursor-pointer" : ""}`}
-                                                            >
-                                                            {/* Product Image or Generic Ingredient Image */}
-                                                            {hasProductImage ? (
-                                                                <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
-                                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                                    <img
-                                                                        src={item.productImageUrl}
-                                                                        alt={item.productName || item.name}
-                                                                        className="w-full h-full object-cover"
-                                                                    />
-                                                                </div>
-                                                            ) : !failedImages.has(item.id) ? (
-                                                                <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
-                                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                                    <img
-                                                                        src={getIngredientImageUrl(item.name)}
-                                                                        alt={item.name}
-                                                                        className="w-full h-full object-cover"
-                                                                        onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
-                                                                    />
-                                                                </div>
-                                                            ) : (
-                                                                <div className="w-12 h-12 rounded-lg bg-gray-100 flex-shrink-0 flex items-center justify-center">
-                                                                    {(() => {
-                                                                        const category = getIngredientCategory(item.name);
-                                                                        switch (category) {
-                                                                            case 'protein':
-                                                                                return <Ham className="w-6 h-6 text-red-400" />;
-                                                                            case 'eggs':
-                                                                                return <Egg className="w-6 h-6 text-amber-400" />;
-                                                                            case 'dairy':
-                                                                                return <Milk className="w-6 h-6 text-blue-400" />;
-                                                                            case 'produce':
-                                                                                return <Leaf className="w-6 h-6 text-green-500" />;
-                                                                            case 'carb':
-                                                                                return <Wheat className="w-6 h-6 text-amber-500" />;
-                                                                            case 'fats_oils':
-                                                                                return <Droplet className="w-6 h-6 text-yellow-500" />;
-                                                                            case 'snacks':
-                                                                                return <Cookie className="w-6 h-6 text-orange-400" />;
-                                                                            case 'beans':
-                                                                                return <Bean className="w-6 h-6 text-amber-600" />;
-                                                                            case 'pantry':
-                                                                                return <FlaskConical className="w-6 h-6 text-stone-500" />;
-                                                                            case 'fruits':
-                                                                                return <Apple className="w-6 h-6 text-red-500" />;
-                                                                            default:
-                                                                                return <Package className="w-6 h-6 text-gray-400" />;
-                                                                        }
-                                                                    })()}
-                                                                </div>
-                                                            )}
-                                                            <div className="flex-1">
-                                                                <div>
-                                                                    <span className="font-medium text-gray-900">
-                                                                        {item.name}
-                                                                    </span>
-                                                                    {hasKrogerProduct && item.stockLevel && item.stockLevel !== "HIGH" && (
-                                                                        <span className={`inline-block ml-2 text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap align-middle ${
-                                                                            item.stockLevel === "LOW"
-                                                                                ? "bg-amber-100 text-amber-700"
-                                                                                : "bg-red-100 text-red-700"
-                                                                        }`}>
-                                                                            {item.stockLevel === "LOW" ? "Low Stock" : "Out of Stock"}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                                {/* Quantity */}
-                                                                <div className="text-sm text-gray-500 mt-1">
-                                                                    Qty: {item.count || 1}
-                                                                </div>
-                                                                {hasKrogerProduct && item.productSize && (
-                                                                    <div className="text-sm text-gray-500">
-                                                                        {item.productSize}
-                                                                    </div>
-                                                                )}
-                                                                {/* Product Details - Kroger shows exact, Instacart shows estimate */}
-                                                                {hasKrogerProduct && (
-                                                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
-                                                                        {item.productAisle && (
-                                                                            <div className="flex items-center gap-1 text-xs text-gray-500">
-                                                                                <MapPin className="w-3 h-3" />
-                                                                                <span>{item.productAisle}</span>
+                                                                const hasKrogerProduct = shoppingPreference === "kroger" && krogerLinkStatus === "linked" && !!item.krogerProductId;
+                                                                const hasProductImage = hasKrogerProduct && !!item.productImageUrl;
+                                                                const hasPriceData = !!item.krogerProductId && typeof item.price === "number";
+                                                                return (
+                                                                    <li
+                                                                        key={item.id}
+                                                                        className="px-3 sm:px-4 py-3"
+                                                                    >
+                                                                        <div className="flex items-start gap-3">
+                                                                            {/* Clickable area for opening detail modal - only for Kroger preference when linked */}
+                                                                            <div
+                                                                                onClick={() => shoppingPreference === "kroger" && krogerLinkStatus === "linked" && handleOpenItemDetail(item)}
+                                                                                className={`flex items-start gap-3 flex-1 min-w-0 ${shoppingPreference === "kroger" && krogerLinkStatus === "linked" ? "cursor-pointer" : ""}`}
+                                                                            >
+                                                                                {/* Product Image or Generic Ingredient Image */}
+                                                                                {hasProductImage ? (
+                                                                                    <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
+                                                                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                                                        <img
+                                                                                            src={item.productImageUrl}
+                                                                                            alt={item.productName || item.name}
+                                                                                            className="w-full h-full object-cover"
+                                                                                        />
+                                                                                    </div>
+                                                                                ) : !failedImages.has(item.id) ? (
+                                                                                    <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
+                                                                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                                                        <img
+                                                                                            src={getIngredientImageUrl(item.name)}
+                                                                                            alt={item.name}
+                                                                                            className="w-full h-full object-cover"
+                                                                                            onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
+                                                                                        />
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <div className="w-12 h-12 rounded-lg bg-gray-100 flex-shrink-0 flex items-center justify-center">
+                                                                                        {(() => {
+                                                                                            const category = getIngredientCategory(item.name);
+                                                                                            switch (category) {
+                                                                                                case 'protein':
+                                                                                                    if (userDiet === 'vegetarian' || userDiet === 'vegan') {
+                                                                                                        return <Bean className="w-6 h-6 text-emerald-600" />;
+                                                                                                    }
+                                                                                                    return <Ham className="w-6 h-6 text-red-400" />;
+                                                                                                case 'eggs':
+                                                                                                    return <Egg className="w-6 h-6 text-amber-400" />;
+                                                                                                case 'dairy':
+                                                                                                    return <Milk className="w-6 h-6 text-blue-400" />;
+                                                                                                case 'produce':
+                                                                                                    return <Leaf className="w-6 h-6 text-green-500" />;
+                                                                                                case 'carb':
+                                                                                                    return <Wheat className="w-6 h-6 text-amber-500" />;
+                                                                                                case 'fats_oils':
+                                                                                                    return <Droplet className="w-6 h-6 text-yellow-500" />;
+                                                                                                case 'snacks':
+                                                                                                    return <Cookie className="w-6 h-6 text-orange-400" />;
+                                                                                                case 'beans':
+                                                                                                    return <Bean className="w-6 h-6 text-amber-600" />;
+                                                                                                case 'pantry':
+                                                                                                    return <FlaskConical className="w-6 h-6 text-stone-500" />;
+                                                                                                case 'fruits':
+                                                                                                    return <Apple className="w-6 h-6 text-red-500" />;
+                                                                                                default:
+                                                                                                    return <Package className="w-6 h-6 text-gray-400" />;
+                                                                                            }
+                                                                                        })()}
+                                                                                    </div>
+                                                                                )}
+                                                                                <div className="flex-1">
+                                                                                    <div>
+                                                                                        <span className="font-medium text-gray-900">
+                                                                                            {item.name}
+                                                                                        </span>
+                                                                                        {pantryItemKeys.has(normalizeIngredientKey(item.name)) && (
+                                                                                            <span className="inline-block ml-2 text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap align-middle bg-emerald-100 text-emerald-700">
+                                                                                                In Pantry
+                                                                                            </span>
+                                                                                        )}
+                                                                                        {hasKrogerProduct && item.stockLevel && item.stockLevel !== "HIGH" && (
+                                                                                            <span className={`inline-block ml-2 text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap align-middle ${item.stockLevel === "LOW"
+                                                                                                ? "bg-amber-100 text-amber-700"
+                                                                                                : "bg-red-100 text-red-700"
+                                                                                                }`}>
+                                                                                                {item.stockLevel === "LOW" ? "Low Stock" : "Out of Stock"}
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                    {/* Quantity */}
+                                                                                    <div className="text-sm text-gray-500 mt-1">
+                                                                                        Qty: {item.count || 1}
+                                                                                    </div>
+                                                                                    {hasKrogerProduct && item.productSize && (
+                                                                                        <div className="text-sm text-gray-500">
+                                                                                            {item.productSize}
+                                                                                        </div>
+                                                                                    )}
+                                                                                    {/* Product Details - Kroger shows exact, Instacart shows estimate */}
+                                                                                    {hasKrogerProduct && (
+                                                                                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
+                                                                                            {item.productAisle && (
+                                                                                                <div className="flex items-center gap-1 text-xs text-gray-500">
+                                                                                                    <MapPin className="w-3 h-3" />
+                                                                                                    <span>{item.productAisle}</span>
+                                                                                                </div>
+                                                                                            )}
+                                                                                            {typeof item.price === "number" && (
+                                                                                                <span className="text-xs font-medium text-[#4A90E2]">
+                                                                                                    ${item.price.toFixed(2)}{item.soldBy === "WEIGHT" ? "/lb" : ""}
+                                                                                                </span>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    )}
+                                                                                    {/* Estimated price for Instacart users or Kroger users without linked account */}
+                                                                                    {(shoppingPreference === "instacart" || (shoppingPreference === "kroger" && krogerLinkStatus !== "linked")) && (() => {
+                                                                                        const hasKrogerPrice = typeof item.price === "number";
+                                                                                        const estimate = hasKrogerPrice
+                                                                                            ? { min: item.price!, max: item.price! * 1.15, soldByWeight: item.soldBy === "WEIGHT" }
+                                                                                            : getEstimatedPrice(item.name);
+                                                                                        const suffix = estimate.soldByWeight ? "/lb" : "";
+                                                                                        return (
+                                                                                            <div className="text-xs text-gray-500 mt-1">
+                                                                                                Est. ${estimate.min.toFixed(2)} - ${estimate.max.toFixed(2)}{suffix}
+                                                                                            </div>
+                                                                                        );
+                                                                                    })()}
+                                                                                </div>
                                                                             </div>
-                                                                        )}
-                                                                        {typeof item.price === "number" && (
-                                                                            <span className="text-xs font-medium text-[#4A90E2]">
-                                                                                ${item.price.toFixed(2)}{item.soldBy === "WEIGHT" ? "/lb" : ""}
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                )}
-                                                                {/* Estimated price for Instacart users or Kroger users without linked account */}
-                                                                {(shoppingPreference === "instacart" || (shoppingPreference === "kroger" && krogerLinkStatus !== "linked")) && (() => {
-                                                                    const hasKrogerPrice = typeof item.price === "number";
-                                                                    const estimate = hasKrogerPrice
-                                                                        ? { min: item.price!, max: item.price! * 1.15, soldByWeight: item.soldBy === "WEIGHT" }
-                                                                        : getEstimatedPrice(item.name);
-                                                                    const suffix = estimate.soldByWeight ? "/lb" : "";
-                                                                    return (
-                                                                        <div className="text-xs text-gray-500 mt-1">
-                                                                            Est. ${estimate.min.toFixed(2)} - ${estimate.max.toFixed(2)}{suffix}
+                                                                            {/* Delete button */}
+                                                                            <button
+                                                                                onClick={() => handleRemoveItem(item.id)}
+                                                                                className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg text-red-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                                                                            >
+                                                                                <Trash2 className="w-4 h-4" />
+                                                                            </button>
                                                                         </div>
-                                                                    );
-                                                                })()}
-                                                            </div>
-                                                        </div>
-                                                            {/* Delete button */}
-                                                            <button
-                                                                onClick={() => handleRemoveItem(item.id)}
-                                                                className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg text-red-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                                                            >
-                                                                <Trash2 className="w-4 h-4" />
-                                                            </button>
-                                                        </div>
-                                                    </li>
-                                                );
+                                                                    </li>
+                                                                );
                                                             })}
                                                         </ul>
                                                     </div>
@@ -1202,11 +1251,10 @@ export default function ShoppingListPage() {
                                 {krogerResults.map((item, idx) => (
                                     <div
                                         key={idx}
-                                        className={`p-4 rounded-xl border ${
-                                            item.found
-                                                ? "bg-emerald-50 border-emerald-200"
-                                                : "bg-red-50 border-red-200"
-                                        }`}
+                                        className={`p-4 rounded-xl border ${item.found
+                                            ? "bg-emerald-50 border-emerald-200"
+                                            : "bg-red-50 border-red-200"
+                                            }`}
                                     >
                                         <div className="flex gap-3">
                                             {item.product?.imageUrl && (
@@ -1255,11 +1303,10 @@ export default function ShoppingListPage() {
                                                 )}
                                             </div>
                                             <div
-                                                className={`px-2 py-1 rounded-full text-xs font-medium h-fit ${
-                                                    item.found
-                                                        ? "bg-emerald-100 text-emerald-700"
-                                                        : "bg-red-100 text-red-700"
-                                                }`}
+                                                className={`px-2 py-1 rounded-full text-xs font-medium h-fit ${item.found
+                                                    ? "bg-emerald-100 text-emerald-700"
+                                                    : "bg-red-100 text-red-700"
+                                                    }`}
                                             >
                                                 {item.found ? "Added" : "Not found"}
                                             </div>
@@ -1410,13 +1457,12 @@ export default function ShoppingListPage() {
                                         {selectedItem.stockLevel && (
                                             <div className="flex justify-between">
                                                 <span className="text-sm text-gray-500">Stock</span>
-                                                <span className={`text-sm font-medium ${
-                                                    selectedItem.stockLevel === "HIGH"
-                                                        ? "text-emerald-600"
-                                                        : selectedItem.stockLevel === "LOW"
-                                                            ? "text-amber-600"
-                                                            : "text-red-600"
-                                                }`}>
+                                                <span className={`text-sm font-medium ${selectedItem.stockLevel === "HIGH"
+                                                    ? "text-emerald-600"
+                                                    : selectedItem.stockLevel === "LOW"
+                                                        ? "text-amber-600"
+                                                        : "text-red-600"
+                                                    }`}>
                                                     {selectedItem.stockLevel === "HIGH"
                                                         ? "In Stock"
                                                         : selectedItem.stockLevel === "LOW"
@@ -1438,25 +1484,21 @@ export default function ShoppingListPage() {
 
                                     {/* Warning banner if searching for an avoided/allergy ingredient */}
                                     {swapSearchWarning && (
-                                        <div className={`p-3 rounded-xl flex items-start gap-2 mb-3 ${
-                                            swapSearchWarning.rule === "NEVER_INCLUDE"
-                                                ? "bg-red-50 border border-red-200"
-                                                : "bg-amber-50 border border-amber-200"
-                                        }`}>
-                                            <AlertTriangle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${
-                                                swapSearchWarning.rule === "NEVER_INCLUDE" ? "text-red-500" : "text-amber-500"
-                                            }`} />
+                                        <div className={`p-3 rounded-xl flex items-start gap-2 mb-3 ${swapSearchWarning.rule === "NEVER_INCLUDE"
+                                            ? "bg-red-50 border border-red-200"
+                                            : "bg-amber-50 border border-amber-200"
+                                            }`}>
+                                            <AlertTriangle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${swapSearchWarning.rule === "NEVER_INCLUDE" ? "text-red-500" : "text-amber-500"
+                                                }`} />
                                             <div>
-                                                <p className={`text-sm font-medium ${
-                                                    swapSearchWarning.rule === "NEVER_INCLUDE" ? "text-red-700" : "text-amber-700"
-                                                }`}>
+                                                <p className={`text-sm font-medium ${swapSearchWarning.rule === "NEVER_INCLUDE" ? "text-red-700" : "text-amber-700"
+                                                    }`}>
                                                     {swapSearchWarning.rule === "NEVER_INCLUDE"
                                                         ? "Allergy alert"
                                                         : "You avoid this"}
                                                 </p>
-                                                <p className={`text-xs ${
-                                                    swapSearchWarning.rule === "NEVER_INCLUDE" ? "text-red-600" : "text-amber-600"
-                                                }`}>
+                                                <p className={`text-xs ${swapSearchWarning.rule === "NEVER_INCLUDE" ? "text-red-600" : "text-amber-600"
+                                                    }`}>
                                                     {swapSearchWarning.rule === "NEVER_INCLUDE"
                                                         ? `You've marked "${swapSearchWarning.ingredient.replace(/_/g, " ")}" as an allergy.`
                                                         : `You've set "${swapSearchWarning.ingredient.replace(/_/g, " ")}" as something you avoid.`}
@@ -1472,13 +1514,12 @@ export default function ShoppingListPage() {
                                                 key={product.krogerProductId}
                                                 onClick={() => handleSelectSwap(product)}
                                                 disabled={swappingItem}
-                                                className={`w-full p-3 border rounded-xl text-left transition-colors disabled:opacity-50 flex items-center gap-3 ${
-                                                    product.avoidWarning
-                                                        ? product.avoidWarning.rule === "NEVER_INCLUDE"
-                                                            ? "bg-red-50 border-red-200 hover:border-red-300"
-                                                            : "bg-amber-50 border-amber-200 hover:border-amber-300"
-                                                        : "bg-gray-50 border-gray-200 hover:bg-[#4A90E2]/10 hover:border-[#4A90E2]"
-                                                }`}
+                                                className={`w-full p-3 border rounded-xl text-left transition-colors disabled:opacity-50 flex items-center gap-3 ${product.avoidWarning
+                                                    ? product.avoidWarning.rule === "NEVER_INCLUDE"
+                                                        ? "bg-red-50 border-red-200 hover:border-red-300"
+                                                        : "bg-amber-50 border-amber-200 hover:border-amber-300"
+                                                    : "bg-gray-50 border-gray-200 hover:bg-[#4A90E2]/10 hover:border-[#4A90E2]"
+                                                    }`}
                                             >
                                                 {product.imageUrl ? (
                                                     <div className="w-14 h-14 rounded-lg overflow-hidden bg-white flex-shrink-0">
@@ -1498,11 +1539,10 @@ export default function ShoppingListPage() {
                                                     <div className="flex items-center gap-2">
                                                         <span className="font-medium text-gray-900 text-sm line-clamp-2">{product.name}</span>
                                                         {product.avoidWarning && (
-                                                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 ${
-                                                                product.avoidWarning.rule === "NEVER_INCLUDE"
-                                                                    ? "bg-red-100 text-red-700"
-                                                                    : "bg-amber-100 text-amber-700"
-                                                            }`}>
+                                                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 ${product.avoidWarning.rule === "NEVER_INCLUDE"
+                                                                ? "bg-red-100 text-red-700"
+                                                                : "bg-amber-100 text-amber-700"
+                                                                }`}>
                                                                 <AlertTriangle className="w-3 h-3" />
                                                                 {product.avoidWarning.rule === "NEVER_INCLUDE" ? "Allergy" : "Avoid"}
                                                             </span>
@@ -1606,9 +1646,8 @@ export default function ShoppingListPage() {
                             {/* Step 1: Store Selection */}
                             <div>
                                 <div className="flex items-center gap-2 mb-3">
-                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
-                                        locations.length > 0 ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
-                                    }`}>
+                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${locations.length > 0 ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
+                                        }`}>
                                         {locations.length > 0 ? <CheckCircle className="w-4 h-4" /> : "1"}
                                     </div>
                                     <span className="text-sm font-medium text-gray-900">Choose Your Store</span>
@@ -1730,9 +1769,8 @@ export default function ShoppingListPage() {
                             {/* Step 2: Account Linking */}
                             <div>
                                 <div className="flex items-center gap-2 mb-3">
-                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
-                                        krogerLinked ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
-                                    }`}>
+                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${krogerLinked ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
+                                        }`}>
                                         {krogerLinked ? <CheckCircle className="w-4 h-4" /> : "2"}
                                     </div>
                                     <span className="text-sm font-medium text-gray-900">Connect Your Account</span>

@@ -4,6 +4,7 @@ import Image from "next/image";
 import InstacartCarrot from "@/app/🥕 Instacart Logos/Logos - Carrot/RGB/PNG/Instacart_Carrot.png";
 import { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { MealImage } from "@/components/MealImage";
 import { auth, db } from "@/lib/firebaseClient";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
@@ -15,6 +16,8 @@ import {
     updateDoc,
     serverTimestamp,
     setDoc,
+    query,
+    where,
 } from "firebase/firestore";
 import {
     isStapleItem,
@@ -54,11 +57,15 @@ import {
     FlaskConical,
     Apple,
     ExternalLink,
+    Minus,
+    Plus,
 } from "lucide-react";
 import { logUserEvent } from "@/lib/logUserEvent";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { useToast } from "@/components/Toast";
+import { DietaryConflictModal } from "@/components/DietaryConflictModal";
+import { checkPromptForConflicts, type ConflictResult, type FamilyMemberRestrictions } from "@/lib/sensitivityMapping";
 
 type Ingredient = {
     name: string;
@@ -109,6 +116,11 @@ type UserPrefs = {
         allergies?: string[];
         sensitivities?: string[];
     };
+    doctorDietInstructions?: {
+        hasActiveNote?: boolean;
+        blockedIngredients?: string[];
+        blockedGroups?: string[];
+    };
     isPremium?: boolean;
     shoppingPreference?: "kroger" | "instacart";
 };
@@ -137,6 +149,7 @@ export default function SavedMealDetailPage() {
 
     const [meal, setMeal] = useState<SavedMeal | null>(null);
     const [loadingMeal, setLoadingMeal] = useState(true);
+    const [adjustedServings, setAdjustedServings] = useState<number | null>(null);
 
     const [addingToList, setAddingToList] = useState(false);
     const [addingToInstacart, setAddingToInstacart] = useState(false);
@@ -157,6 +170,12 @@ export default function SavedMealDetailPage() {
     const [threadError, setThreadError] = useState<string | null>(null);
     const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
 
+    // Dietary conflict checking state
+    const [familyMemberRestrictions, setFamilyMemberRestrictions] = useState<FamilyMemberRestrictions[]>([]);
+    const [showConflictModal, setShowConflictModal] = useState(false);
+    const [detectedConflicts, setDetectedConflicts] = useState<ConflictResult["conflicts"]>([]);
+    const [pendingThreadMessage, setPendingThreadMessage] = useState<string>("");
+
     // Ingredient modal state for swap functionality
     const [selectedIngredientIndex, setSelectedIngredientIndex] = useState<number | null>(null);
     const [swapAlternatives, setSwapAlternatives] = useState<{
@@ -173,6 +192,59 @@ export default function SavedMealDetailPage() {
 
     // Random color for back button
     const backButtonColor = useMemo(() => getRandomAccentColor(), []);
+
+    // Serving adjustment calculations
+    const currentServings = adjustedServings ?? meal?.servings ?? 1;
+    const servingMultiplier = meal ? currentServings / meal.servings : 1;
+
+    // Scale ingredient quantity strings (e.g., "2 cups" -> "4 cups")
+    const scaleQuantity = (quantity: string, multiplier: number): string => {
+        if (multiplier === 1) return quantity;
+
+        // Match numbers (including fractions like 1/2, decimals like 1.5)
+        const match = quantity.match(/^([\d./]+)\s*(.*)$/);
+        if (!match) return quantity;
+
+        const [, numPart, rest] = match;
+        let value: number;
+
+        // Handle fractions like "1/2"
+        if (numPart.includes('/')) {
+            const [num, denom] = numPart.split('/').map(Number);
+            value = num / denom;
+        } else {
+            value = parseFloat(numPart);
+        }
+
+        if (isNaN(value)) return quantity;
+
+        const scaled = value * multiplier;
+
+        // Format nicely - use fractions for common values, otherwise round to 2 decimals
+        const formatNumber = (n: number): string => {
+            // Round to avoid floating point issues
+            const rounded = Math.round(n * 100) / 100;
+
+            // Check for common fractions
+            const fractions: Record<string, string> = {
+                '0.25': '1/4', '0.33': '1/3', '0.5': '1/2',
+                '0.67': '2/3', '0.75': '3/4'
+            };
+
+            const whole = Math.floor(rounded);
+            const frac = rounded - whole;
+            const fracKey = frac.toFixed(2);
+
+            if (frac === 0) return whole.toString();
+            if (whole === 0 && fractions[fracKey]) return fractions[fracKey];
+            if (whole > 0 && fractions[fracKey]) return `${whole} ${fractions[fracKey]}`;
+
+            // Otherwise show decimal, trimmed
+            return rounded % 1 === 0 ? rounded.toString() : rounded.toFixed(1).replace(/\.0$/, '');
+        };
+
+        return `${formatNumber(scaled)} ${rest}`.trim();
+    };
 
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -192,6 +264,33 @@ export default function SavedMealDetailPage() {
                     setPrefs(data);
                     setKrogerConnected(Boolean(data.krogerLinked));
                     setKrogerStoreSet(Boolean(data.defaultKrogerLocationId));
+
+                    // Load family member restrictions for conflict checking
+                    try {
+                        const membersQuery = query(
+                            collection(db, "users", firebaseUser.uid, "familyMembers"),
+                            where("isActive", "==", true)
+                        );
+                        const membersSnap = await getDocs(membersQuery);
+                        const memberRestrictions: FamilyMemberRestrictions[] = [];
+
+                        membersSnap.forEach((docSnap) => {
+                            const memberData = docSnap.data();
+                            if (memberData.name) {
+                                memberRestrictions.push({
+                                    name: memberData.name,
+                                    allergies: memberData.allergiesAndSensitivities?.allergies || [],
+                                    sensitivities: memberData.allergiesAndSensitivities?.sensitivities || [],
+                                    dietType: memberData.dietType,
+                                    blockedIngredients: memberData.doctorDietInstructions?.blockedIngredients || [],
+                                    blockedGroups: memberData.doctorDietInstructions?.blockedGroups || []
+                                });
+                            }
+                        });
+                        setFamilyMemberRestrictions(memberRestrictions);
+                    } catch (err) {
+                        console.error("Error loading family members", err);
+                    }
                 }
             } catch (err) {
                 console.error("Error loading user prefs", err);
@@ -384,7 +483,7 @@ export default function SavedMealDetailPage() {
                 const writes = itemsToAdd.map((ing) =>
                     addDoc(itemsCol, {
                         name: ing.name,
-                        quantity: ing.quantity,
+                        quantity: scaleQuantity(ing.quantity, servingMultiplier),
                         count: 1,
                         mealId: meal.id,
                         mealName: meal.name,
@@ -442,7 +541,7 @@ export default function SavedMealDetailPage() {
             const cartItems = ingredientsToAdd.map((ing, idx) => ({
                 id: `${meal.id}-${idx}`,
                 name: ing.name,
-                quantity: ing.quantity,
+                quantity: scaleQuantity(ing.quantity, servingMultiplier),
                 count: 1,
             }));
 
@@ -491,16 +590,10 @@ export default function SavedMealDetailPage() {
         return `${date} at ${time}`;
     };
 
-    const handleSendThreadMessage = async () => {
-        if (!meal || !threadInput.trim()) return;
+    // Actually send the thread message (called after conflict check passes or user proceeds)
+    const sendThreadMessage = async (messageText: string) => {
+        if (!meal || !user) return;
 
-        // Premium-only feature
-        if (!prefs?.isPremium) {
-            setShowUpgradePrompt(true);
-            return;
-        }
-
-        const messageText = threadInput.trim();
         setThreadInput("");
         setThreadError(null);
 
@@ -599,6 +692,50 @@ export default function SavedMealDetailPage() {
             setThreadError("Something went wrong updating this meal.");
         } finally {
             setSendingThread(false);
+        }
+    };
+
+    // Handle send button click - check for conflicts first
+    const handleSendThreadMessage = () => {
+        if (!meal || !threadInput.trim()) return;
+
+        // Premium-only feature
+        if (!prefs?.isPremium) {
+            setShowUpgradePrompt(true);
+            return;
+        }
+
+        const messageText = threadInput.trim();
+
+        // Check for dietary conflicts
+        const conflictResult = checkPromptForConflicts(
+            messageText,
+            prefs?.allergiesAndSensitivities?.allergies || [],
+            prefs?.allergiesAndSensitivities?.sensitivities || [],
+            prefs?.dietType,
+            prefs?.doctorDietInstructions?.blockedIngredients || [],
+            prefs?.doctorDietInstructions?.blockedGroups || [],
+            familyMemberRestrictions
+        );
+
+        if (conflictResult.hasConflict) {
+            // Store the message and show conflict modal
+            setPendingThreadMessage(messageText);
+            setDetectedConflicts(conflictResult.conflicts);
+            setShowConflictModal(true);
+            return;
+        }
+
+        // No conflicts, send immediately
+        sendThreadMessage(messageText);
+    };
+
+    // Handle proceeding despite conflicts
+    const handleProceedWithConflicts = () => {
+        setShowConflictModal(false);
+        if (pendingThreadMessage) {
+            sendThreadMessage(pendingThreadMessage);
+            setPendingThreadMessage("");
         }
     };
 
@@ -770,12 +907,12 @@ export default function SavedMealDetailPage() {
                 <div className="max-w-3xl mx-auto">
                     <div className="bg-white rounded-2xl border border-gray-100 p-4 flex gap-4">
                         {/* Thumbnail - Left */}
-                        <div className="w-24 h-24 sm:w-32 sm:h-32 flex-shrink-0 bg-gray-100 rounded-xl overflow-hidden">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                                src={meal.imageUrl ?? "https://placehold.co/256x256/e5e7eb/9ca3af?text=Meal"}
+                        <div className="w-24 h-24 sm:w-32 sm:h-32 flex-shrink-0 rounded-xl overflow-hidden">
+                            <MealImage
+                                src={meal.imageUrl}
                                 alt={meal.name}
-                                className="w-full h-full object-cover"
+                                className="w-full h-full"
+                                isPremium={Boolean(prefs?.isPremium)}
                             />
                         </div>
 
@@ -821,11 +958,24 @@ export default function SavedMealDetailPage() {
 
                     {/* Macros Card */}
                     <div className="bg-white rounded-2xl border border-gray-100 p-5">
-                        <div className="flex items-center gap-4 mb-4">
-                            <div className="flex items-center gap-2">
-                                <Users className="w-5 h-5 text-gray-400" />
-                                <span className="text-sm text-gray-500">{meal.servings} servings</span>
-                            </div>
+                        <div className="flex items-center gap-3 mb-4">
+                            <Users className="w-5 h-5 text-gray-400" />
+                            <span className="text-sm text-gray-500">Servings</span>
+                            <button
+                                onClick={() => setAdjustedServings(Math.max(1, currentServings - 1))}
+                                disabled={currentServings <= 1}
+                                className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+                            >
+                                <Minus className="w-4 h-4 text-gray-600" />
+                            </button>
+                            <span className="text-lg font-semibold text-gray-900 w-6 text-center">{currentServings}</span>
+                            <button
+                                onClick={() => setAdjustedServings(Math.min(20, currentServings + 1))}
+                                disabled={currentServings >= 20}
+                                className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+                            >
+                                <Plus className="w-4 h-4 text-gray-600" />
+                            </button>
                             {meal.cookTimeRange && (
                                 <div className="flex items-center gap-1.5 px-3 py-1 bg-sky-50 border border-sky-200 rounded-full">
                                     <Clock className="w-4 h-4 text-sky-600" />
@@ -838,28 +988,34 @@ export default function SavedMealDetailPage() {
                                 <div className="w-12 h-12 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-2">
                                     <Flame className="w-6 h-6 text-orange-500" />
                                 </div>
-                                <div className="text-lg font-medium text-gray-900">{meal.macros.calories}</div>
+                                <div className="text-lg font-medium text-gray-900">{Math.round(meal.macros.calories * servingMultiplier)}</div>
                                 <div className="text-xs text-gray-500">kcal</div>
                             </div>
                             <div className="text-center">
-                                <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-2">
-                                    <Beef className="w-6 h-6 text-blue-500" />
-                                </div>
-                                <div className="text-lg font-medium text-gray-900">{meal.macros.protein}g</div>
+                                {prefs?.dietType === "vegetarian" || prefs?.dietType === "vegan" ? (
+                                    <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-2">
+                                        <Bean className="w-6 h-6 text-emerald-500" />
+                                    </div>
+                                ) : (
+                                    <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-2">
+                                        <Beef className="w-6 h-6 text-blue-500" />
+                                    </div>
+                                )}
+                                <div className="text-lg font-medium text-gray-900">{Math.round(meal.macros.protein * servingMultiplier)}g</div>
                                 <div className="text-xs text-gray-500">Protein</div>
                             </div>
-                            <div className="text-center" title={`${meal.macros.carbs}g total carbs - ${meal.macros.fiber ?? 0}g fiber`}>
+                            <div className="text-center" title={`${Math.round(meal.macros.carbs * servingMultiplier)}g total carbs - ${Math.round((meal.macros.fiber ?? 0) * servingMultiplier)}g fiber`}>
                                 <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-2">
                                     <Wheat className="w-6 h-6 text-amber-500" />
                                 </div>
-                                <div className="text-lg font-medium text-gray-900">{Math.max(0, meal.macros.carbs - (meal.macros.fiber ?? 0))}g</div>
+                                <div className="text-lg font-medium text-gray-900">{Math.max(0, Math.round((meal.macros.carbs - (meal.macros.fiber ?? 0)) * servingMultiplier))}g</div>
                                 <div className="text-xs text-gray-500">Net Carbs</div>
                             </div>
                             <div className="text-center">
                                 <div className="w-12 h-12 bg-purple-50 rounded-full flex items-center justify-center mx-auto mb-2">
                                     <Droplet className="w-6 h-6 text-purple-500" />
                                 </div>
-                                <div className="text-lg font-medium text-gray-900">{meal.macros.fat}g</div>
+                                <div className="text-lg font-medium text-gray-900">{Math.round(meal.macros.fat * servingMultiplier)}g</div>
                                 <div className="text-xs text-gray-500">Fat</div>
                             </div>
                         </div>
@@ -891,11 +1047,10 @@ export default function SavedMealDetailPage() {
                                                 className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                                             >
                                                 <div
-                                                    className={`max-w-[80%] px-4 py-2 rounded-2xl text-sm ${
-                                                        msg.role === "user"
-                                                            ? "bg-[#4A90E2] text-white"
-                                                            : "bg-white border border-gray-200 text-gray-700"
-                                                    }`}
+                                                    className={`max-w-[80%] px-4 py-2 rounded-2xl text-sm ${msg.role === "user"
+                                                        ? "bg-[#4A90E2] text-white"
+                                                        : "bg-white border border-gray-200 text-gray-700"
+                                                        }`}
                                                 >
                                                     {msg.content}
                                                 </div>
@@ -968,18 +1123,17 @@ export default function SavedMealDetailPage() {
                             </button>
                         </div>
                         {prefs?.shoppingPreference !== "instacart" && krogerConnected && (
-                            <p className="text-xs text-gray-500 mb-4">Tap an ingredient to view details or swap it</p>
+                            <p className="text-xs text-gray-500 mb-4">Tap an ingredient to view details or swap it. Uncheck items you already have in your pantry.</p>
                         )}
                         {prefs?.shoppingPreference === "instacart" && (
-                            <p className="text-xs text-gray-500 mb-4 italic">* Estimated prices may vary by store</p>
+                            <p className="text-xs text-gray-500 mb-4 italic">* Estimated prices may vary by store. Uncheck items you already have in your pantry.</p>
                         )}
                         <ul className="space-y-3">
                             {meal.ingredients.map((ing, idx) => (
                                 <li
                                     key={idx}
-                                    className={`flex items-center gap-3 pb-3 border-b border-gray-50 last:border-0 last:pb-0 transition-opacity ${
-                                        !selectedIngredients.has(idx) ? "opacity-50" : ""
-                                    }`}
+                                    className={`flex items-center gap-3 pb-3 border-b border-gray-50 last:border-0 last:pb-0 transition-opacity ${!selectedIngredients.has(idx) ? "opacity-50" : ""
+                                        }`}
                                 >
                                     {/* Clickable area for opening modal - only when Kroger is connected */}
                                     <div
@@ -1040,11 +1194,10 @@ export default function SavedMealDetailPage() {
                                             <div>
                                                 <span className={`font-medium ${selectedIngredients.has(idx) ? "text-gray-900" : "text-gray-500 line-through"}`}>{ing.name}</span>
                                                 {prefs?.shoppingPreference !== "instacart" && krogerConnected && ing.stockLevel && ing.stockLevel !== "HIGH" && (
-                                                    <span className={`inline-block ml-2 text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap align-middle ${
-                                                        ing.stockLevel === "LOW"
-                                                            ? "bg-amber-100 text-amber-700"
-                                                            : "bg-red-100 text-red-700"
-                                                    }`}>
+                                                    <span className={`inline-block ml-2 text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap align-middle ${ing.stockLevel === "LOW"
+                                                        ? "bg-amber-100 text-amber-700"
+                                                        : "bg-red-100 text-red-700"
+                                                        }`}>
                                                         {ing.stockLevel === "LOW" ? "Low Stock" : "Out of Stock"}
                                                     </span>
                                                 )}
@@ -1052,7 +1205,7 @@ export default function SavedMealDetailPage() {
                                             {/* Kroger users see full product details */}
                                             {prefs?.shoppingPreference !== "instacart" && krogerConnected && (
                                                 <div className="text-sm text-gray-500">
-                                                    {ing.productSize || ing.quantity}
+                                                    {ing.productSize || scaleQuantity(ing.quantity, servingMultiplier)}
                                                     {ing.productAisle && ` • ${ing.productAisle}`}
                                                     {typeof ing.price === "number" && (
                                                         <span className="text-[#4A90E2]"> • ${ing.price.toFixed(2)}{ing.soldBy === "WEIGHT" ? "/lb" : ""}</span>
@@ -1082,11 +1235,10 @@ export default function SavedMealDetailPage() {
                                         }}
                                         className="flex-shrink-0 cursor-pointer p-1"
                                     >
-                                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
-                                            selectedIngredients.has(idx)
-                                                ? "bg-[#4A90E2] border-[#4A90E2]"
-                                                : "border-gray-300 bg-white"
-                                        }`}>
+                                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${selectedIngredients.has(idx)
+                                            ? "bg-[#4A90E2] border-[#4A90E2]"
+                                            : "border-gray-300 bg-white"
+                                            }`}>
                                             {selectedIngredients.has(idx) && (
                                                 <CheckCircle className="w-4 h-4 text-white" />
                                             )}
@@ -1106,7 +1258,7 @@ export default function SavedMealDetailPage() {
                         <div className="grid grid-cols-2 gap-2">
                             {meal.ingredients.map((ing, idx) => (
                                 <div key={idx} className="text-sm text-gray-600">
-                                    <span className="font-medium text-gray-900">{ing.quantity}</span>
+                                    <span className="font-medium text-gray-900">{scaleQuantity(ing.quantity, servingMultiplier)}</span>
                                     <span className="ml-1">{ing.name}</span>
                                 </div>
                             ))}
@@ -1151,26 +1303,29 @@ export default function SavedMealDetailPage() {
                             )}
                         </button>
 
-                        {/* Instacart Button - show for Instacart preference users */}
-                        {prefs?.shoppingPreference === "instacart" && (
-                            <button
-                                onClick={handleAddToInstacart}
-                                disabled={addingToInstacart || selectedIngredients.size === 0}
-                                className="w-full h-[46px] bg-[#003D29] text-[#FAF1E5] rounded-full px-[18px] shadow-lg hover:shadow-xl hover:bg-[#004D35] transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                            >
-                                {addingToInstacart ? (
-                                    <>
-                                        <div className="w-[22px] h-[22px] border-2 border-[#FAF1E5]/30 border-t-[#FAF1E5] rounded-full animate-spin" />
-                                        <span>Opening Instacart...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <Image src={InstacartCarrot} alt="Instacart" className="w-[22px] h-[22px]" />
-                                        <span>Get Recipe Ingredients</span>
-                                    </>
-                                )}
-                            </button>
-                        )}
+                        {/* Instacart Button - show for Instacart preference users */
+                        }
+                        {
+                            process.env.NEXT_PUBLIC_ENABLE_INSTACART === 'true' && prefs?.shoppingPreference === "instacart" && (
+                                <button
+                                    onClick={handleAddToInstacart}
+                                    disabled={addingToInstacart || selectedIngredients.size === 0}
+                                    className="w-full h-[46px] bg-[#003D29] text-[#FAF1E5] rounded-full px-[18px] shadow-lg hover:shadow-xl hover:bg-[#004D35] transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                >
+                                    {addingToInstacart ? (
+                                        <>
+                                            <div className="w-[22px] h-[22px] border-2 border-[#FAF1E5]/30 border-t-[#FAF1E5] rounded-full animate-spin" />
+                                            <span>Opening Instacart...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Image src={InstacartCarrot} alt="Instacart" className="w-[22px] h-[22px]" />
+                                            <span>Get Recipe Ingredients</span>
+                                        </>
+                                    )}
+                                </button>
+                            )
+                        }
                     </div>
 
                 </div>
@@ -1184,6 +1339,18 @@ export default function SavedMealDetailPage() {
                     reason="voluntary"
                 />
             )}
+
+            {/* Dietary Conflict Modal */}
+            <DietaryConflictModal
+                isOpen={showConflictModal}
+                onClose={() => {
+                    setShowConflictModal(false);
+                    setPendingThreadMessage("");
+                }}
+                onProceed={handleProceedWithConflicts}
+                conflicts={detectedConflicts}
+                prompt={pendingThreadMessage}
+            />
 
             {/* Ingredient Detail Modal */}
             {selectedIngredientIndex !== null && meal.ingredients[selectedIngredientIndex] && (
@@ -1279,7 +1446,7 @@ export default function SavedMealDetailPage() {
                                                         {ing.productSize ? "Size" : "Quantity"}
                                                     </span>
                                                     <span className="text-sm font-medium text-gray-900">
-                                                        {ing.productSize || ing.quantity}
+                                                        {ing.productSize || scaleQuantity(ing.quantity, servingMultiplier)}
                                                     </span>
                                                 </div>
                                             )}
@@ -1306,13 +1473,12 @@ export default function SavedMealDetailPage() {
                                             {krogerConnected && ing.stockLevel && (
                                                 <div className="flex justify-between">
                                                     <span className="text-sm text-gray-500">Stock</span>
-                                                    <span className={`text-sm font-medium ${
-                                                        ing.stockLevel === "HIGH"
-                                                            ? "text-emerald-600"
-                                                            : ing.stockLevel === "LOW"
-                                                                ? "text-amber-600"
-                                                                : "text-red-600"
-                                                    }`}>
+                                                    <span className={`text-sm font-medium ${ing.stockLevel === "HIGH"
+                                                        ? "text-emerald-600"
+                                                        : ing.stockLevel === "LOW"
+                                                            ? "text-amber-600"
+                                                            : "text-red-600"
+                                                        }`}>
                                                         {ing.stockLevel === "HIGH"
                                                             ? "In Stock"
                                                             : ing.stockLevel === "LOW"
@@ -1329,11 +1495,10 @@ export default function SavedMealDetailPage() {
                                             className="flex items-center justify-between p-3 bg-gray-50 rounded-xl cursor-pointer"
                                         >
                                             <span className="text-sm text-gray-700">Include in shopping list</span>
-                                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
-                                                selectedIngredients.has(selectedIngredientIndex)
-                                                    ? "bg-[#4A90E2] border-[#4A90E2]"
-                                                    : "border-gray-300 bg-white"
-                                            }`}>
+                                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${selectedIngredients.has(selectedIngredientIndex)
+                                                ? "bg-[#4A90E2] border-[#4A90E2]"
+                                                : "border-gray-300 bg-white"
+                                                }`}>
                                                 {selectedIngredients.has(selectedIngredientIndex) && (
                                                     <CheckCircle className="w-4 h-4 text-white" />
                                                 )}

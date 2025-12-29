@@ -15,6 +15,8 @@ import {
     updateDoc,
     serverTimestamp,
     setDoc,
+    query,
+    where,
 } from "firebase/firestore";
 import { logUserEvent } from "@/lib/logUserEvent";
 import {
@@ -60,6 +62,8 @@ import {
     Apple,
     Clock,
     Home,
+    Minus,
+    Plus,
 } from "lucide-react";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { useToast } from "@/components/Toast";
@@ -74,6 +78,8 @@ import { getIngredientCategory } from "@/lib/product-engine/ingredientQualityRul
 import { getIngredientImageUrl } from "@/lib/ingredientImages";
 import { getEstimatedPrice } from "@/lib/priceEstimates";
 import { normalizeIngredientKey } from "@/lib/ingredientNormalization";
+import { DietaryConflictModal } from "@/components/DietaryConflictModal";
+import { checkPromptForConflicts, type ConflictResult, type FamilyMemberRestrictions } from "@/lib/sensitivityMapping";
 
 type Ingredient = {
     name: string;
@@ -121,6 +127,11 @@ type UserPrefs = {
     allergiesAndSensitivities?: {
         allergies?: string[];
         sensitivities?: string[];
+    };
+    doctorDietInstructions?: {
+        hasActiveNote?: boolean;
+        blockedIngredients?: string[];
+        blockedGroups?: string[];
     };
     isPremium?: boolean;
     monthlyChatCount?: number;
@@ -176,9 +187,9 @@ type MealsMeta = {
 
 type StoredMealsPayload =
     | {
-    meals: Meal[];
-    meta?: MealsMeta;
-}
+        meals: Meal[];
+        meta?: MealsMeta;
+    }
     | Meal[];
 
 function MealDetailPageContent() {
@@ -189,6 +200,7 @@ function MealDetailPageContent() {
 
     const mealId = params.mealId as string;
     const promptParam = searchParams.get("prompt") || "";
+    const sourceParam = searchParams.get("source");
     const displayedPrompt = promptParam.trim();
 
     const [user, setUser] = useState<User | null>(null);
@@ -197,6 +209,7 @@ function MealDetailPageContent() {
 
     const [meal, setMeal] = useState<Meal | null>(null);
     const [loadingMeal, setLoadingMeal] = useState(true);
+    const [adjustedServings, setAdjustedServings] = useState<number | null>(null);
 
     const [addingToList, setAddingToList] = useState(false);
 
@@ -236,6 +249,12 @@ function MealDetailPageContent() {
     const [upgradeReason, setUpgradeReason] = useState<"limit_reached" | "voluntary">("limit_reached");
     const FREE_CHAT_LIMIT = 6;
 
+    // Dietary conflict checking state
+    const [familyMemberRestrictions, setFamilyMemberRestrictions] = useState<FamilyMemberRestrictions[]>([]);
+    const [showConflictModal, setShowConflictModal] = useState(false);
+    const [detectedConflicts, setDetectedConflicts] = useState<ConflictResult["conflicts"]>([]);
+    const [pendingThreadMessage, setPendingThreadMessage] = useState<string>("");
+
     // Ref for chat messages container to control scrolling
     const chatMessagesRef = useRef<HTMLDivElement>(null);
 
@@ -265,6 +284,59 @@ function MealDetailPageContent() {
     // Random color for back button
     const backButtonColor = useMemo(() => getRandomAccentColor(), []);
 
+    // Serving adjustment calculations
+    const currentServings = adjustedServings ?? meal?.servings ?? 1;
+    const servingMultiplier = meal ? currentServings / meal.servings : 1;
+
+    // Scale ingredient quantity strings (e.g., "2 cups" -> "4 cups")
+    const scaleQuantity = (quantity: string, multiplier: number): string => {
+        if (multiplier === 1) return quantity;
+
+        // Match numbers (including fractions like 1/2, decimals like 1.5)
+        const match = quantity.match(/^([\d./]+)\s*(.*)$/);
+        if (!match) return quantity;
+
+        const [, numPart, rest] = match;
+        let value: number;
+
+        // Handle fractions like "1/2"
+        if (numPart.includes('/')) {
+            const [num, denom] = numPart.split('/').map(Number);
+            value = num / denom;
+        } else {
+            value = parseFloat(numPart);
+        }
+
+        if (isNaN(value)) return quantity;
+
+        const scaled = value * multiplier;
+
+        // Format nicely - use fractions for common values, otherwise round to 2 decimals
+        const formatNumber = (n: number): string => {
+            // Round to avoid floating point issues
+            const rounded = Math.round(n * 100) / 100;
+
+            // Check for common fractions
+            const fractions: Record<string, string> = {
+                '0.25': '1/4', '0.33': '1/3', '0.5': '1/2',
+                '0.67': '2/3', '0.75': '3/4'
+            };
+
+            const whole = Math.floor(rounded);
+            const frac = rounded - whole;
+            const fracKey = frac.toFixed(2);
+
+            if (frac === 0) return whole.toString();
+            if (whole === 0 && fractions[fracKey]) return fractions[fracKey];
+            if (whole > 0 && fractions[fracKey]) return `${whole} ${fractions[fracKey]}`;
+
+            // Otherwise show decimal, trimmed
+            return rounded % 1 === 0 ? rounded.toString() : rounded.toFixed(1).replace(/\.0$/, '');
+        };
+
+        return `${formatNumber(scaled)} ${rest}`.trim();
+    };
+
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
             if (!firebaseUser) {
@@ -293,6 +365,33 @@ function MealDetailPageContent() {
                         }
                     }
                     setMonthlyChatCount(chatCount);
+
+                    // Load family member restrictions for conflict checking
+                    try {
+                        const membersQuery = query(
+                            collection(db, "users", firebaseUser.uid, "familyMembers"),
+                            where("isActive", "==", true)
+                        );
+                        const membersSnap = await getDocs(membersQuery);
+                        const memberRestrictions: FamilyMemberRestrictions[] = [];
+
+                        membersSnap.forEach((docSnap) => {
+                            const memberData = docSnap.data();
+                            if (memberData.name) {
+                                memberRestrictions.push({
+                                    name: memberData.name,
+                                    allergies: memberData.allergiesAndSensitivities?.allergies || [],
+                                    sensitivities: memberData.allergiesAndSensitivities?.sensitivities || [],
+                                    dietType: memberData.dietType,
+                                    blockedIngredients: memberData.doctorDietInstructions?.blockedIngredients || [],
+                                    blockedGroups: memberData.doctorDietInstructions?.blockedGroups || []
+                                });
+                            }
+                        });
+                        setFamilyMemberRestrictions(memberRestrictions);
+                    } catch (err) {
+                        console.error("Error loading family members", err);
+                    }
                 }
             } catch (err) {
                 console.error("Error loading user prefs", err);
@@ -597,7 +696,7 @@ function MealDetailPageContent() {
                     itemsToAdd.map((ing) =>
                         addDoc(itemsCol, {
                             name: ing.name,
-                            quantity: ing.quantity,
+                            quantity: scaleQuantity(ing.quantity, servingMultiplier),
                             count: 1,
                             mealId: meal.id,
                             mealName: meal.name,
@@ -747,7 +846,7 @@ function MealDetailPageContent() {
             const cartItems = ingredientsToAdd.map((ing, idx) => ({
                 id: `${meal.id}-${idx}`,
                 name: ing.name,
-                quantity: ing.quantity,
+                quantity: scaleQuantity(ing.quantity, servingMultiplier),
             }));
 
             const res = await fetch("/api/kroger/cart", {
@@ -828,7 +927,7 @@ function MealDetailPageContent() {
             const cartItems = ingredientsToAdd.map((ing, idx) => ({
                 id: `${meal.id}-${idx}`,
                 name: ing.name,
-                quantity: ing.quantity,
+                quantity: scaleQuantity(ing.quantity, servingMultiplier),
                 count: 1,
             }));
 
@@ -1060,17 +1159,10 @@ function MealDetailPageContent() {
         setSwappingIngredient(false);
     };
 
-    const handleSendThreadMessage = async () => {
-        if (!meal || !threadInput.trim() || !user) return;
+    // Actually send the thread message (called after conflict check passes or user proceeds)
+    const sendThreadMessage = async (messageText: string) => {
+        if (!meal || !user) return;
 
-        // Check chat limit for free users
-        if (!prefs?.isPremium && monthlyChatCount >= FREE_CHAT_LIMIT) {
-            setUpgradeReason("limit_reached");
-            setShowUpgradePrompt(true);
-            return;
-        }
-
-        const messageText = threadInput.trim();
         setThreadInput("");
         setThreadError(null);
 
@@ -1180,6 +1272,51 @@ function MealDetailPageContent() {
         }
     };
 
+    // Handle send button click - check for conflicts first
+    const handleSendThreadMessage = () => {
+        if (!meal || !threadInput.trim() || !user) return;
+
+        // Check chat limit for free users
+        if (!prefs?.isPremium && monthlyChatCount >= FREE_CHAT_LIMIT) {
+            setUpgradeReason("limit_reached");
+            setShowUpgradePrompt(true);
+            return;
+        }
+
+        const messageText = threadInput.trim();
+
+        // Check for dietary conflicts
+        const conflictResult = checkPromptForConflicts(
+            messageText,
+            prefs?.allergiesAndSensitivities?.allergies || [],
+            prefs?.allergiesAndSensitivities?.sensitivities || [],
+            prefs?.dietType,
+            prefs?.doctorDietInstructions?.blockedIngredients || [],
+            prefs?.doctorDietInstructions?.blockedGroups || [],
+            familyMemberRestrictions
+        );
+
+        if (conflictResult.hasConflict) {
+            // Store the message and show conflict modal
+            setPendingThreadMessage(messageText);
+            setDetectedConflicts(conflictResult.conflicts);
+            setShowConflictModal(true);
+            return;
+        }
+
+        // No conflicts, send immediately
+        sendThreadMessage(messageText);
+    };
+
+    // Handle proceeding despite conflicts
+    const handleProceedWithConflicts = () => {
+        setShowConflictModal(false);
+        if (pendingThreadMessage) {
+            sendThreadMessage(pendingThreadMessage);
+            setPendingThreadMessage("");
+        }
+    };
+
     if (loadingUser || loadingMeal) {
         return <LoadingScreen message="Loading your meal..." />;
     }
@@ -1216,7 +1353,13 @@ function MealDetailPageContent() {
             <div className="bg-white border-b border-gray-100 px-6 py-4 sticky top-0 z-20">
                 <div className="max-w-3xl mx-auto">
                     <button
-                        onClick={() => router.push(`/meals?prompt=${promptParam}`)}
+                        onClick={() => {
+                            if (sourceParam === "fresh-picks") {
+                                router.push("/fresh-picks");
+                            } else {
+                                router.push(`/meals?prompt=${promptParam}`);
+                            }
+                        }}
                         className="inline-flex items-center gap-2 px-3 py-2 rounded-xl transition-all hover:opacity-80"
                         style={{
                             backgroundColor: `${backButtonColor.primary}15`,
@@ -1224,7 +1367,9 @@ function MealDetailPageContent() {
                         }}
                     >
                         <ArrowLeft className="w-5 h-5" />
-                        <span className="font-medium">Back to meals</span>
+                        <span className="font-medium">
+                            {sourceParam === "fresh-picks" ? "Back to Fresh Picks" : "Back to meals"}
+                        </span>
                     </button>
                 </div>
             </div>
@@ -1288,37 +1433,58 @@ function MealDetailPageContent() {
 
                     {/* Macros Card */}
                     <div className="bg-white rounded-2xl border border-gray-100 p-5">
-                        <div className="flex items-center gap-2 mb-4">
+                        <div className="flex items-center gap-3 mb-4">
                             <Users className="w-5 h-5 text-gray-400" />
-                            <span className="text-sm text-gray-500">{meal.servings} servings</span>
+                            <span className="text-sm text-gray-500">Servings</span>
+                            <button
+                                onClick={() => setAdjustedServings(Math.max(1, currentServings - 1))}
+                                disabled={currentServings <= 1}
+                                className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+                            >
+                                <Minus className="w-4 h-4 text-gray-600" />
+                            </button>
+                            <span className="text-lg font-semibold text-gray-900 w-6 text-center">{currentServings}</span>
+                            <button
+                                onClick={() => setAdjustedServings(Math.min(20, currentServings + 1))}
+                                disabled={currentServings >= 20}
+                                className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+                            >
+                                <Plus className="w-4 h-4 text-gray-600" />
+                            </button>
                         </div>
                         <div className="grid grid-cols-4 gap-4">
                             <div className="text-center">
                                 <div className="w-12 h-12 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-2">
                                     <Flame className="w-6 h-6 text-orange-500" />
                                 </div>
-                                <div className="text-lg font-medium text-gray-900">{meal.macros.calories}</div>
+                                <div className="text-lg font-medium text-gray-900">{Math.round(meal.macros.calories * servingMultiplier)}</div>
                                 <div className="text-xs text-gray-500">kcal</div>
                             </div>
                             <div className="text-center">
-                                <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-2">
-                                    <Beef className="w-6 h-6 text-blue-500" />
-                                </div>
-                                <div className="text-lg font-medium text-gray-900">{meal.macros.protein}g</div>
+                                {prefs?.dietType === "vegetarian" || prefs?.dietType === "vegan" ? (
+                                    <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-2">
+                                        <Bean className="w-6 h-6 text-emerald-500" />
+                                    </div>
+                                ) : (
+                                    <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-2">
+                                        <Beef className="w-6 h-6 text-blue-500" />
+                                    </div>
+                                )}
+                                <div className="text-lg font-medium text-gray-900">{Math.round(meal.macros.protein * servingMultiplier)}g</div>
                                 <div className="text-xs text-gray-500">Protein</div>
                             </div>
-                            <div className="text-center" title={`${meal.macros.carbs}g total carbs - ${meal.macros.fiber ?? 0}g fiber`}>
+                            <div className="text-center" title={`${Math.round(meal.macros.carbs * servingMultiplier)}g total carbs - ${Math.round((meal.macros.fiber ?? 0) * servingMultiplier)}g fiber`}>
                                 <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-2">
                                     <Wheat className="w-6 h-6 text-amber-500" />
                                 </div>
-                                <div className="text-lg font-medium text-gray-900">{Math.max(0, meal.macros.carbs - (meal.macros.fiber ?? 0))}g</div>
+                                <div className="text-lg font-medium text-gray-900">{Math.max(0, Math.round((meal.macros.carbs - (meal.macros.fiber ?? 0)) * servingMultiplier))}g</div>
                                 <div className="text-xs text-gray-500">Net Carbs</div>
                             </div>
                             <div className="text-center">
                                 <div className="w-12 h-12 bg-purple-50 rounded-full flex items-center justify-center mx-auto mb-2">
                                     <Droplet className="w-6 h-6 text-purple-500" />
                                 </div>
-                                <div className="text-lg font-medium text-gray-900">{meal.macros.fat}g</div>
+                                <div className="text-lg font-medium text-gray-900">{Math.round(meal.macros.fat * servingMultiplier)}g</div>
                                 <div className="text-xs text-gray-500">Fat</div>
                             </div>
                         </div>
@@ -1342,28 +1508,25 @@ function MealDetailPageContent() {
                                         setUpgradeReason("voluntary");
                                         setShowUpgradePrompt(true);
                                     }}
-                                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full hover:opacity-80 transition-opacity ${
-                                        FREE_CHAT_LIMIT - monthlyChatCount === 0
-                                            ? "bg-red-100"
-                                            : FREE_CHAT_LIMIT - monthlyChatCount === 1
-                                                ? "bg-amber-100"
-                                                : "bg-blue-100"
-                                    }`}
+                                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full hover:opacity-80 transition-opacity ${FREE_CHAT_LIMIT - monthlyChatCount === 0
+                                        ? "bg-red-100"
+                                        : FREE_CHAT_LIMIT - monthlyChatCount === 1
+                                            ? "bg-amber-100"
+                                            : "bg-blue-100"
+                                        }`}
                                 >
-                                    <MessageCircle className={`w-3 h-3 ${
-                                        FREE_CHAT_LIMIT - monthlyChatCount === 0
-                                            ? "text-red-500"
-                                            : FREE_CHAT_LIMIT - monthlyChatCount === 1
-                                                ? "text-amber-500"
-                                                : "text-blue-500"
-                                    }`} />
-                                    <span className={`text-xs font-medium whitespace-nowrap ${
-                                        FREE_CHAT_LIMIT - monthlyChatCount === 0
-                                            ? "text-red-700"
-                                            : FREE_CHAT_LIMIT - monthlyChatCount === 1
-                                                ? "text-amber-700"
-                                                : "text-blue-700"
-                                    }`}>
+                                    <MessageCircle className={`w-3 h-3 ${FREE_CHAT_LIMIT - monthlyChatCount === 0
+                                        ? "text-red-500"
+                                        : FREE_CHAT_LIMIT - monthlyChatCount === 1
+                                            ? "text-amber-500"
+                                            : "text-blue-500"
+                                        }`} />
+                                    <span className={`text-xs font-medium whitespace-nowrap ${FREE_CHAT_LIMIT - monthlyChatCount === 0
+                                        ? "text-red-700"
+                                        : FREE_CHAT_LIMIT - monthlyChatCount === 1
+                                            ? "text-amber-700"
+                                            : "text-blue-700"
+                                        }`}>
                                         {FREE_CHAT_LIMIT - monthlyChatCount}/{FREE_CHAT_LIMIT} free
                                     </span>
                                 </button>
@@ -1381,11 +1544,10 @@ function MealDetailPageContent() {
                                         className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                                     >
                                         <div
-                                            className={`max-w-[80%] px-4 py-2 rounded-2xl text-sm ${
-                                                msg.role === "user"
-                                                    ? "bg-[#4A90E2] text-white"
-                                                    : "bg-white border border-gray-200 text-gray-700"
-                                            }`}
+                                            className={`max-w-[80%] px-4 py-2 rounded-2xl text-sm ${msg.role === "user"
+                                                ? "bg-[#4A90E2] text-white"
+                                                : "bg-white border border-gray-200 text-gray-700"
+                                                }`}
                                         >
                                             {msg.content}
                                         </div>
@@ -1448,18 +1610,17 @@ function MealDetailPageContent() {
                             </button>
                         </div>
                         {prefs?.shoppingPreference !== "instacart" && krogerConnected && (
-                            <p className="text-xs text-gray-500 mb-4">Tap an ingredient to view details or swap it</p>
+                            <p className="text-xs text-gray-500 mb-4">Tap an ingredient to view details or swap it. Uncheck items you already have in your pantry.</p>
                         )}
                         {prefs?.shoppingPreference === "instacart" && (
-                            <p className="text-xs text-gray-500 mb-4 italic">* Estimated prices may vary by store</p>
+                            <p className="text-xs text-gray-500 mb-4 italic">* Estimated prices may vary by store. Uncheck items you already have in your pantry.</p>
                         )}
                         <ul className="space-y-3">
                             {displayIngredients.map((ing, idx) => (
                                 <li
                                     key={idx}
-                                    className={`flex items-center gap-3 pb-3 border-b border-gray-50 last:border-0 last:pb-0 transition-opacity ${
-                                        !selectedIngredients.has(idx) ? "opacity-50" : ""
-                                    }`}
+                                    className={`flex items-center gap-3 pb-3 border-b border-gray-50 last:border-0 last:pb-0 transition-opacity ${!selectedIngredients.has(idx) ? "opacity-50" : ""
+                                        }`}
                                 >
                                     {/* Clickable area for opening modal - only for Kroger preference when connected */}
                                     <div
@@ -1531,11 +1692,10 @@ function MealDetailPageContent() {
                                                     </span>
                                                 )}
                                                 {prefs?.shoppingPreference !== "instacart" && krogerConnected && ing.stockLevel && ing.stockLevel !== "HIGH" && (
-                                                    <span className={`inline-block ml-2 text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap align-middle ${
-                                                        ing.stockLevel === "LOW"
-                                                            ? "bg-amber-100 text-amber-700"
-                                                            : "bg-red-100 text-red-700"
-                                                    }`}>
+                                                    <span className={`inline-block ml-2 text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap align-middle ${ing.stockLevel === "LOW"
+                                                        ? "bg-amber-100 text-amber-700"
+                                                        : "bg-red-100 text-red-700"
+                                                        }`}>
                                                         {ing.stockLevel === "LOW" ? "Low Stock" : "Out of Stock"}
                                                     </span>
                                                 )}
@@ -1543,7 +1703,7 @@ function MealDetailPageContent() {
                                             {/* Kroger users see full product details */}
                                             {prefs?.shoppingPreference !== "instacart" && krogerConnected && (
                                                 <div className="text-sm text-gray-500">
-                                                    {ing.productSize || ing.quantity}
+                                                    {ing.productSize || scaleQuantity(ing.quantity, servingMultiplier)}
                                                     {ing.productAisle && ` • ${ing.productAisle}`}
                                                     {typeof ing.price === "number" && (
                                                         <span className="text-[#4A90E2]"> • ${ing.price.toFixed(2)}{ing.soldBy === "WEIGHT" ? "/lb" : ""}</span>
@@ -1573,11 +1733,10 @@ function MealDetailPageContent() {
                                         }}
                                         className="flex-shrink-0 cursor-pointer p-1"
                                     >
-                                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
-                                            selectedIngredients.has(idx)
-                                                ? "bg-[#4A90E2] border-[#4A90E2]"
-                                                : "border-gray-300 bg-white"
-                                        }`}>
+                                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${selectedIngredients.has(idx)
+                                            ? "bg-[#4A90E2] border-[#4A90E2]"
+                                            : "border-gray-300 bg-white"
+                                            }`}>
                                             {selectedIngredients.has(idx) && (
                                                 <CheckCircle className="w-4 h-4 text-white" />
                                             )}
@@ -1597,7 +1756,7 @@ function MealDetailPageContent() {
                         <div className="grid grid-cols-2 gap-2">
                             {meal.ingredients.map((ing, idx) => (
                                 <div key={idx} className="text-sm text-gray-600">
-                                    <span className="font-medium text-gray-900">{ing.quantity}</span>
+                                    <span className="font-medium text-gray-900">{scaleQuantity(ing.quantity, servingMultiplier)}</span>
                                     <span className="ml-1">{ing.name}</span>
                                 </div>
                             ))}
@@ -1642,26 +1801,29 @@ function MealDetailPageContent() {
                             )}
                         </button>
 
-                        {/* Instacart Button - show for Instacart preference users */}
-                        {prefs?.shoppingPreference === "instacart" && !mealsMeta?.pantryMode && (
-                            <button
-                                onClick={handleAddToInstacart}
-                                disabled={addingToInstacart || selectedIngredients.size === 0}
-                                className="w-full h-[46px] bg-[#003D29] text-[#FAF1E5] rounded-full px-[18px] shadow-lg hover:shadow-xl hover:bg-[#004D35] transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                            >
-                                {addingToInstacart ? (
-                                    <>
-                                        <div className="w-[22px] h-[22px] border-2 border-[#FAF1E5]/30 border-t-[#FAF1E5] rounded-full animate-spin" />
-                                        <span>Opening Instacart...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <Image src={InstacartCarrot} alt="Instacart" className="w-[22px] h-[22px]" />
-                                        <span>Get Recipe Ingredients</span>
-                                    </>
-                                )}
-                            </button>
-                        )}
+                        {/* Instacart Button - show for Instacart preference users */
+                        }
+                        {
+                            process.env.NEXT_PUBLIC_ENABLE_INSTACART === 'true' && prefs?.shoppingPreference === "instacart" && !mealsMeta?.pantryMode && (
+                                <button
+                                    onClick={handleAddToInstacart}
+                                    disabled={addingToInstacart || selectedIngredients.size === 0}
+                                    className="w-full h-[46px] bg-[#003D29] text-[#FAF1E5] rounded-full px-[18px] shadow-lg hover:shadow-xl hover:bg-[#004D35] transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                >
+                                    {addingToInstacart ? (
+                                        <>
+                                            <div className="w-[22px] h-[22px] border-2 border-[#FAF1E5]/30 border-t-[#FAF1E5] rounded-full animate-spin" />
+                                            <span>Opening Instacart...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Image src={InstacartCarrot} alt="Instacart" className="w-[22px] h-[22px]" />
+                                            <span>Get Recipe Ingredients</span>
+                                        </>
+                                    )}
+                                </button>
+                            )
+                        }
 
                         {/* Kroger Cart Button - only show for Kroger preference users if connected, store is set, and not in pantry mode */}
                         {prefs?.shoppingPreference !== "instacart" && krogerConnected && krogerStoreSet && !mealsMeta?.pantryMode && (
@@ -1687,11 +1849,10 @@ function MealDetailPageContent() {
                         <button
                             onClick={handleSaveMeal}
                             disabled={savingMeal || isMealAlreadySaved}
-                            className={`w-full py-4 rounded-2xl transition-colors active:scale-[0.98] disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
-                                isMealAlreadySaved
-                                    ? "bg-emerald-50 border-2 border-emerald-200 text-emerald-600"
-                                    : "bg-white border-2 border-[#4A90E2] text-[#4A90E2] hover:bg-[#4A90E2]/5 disabled:opacity-70"
-                            }`}
+                            className={`w-full py-4 rounded-2xl transition-colors active:scale-[0.98] disabled:cursor-not-allowed flex items-center justify-center gap-2 ${isMealAlreadySaved
+                                ? "bg-emerald-50 border-2 border-emerald-200 text-emerald-600"
+                                : "bg-white border-2 border-[#4A90E2] text-[#4A90E2] hover:bg-[#4A90E2]/5 disabled:opacity-70"
+                                }`}
                         >
                             {savingMeal ? (
                                 <>
@@ -1723,6 +1884,18 @@ function MealDetailPageContent() {
                 />
             )}
 
+            {/* Dietary Conflict Modal */}
+            <DietaryConflictModal
+                isOpen={showConflictModal}
+                onClose={() => {
+                    setShowConflictModal(false);
+                    setPendingThreadMessage("");
+                }}
+                onProceed={handleProceedWithConflicts}
+                conflicts={detectedConflicts}
+                prompt={pendingThreadMessage}
+            />
+
             {/* Kroger Results Modal */}
             {showKrogerResults && krogerResults && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
@@ -1740,9 +1913,8 @@ function MealDetailPageContent() {
                             {krogerResults.map((item, idx) => (
                                 <div
                                     key={idx}
-                                    className={`flex items-center gap-3 p-3 rounded-xl ${
-                                        item.found ? "bg-emerald-50" : "bg-amber-50"
-                                    }`}
+                                    className={`flex items-center gap-3 p-3 rounded-xl ${item.found ? "bg-emerald-50" : "bg-amber-50"
+                                        }`}
                                 >
                                     {item.product?.imageUrl ? (
                                         <div className="w-12 h-12 rounded-lg overflow-hidden bg-white flex-shrink-0">
@@ -1881,7 +2053,7 @@ function MealDetailPageContent() {
                                                         {ing.productSize ? "Size" : "Quantity"}
                                                     </span>
                                                     <span className="text-sm font-medium text-gray-900">
-                                                        {ing.productSize || ing.quantity}
+                                                        {ing.productSize || scaleQuantity(ing.quantity, servingMultiplier)}
                                                     </span>
                                                 </div>
                                             )}
@@ -1908,13 +2080,12 @@ function MealDetailPageContent() {
                                             {krogerConnected && ing.stockLevel && (
                                                 <div className="flex justify-between">
                                                     <span className="text-sm text-gray-500">Stock</span>
-                                                    <span className={`text-sm font-medium ${
-                                                        ing.stockLevel === "HIGH"
-                                                            ? "text-emerald-600"
-                                                            : ing.stockLevel === "LOW"
-                                                                ? "text-amber-600"
-                                                                : "text-red-600"
-                                                    }`}>
+                                                    <span className={`text-sm font-medium ${ing.stockLevel === "HIGH"
+                                                        ? "text-emerald-600"
+                                                        : ing.stockLevel === "LOW"
+                                                            ? "text-amber-600"
+                                                            : "text-red-600"
+                                                        }`}>
                                                         {ing.stockLevel === "HIGH"
                                                             ? "In Stock"
                                                             : ing.stockLevel === "LOW"
@@ -1931,11 +2102,10 @@ function MealDetailPageContent() {
                                             className="flex items-center justify-between p-3 bg-gray-50 rounded-xl cursor-pointer"
                                         >
                                             <span className="text-sm text-gray-700">Include in shopping list</span>
-                                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
-                                                selectedIngredients.has(selectedIngredientIndex)
-                                                    ? "bg-[#4A90E2] border-[#4A90E2]"
-                                                    : "border-gray-300 bg-white"
-                                            }`}>
+                                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${selectedIngredients.has(selectedIngredientIndex)
+                                                ? "bg-[#4A90E2] border-[#4A90E2]"
+                                                : "border-gray-300 bg-white"
+                                                }`}>
                                                 {selectedIngredients.has(selectedIngredientIndex) && (
                                                     <CheckCircle className="w-4 h-4 text-white" />
                                                 )}
@@ -1954,25 +2124,21 @@ function MealDetailPageContent() {
 
                                     {/* Warning banner if searching for an avoided/allergy ingredient */}
                                     {swapSearchWarning && (
-                                        <div className={`p-3 rounded-xl flex items-start gap-2 mb-3 ${
-                                            swapSearchWarning.rule === "NEVER_INCLUDE"
-                                                ? "bg-red-50 border border-red-200"
-                                                : "bg-amber-50 border border-amber-200"
-                                        }`}>
-                                            <AlertTriangle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${
-                                                swapSearchWarning.rule === "NEVER_INCLUDE" ? "text-red-500" : "text-amber-500"
-                                            }`} />
+                                        <div className={`p-3 rounded-xl flex items-start gap-2 mb-3 ${swapSearchWarning.rule === "NEVER_INCLUDE"
+                                            ? "bg-red-50 border border-red-200"
+                                            : "bg-amber-50 border border-amber-200"
+                                            }`}>
+                                            <AlertTriangle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${swapSearchWarning.rule === "NEVER_INCLUDE" ? "text-red-500" : "text-amber-500"
+                                                }`} />
                                             <div>
-                                                <p className={`text-sm font-medium ${
-                                                    swapSearchWarning.rule === "NEVER_INCLUDE" ? "text-red-700" : "text-amber-700"
-                                                }`}>
+                                                <p className={`text-sm font-medium ${swapSearchWarning.rule === "NEVER_INCLUDE" ? "text-red-700" : "text-amber-700"
+                                                    }`}>
                                                     {swapSearchWarning.rule === "NEVER_INCLUDE"
                                                         ? "Allergy alert"
                                                         : "You avoid this"}
                                                 </p>
-                                                <p className={`text-xs ${
-                                                    swapSearchWarning.rule === "NEVER_INCLUDE" ? "text-red-600" : "text-amber-600"
-                                                }`}>
+                                                <p className={`text-xs ${swapSearchWarning.rule === "NEVER_INCLUDE" ? "text-red-600" : "text-amber-600"
+                                                    }`}>
                                                     {swapSearchWarning.rule === "NEVER_INCLUDE"
                                                         ? `You've marked "${swapSearchWarning.ingredient.replace(/_/g, " ")}" as an allergy.`
                                                         : `You've set "${swapSearchWarning.ingredient.replace(/_/g, " ")}" as something you avoid.`}
@@ -1988,13 +2154,12 @@ function MealDetailPageContent() {
                                                 key={product.krogerProductId}
                                                 onClick={() => handleSelectSwap(product)}
                                                 disabled={swappingIngredient}
-                                                className={`w-full p-3 border rounded-xl text-left transition-colors disabled:opacity-50 flex items-center gap-3 ${
-                                                    product.avoidWarning
-                                                        ? product.avoidWarning.rule === "NEVER_INCLUDE"
-                                                            ? "bg-red-50 border-red-200 hover:border-red-300"
-                                                            : "bg-amber-50 border-amber-200 hover:border-amber-300"
-                                                        : "bg-gray-50 border-gray-200 hover:bg-[#4A90E2]/10 hover:border-[#4A90E2]"
-                                                }`}
+                                                className={`w-full p-3 border rounded-xl text-left transition-colors disabled:opacity-50 flex items-center gap-3 ${product.avoidWarning
+                                                    ? product.avoidWarning.rule === "NEVER_INCLUDE"
+                                                        ? "bg-red-50 border-red-200 hover:border-red-300"
+                                                        : "bg-amber-50 border-amber-200 hover:border-amber-300"
+                                                    : "bg-gray-50 border-gray-200 hover:bg-[#4A90E2]/10 hover:border-[#4A90E2]"
+                                                    }`}
                                             >
                                                 {product.imageUrl ? (
                                                     <div className="w-14 h-14 rounded-lg overflow-hidden bg-white flex-shrink-0">
@@ -2014,11 +2179,10 @@ function MealDetailPageContent() {
                                                     <div className="flex items-center gap-2">
                                                         <span className="font-medium text-gray-900 text-sm line-clamp-2">{product.name}</span>
                                                         {product.avoidWarning && (
-                                                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 ${
-                                                                product.avoidWarning.rule === "NEVER_INCLUDE"
-                                                                    ? "bg-red-100 text-red-700"
-                                                                    : "bg-amber-100 text-amber-700"
-                                                            }`}>
+                                                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 ${product.avoidWarning.rule === "NEVER_INCLUDE"
+                                                                ? "bg-red-100 text-red-700"
+                                                                : "bg-amber-100 text-amber-700"
+                                                                }`}>
                                                                 <AlertTriangle className="w-3 h-3" />
                                                                 {product.avoidWarning.rule === "NEVER_INCLUDE" ? "Allergy" : "Avoid"}
                                                             </span>

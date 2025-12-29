@@ -53,13 +53,14 @@ export async function logFoodEvent(
     const { mealTime, dayType } = getCurrentContext();
 
     // Build context from current time and params
+    // Only include defined values (Firestore rejects undefined)
     const context: FoodEventContext = {
       mealTime:
         (params.meal?.mealType as FoodEventContext["mealTime"]) || mealTime,
       dayType,
-      audience: params.audience,
-      storeProvider: params.storeProvider,
-      storeId: params.storeId,
+      ...(params.audience && { audience: params.audience }),
+      ...(params.storeProvider && { storeProvider: params.storeProvider }),
+      ...(params.storeId && { storeId: params.storeId }),
     };
 
     // Build payload with normalized keys

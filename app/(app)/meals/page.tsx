@@ -57,9 +57,9 @@ type MealsMeta = {
 
 type StoredMealsPayload =
     | {
-    meals: Meal[];
-    meta?: MealsMeta;
-}
+        meals: Meal[];
+        meta?: MealsMeta;
+    }
     | Meal[];
 
 type StreamEvent =
@@ -214,6 +214,7 @@ function MealsPageContent() {
 
                             case "error":
                                 setStreamError(event.message);
+                                setStreamStatus("");
                                 setLoadingMeals(false);
                                 break;
 
@@ -221,7 +222,7 @@ function MealsPageContent() {
                                 setStreamComplete(true);
                                 setStreamStatus("");
                                 // Log event
-                                logUserEvent(uid, { type: "prompt_submitted", prompt }).catch(() => {});
+                                logUserEvent(uid, { type: "prompt_submitted", prompt }).catch(() => { });
                                 break;
                         }
                     } catch {
@@ -495,6 +496,7 @@ function MealsPageContent() {
                                             </span>
                                         ) : undefined
                                     }
+                                    dietType={prefs?.dietType as string | undefined}
                                 />
                             ))}
                         </div>

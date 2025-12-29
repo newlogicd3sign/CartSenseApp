@@ -36,8 +36,8 @@ async function logFoodEventServer(
 
         const mealTime = mealType || (
             hour >= 5 && hour < 11 ? "breakfast" :
-            hour >= 11 && hour < 15 ? "lunch" :
-            hour >= 17 && hour < 21 ? "dinner" : "snack"
+                hour >= 11 && hour < 15 ? "lunch" :
+                    hour >= 17 && hour < 21 ? "dinner" : "snack"
         );
 
         const context: FoodEventContext = {
@@ -63,6 +63,91 @@ async function logFoodEventServer(
 }
 
 const FREE_CHAT_MONTHLY_LIMIT = 6;
+
+// Sensitivity keywords mapping for post-validation
+const SENSITIVITY_KEYWORDS: Record<string, string[]> = {
+    "dairy": ["milk", "cheese", "yogurt", "butter", "cream", "whey", "casein", "ghee", "ricotta", "mozzarella", "cheddar", "parmesan"],
+    "eggs": ["egg", "eggs", "mayonnaise", "mayo"],
+    "fish": ["fish", "salmon", "tuna", "cod", "tilapia", "halibut", "trout", "sardine", "anchovy"],
+    "shellfish": ["shrimp", "crab", "lobster", "clam", "mussel", "oyster", "scallop", "prawn", "calamari"],
+    "peanuts": ["peanut", "peanuts", "peanut butter"],
+    "tree nuts": ["almond", "walnut", "cashew", "pecan", "pistachio", "macadamia", "hazelnut"],
+    "wheat/gluten": ["bread", "pasta", "flour", "wheat", "gluten", "noodle", "couscous"],
+    "soy": ["soy", "tofu", "tempeh", "edamame", "miso"],
+    "sesame": ["sesame", "tahini"],
+    "red meat": ["beef", "steak", "pork", "lamb", "bacon", "ham", "sausage", "ribs", "brisket", "veal", "venison"],
+    "lactose": ["milk", "cream", "ice cream", "soft cheese", "yogurt"],
+    "gluten sensitivity": ["bread", "pasta", "flour", "wheat", "noodle", "couscous"],
+};
+
+type DietaryViolation = {
+    ingredientName: string;
+    violationType: "allergy" | "sensitivity" | "doctor_blocked";
+    restriction: string;
+};
+
+// Validate meal ingredients against user restrictions
+function validateMealIngredients(
+    ingredients: { name: string }[],
+    allergies: string[],
+    sensitivities: string[],
+    doctorBlockedIngredients?: string[]
+): DietaryViolation[] {
+    const violations: DietaryViolation[] = [];
+
+    for (const ingredient of ingredients) {
+        const ingredientLower = ingredient.name.toLowerCase();
+
+        // Check allergies
+        for (const allergy of allergies) {
+            const allergyLower = allergy.toLowerCase();
+            const keywords = SENSITIVITY_KEYWORDS[allergyLower] || [allergyLower];
+
+            for (const keyword of keywords) {
+                if (ingredientLower.includes(keyword)) {
+                    violations.push({
+                        ingredientName: ingredient.name,
+                        violationType: "allergy",
+                        restriction: allergy
+                    });
+                    break;
+                }
+            }
+        }
+
+        // Check sensitivities
+        for (const sensitivity of sensitivities) {
+            const sensitivityLower = sensitivity.toLowerCase();
+            const keywords = SENSITIVITY_KEYWORDS[sensitivityLower] || [sensitivityLower];
+
+            for (const keyword of keywords) {
+                if (ingredientLower.includes(keyword)) {
+                    violations.push({
+                        ingredientName: ingredient.name,
+                        violationType: "sensitivity",
+                        restriction: sensitivity
+                    });
+                    break;
+                }
+            }
+        }
+
+        // Check doctor-blocked ingredients
+        if (doctorBlockedIngredients) {
+            for (const blocked of doctorBlockedIngredients) {
+                if (ingredientLower.includes(blocked.toLowerCase())) {
+                    violations.push({
+                        ingredientName: ingredient.name,
+                        violationType: "doctor_blocked",
+                        restriction: blocked
+                    });
+                }
+            }
+        }
+    }
+
+    return violations;
+}
 
 // These types mirror what you're already using in /api/meals and MealDetailPage
 
@@ -109,6 +194,11 @@ type UserPrefs = {
         sensitivities?: string[];
     };
     dislikedFoods?: string[];
+    doctorDietInstructions?: {
+        hasActiveNote?: boolean;
+        blockedIngredients?: string[];
+        blockedGroups?: string[];
+    };
 };
 
 type MealThreadReply = {
@@ -139,7 +229,9 @@ const SYSTEM_PROMPT = `You are CartSense, an AI meal editor. Customize the given
 
 RULES:
 - Respect allergies/sensitivities/dislikes (STRICT)
-- Minimal edits - only change what's needed
+- Minimal edits - only change what's needed for simple fixes. HOWEVER:
+- ALWAYS fulfill explicit user requests (e.g. "make it spicy", "add protein", "create a variant"). NEVER refuse a request because "no modifications are needed". If the user wants a change, MAKE IT.
+- If the user asks for a "variant", change at least 2-3 significant ingredients or the cooking method to feel distinct while keeping the core concept.
 - Heart-conscious by default
 - If change is major (new recipe), use "new_meal_variant"
 - IMPORTANT: Be semantic about dislikes. If someone dislikes "tomatoes", they typically still enjoy tomato sauce, ketchup, or cooked tomato products. If they dislike "mushrooms", they mean whole mushrooms, not mushroom powder/extract in sauces. Apply common sense.
@@ -153,7 +245,7 @@ updatedMeal shape:
 KEY RULES:
 - macros = PER SERVING
 - cookTimeRange = estimated cook time in minutes as a range (min to max) accounting for skill variance
-- grocerySearchTerm = raw product (no prep words). "diced onion" → "yellow onion"
+- grocerySearchTerm: MUST be the RAW, UNCOOKED, WHOLE product. NEVER use "cooked", "grilled", "roasted", "baked", "sliced", "diced" here. "diced onion" -> "yellow onion", "cooked chicken" -> "boneless skinless chicken breast".
 - Include all seasonings with measurements
 - Steps: detailed, food-blogger style`;
 
@@ -232,6 +324,9 @@ export async function POST(request: Request) {
             },
             dislikedFoods: prefs?.dislikedFoods ?? [],
         };
+
+        // Extract doctor instructions for validation
+        const doctorBlockedIngredients = prefs?.doctorDietInstructions?.blockedIngredients ?? [];
 
         // Build conversation history for OpenAI (limit to last 5 exchanges to keep costs low)
         const safeHistory = Array.isArray(history) ? history.slice(-10) : [];
@@ -320,7 +415,20 @@ export async function POST(request: Request) {
             );
         }
 
-        // Optionally you could do some light validation on updatedMeal here
+        // Validate updated meal against dietary restrictions
+        let dietaryWarnings: DietaryViolation[] = [];
+        if (parsed.updatedMeal && parsed.updatedMeal.ingredients) {
+            dietaryWarnings = validateMealIngredients(
+                parsed.updatedMeal.ingredients,
+                safePrefs.allergiesAndSensitivities?.allergies || [],
+                safePrefs.allergiesAndSensitivities?.sensitivities || [],
+                doctorBlockedIngredients
+            );
+
+            if (dietaryWarnings.length > 0) {
+                console.log("[MEAL-THREAD] Dietary violations found in updated meal:", dietaryWarnings);
+            }
+        }
 
         // Increment chat count for free users after successful response
         let newMonthlyChatCount = monthlyChatCount;
@@ -378,7 +486,11 @@ export async function POST(request: Request) {
             }
         }
 
-        return NextResponse.json({ ...parsed, monthlyChatCount: newMonthlyChatCount }, { status: 200 });
+        return NextResponse.json({
+            ...parsed,
+            monthlyChatCount: newMonthlyChatCount,
+            dietaryWarnings: dietaryWarnings.length > 0 ? dietaryWarnings : undefined,
+        }, { status: 200 });
     } catch (error) {
         console.error("Error in /api/meal-thread:", error);
         return NextResponse.json(

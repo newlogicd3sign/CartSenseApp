@@ -382,9 +382,10 @@ export async function POST(request: Request) {
         }
 
         // Save items to pantry for future reference
+        // Use originalName (ingredient name) not product name for better matching
         try {
             const pantryItems = foundItems.map((item) => ({
-                name: item.product?.name || item.originalName,
+                name: item.originalName,
                 quantity: item.calculatedUnits || item.count,
             }));
             await addToPantry(userId, pantryItems, "cart_added");

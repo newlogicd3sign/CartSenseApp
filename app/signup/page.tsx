@@ -40,8 +40,23 @@ export default function SignupPage() {
         try {
             const cred = await createUserWithEmailAndPassword(auth, email, password);
 
-            // Send email verification (uses Firebase's default handler)
-            await sendEmailVerification(cred.user);
+            // Send custom email verification via Resend
+            const res = await fetch("/api/auth/send-verification", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email }),
+            });
+
+            if (!res.ok) {
+                const errorData = await res.json();
+                console.error("Verification email failed:", errorData);
+                // We don't block signup, but we should log it. 
+                // Alternatively, we could throw to let the user know.
+                // Let's silently fail but log it, so user flow isn't broken, 
+                // but maybe show a toast warning? 
+                // Actually, relying on the catch block below is better if we want them to know.
+                throw new Error("Account created, but failed to send verification email: " + (errorData.error || res.statusText));
+            }
 
             // Check if this email was previously deleted (to prevent abuse)
             const emailLower = email.toLowerCase();

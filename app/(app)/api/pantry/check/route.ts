@@ -30,7 +30,9 @@ export async function POST(request: Request) {
       );
     }
 
+    console.log(`[Pantry Check] Checking ${body.ingredients.length} ingredients for user ${body.userId}`);
     const inPantry = await checkPantryItems(body.userId, body.ingredients);
+    console.log(`[Pantry Check] Found ${inPantry.size} items in pantry:`, Array.from(inPantry));
 
     return NextResponse.json({
       success: true,

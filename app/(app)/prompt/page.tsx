@@ -6,10 +6,12 @@ import { auth, db } from "@/lib/firebaseClient";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc, collection, getDocs, query, where } from "firebase/firestore";
 import { getRandomAccentColor, getRandomAccentColorExcluding, ACCENT_COLORS, type AccentColor } from "@/lib/utils";
-import { Sparkles, UtensilsCrossed, ChefHat, Soup, Pizza, Salad, Sandwich, Croissant, Apple, Carrot, Beef, Fish, Citrus, Drumstick, Wheat, Ham, CookingPot, Hamburger, ShieldCheck, HeartPulse, Users, ChevronRight, Clock, Wallet, Baby, CalendarDays, Home, Lightbulb, ChevronDown } from "lucide-react";
+import { Sparkles, UtensilsCrossed, ChefHat, Soup, Pizza, Salad, Sandwich, Croissant, Apple, Carrot, Beef, Fish, Citrus, Drumstick, Wheat, Ham, CookingPot, Hamburger, ShieldCheck, HeartPulse, Users, ChevronRight, Clock, Wallet, Baby, CalendarDays, Home, Lightbulb, ChevronDown, Bean } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { loadGeneratedMeals } from "@/lib/mealStorage";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { DietaryConflictModal } from "@/components/DietaryConflictModal";
+import { checkPromptForConflicts, type ConflictResult, type FamilyMemberRestrictions } from "@/lib/sensitivityMapping";
 
 const foodIcons = [
     UtensilsCrossed,
@@ -31,8 +33,12 @@ const foodIcons = [
     Hamburger,
 ];
 
-function getRandomFoodIcon() {
-    return foodIcons[Math.floor(Math.random() * foodIcons.length)];
+function getRandomFoodIcon(dietType?: string) {
+    let available = foodIcons;
+    if (dietType === "vegetarian" || dietType === "vegan") {
+        available = foodIcons.filter(icon => ![Beef, Fish, Drumstick, Ham, Hamburger].includes(icon));
+    }
+    return available[Math.floor(Math.random() * available.length)];
 }
 
 const foodGreetings = [
@@ -91,7 +97,7 @@ const quickPrompts = [
     { label: "High protein meals", icon: Beef, prompt: "High protein meals for muscle building" },
     { label: "Budget-friendly", icon: Wallet, prompt: "Budget-friendly meals using pantry staples" },
     { label: "Healthy lunch ideas", icon: Salad, prompt: "Healthy lunch ideas that are filling" },
-    { label: "Meal prep Sunday", icon: CalendarDays, prompt: "Meal prep recipes for the week" },
+    { label: "Weekly meal plan", icon: CalendarDays, prompt: "Meal prep recipes for the week" },
     { label: "Kid-friendly", icon: Baby, prompt: "Kid-friendly meals the whole family will love" },
 ];
 
@@ -130,9 +136,19 @@ export default function PromptPage() {
     const [blockedIngredients, setBlockedIngredients] = useState<string[]>([]);
     const [blockedGroups, setBlockedGroups] = useState<string[]>([]);
 
+    // User dietary restrictions state
+    const [userAllergies, setUserAllergies] = useState<string[]>([]);
+    const [userSensitivities, setUserSensitivities] = useState<string[]>([]);
+    const [userDietType, setUserDietType] = useState<string | undefined>();
+
+    // Conflict modal state
+    const [showConflictModal, setShowConflictModal] = useState(false);
+    const [detectedConflicts, setDetectedConflicts] = useState<ConflictResult["conflicts"]>([]);
+
     // Family members state
     const [activeFamilyMemberCount, setActiveFamilyMemberCount] = useState(0);
     const [activeFamilyMemberNames, setActiveFamilyMemberNames] = useState<string[]>([]);
+    const [familyMemberRestrictions, setFamilyMemberRestrictions] = useState<FamilyMemberRestrictions[]>([]);
 
     // Stored meals state (for "View Previous Meals" option)
     const [hasStoredMeals, setHasStoredMeals] = useState(false);
@@ -258,9 +274,23 @@ export default function PromptPage() {
                         setBlockedIngredients(dietInstructions.blockedIngredients || []);
                         setBlockedGroups(dietInstructions.blockedGroups || []);
                     }
+
+                    // Load user allergies and sensitivities
+                    const allergiesAndSensitivities = data.allergiesAndSensitivities;
+                    if (allergiesAndSensitivities) {
+                        setUserAllergies(allergiesAndSensitivities.allergies || []);
+                        setUserSensitivities(allergiesAndSensitivities.sensitivities || []);
+                    }
+
+                    // Load diet type
+                    if (data.dietType) {
+                        setUserDietType(data.dietType);
+                        // Update icon immediately if diet type found
+                        setFoodIcon(() => getRandomFoodIcon(data.dietType));
+                    }
                 }
 
-                // Load active family members
+                // Load active family members with their dietary restrictions
                 try {
                     const membersQuery = query(
                         collection(db, "users", firebaseUser.uid, "familyMembers"),
@@ -268,14 +298,27 @@ export default function PromptPage() {
                     );
                     const membersSnap = await getDocs(membersQuery);
                     const activeMembers: string[] = [];
+                    const memberRestrictions: FamilyMemberRestrictions[] = [];
+
                     membersSnap.forEach((docSnap) => {
                         const memberData = docSnap.data();
                         if (memberData.name) {
                             activeMembers.push(memberData.name);
+
+                            // Collect dietary restrictions for conflict checking
+                            memberRestrictions.push({
+                                name: memberData.name,
+                                allergies: memberData.allergiesAndSensitivities?.allergies || [],
+                                sensitivities: memberData.allergiesAndSensitivities?.sensitivities || [],
+                                dietType: memberData.dietType,
+                                blockedIngredients: memberData.doctorDietInstructions?.blockedIngredients || [],
+                                blockedGroups: memberData.doctorDietInstructions?.blockedGroups || []
+                            });
                         }
                     });
                     setActiveFamilyMemberCount(activeMembers.length);
                     setActiveFamilyMemberNames(activeMembers);
+                    setFamilyMemberRestrictions(memberRestrictions);
                 } catch (err) {
                     console.error("Error loading family members", err);
                 }
@@ -285,6 +328,18 @@ export default function PromptPage() {
 
         return () => unsub();
     }, [router]);
+
+    // Navigate to meals page with the current prompt
+    const navigateToMeals = (promptText: string) => {
+        const params = new URLSearchParams({
+            prompt: promptText,
+            stream: "true",
+        });
+        if (pantryMode) {
+            params.set("pantryMode", "true");
+        }
+        router.push(`/meals?${params.toString()}`);
+    };
 
     const handleSubmit = () => {
         const trimmed = prompt.trim();
@@ -299,16 +354,72 @@ export default function PromptPage() {
             return;
         }
 
-        // Navigate immediately to meals page with stream=true
-        // The meals page will handle the streaming
-        const params = new URLSearchParams({
-            prompt: trimmed,
-            stream: "true",
-        });
-        if (pantryMode) {
-            params.set("pantryMode", "true");
+        // Check for conflicts with user's and family members' dietary restrictions
+        const conflictResult = checkPromptForConflicts(
+            trimmed,
+            userAllergies,
+            userSensitivities,
+            userDietType,
+            blockedIngredients,
+            blockedGroups,
+            familyMemberRestrictions
+        );
+
+        if (conflictResult.hasConflict) {
+            // Show conflict modal for all conflicts (allergies, sensitivities, diet, doctor-blocked)
+            setDetectedConflicts(conflictResult.conflicts);
+            setShowConflictModal(true);
+            return;
         }
-        router.push(`/meals?${params.toString()}`);
+
+        // No conflicts, navigate immediately
+        navigateToMeals(trimmed);
+    };
+
+    // Handle proceeding despite conflicts
+    const handleProceedWithConflicts = () => {
+        setShowConflictModal(false);
+
+        // Only modify prompt for CRITICAL conflicts (allergies, doctor-blocked)
+        // For sensitivities, user explicitly wants the ingredient, so don't modify
+        const criticalConflictingItems = new Set<string>();
+        for (const conflict of detectedConflicts) {
+            if (conflict.type === "allergy" || conflict.type === "doctor_blocked") {
+                criticalConflictingItems.add(conflict.matchedKeyword);
+            }
+        }
+
+        // Modify the prompt ONLY if there are critical conflicts
+        const originalPrompt = prompt.trim();
+        const modifiedPrompt = criticalConflictingItems.size > 0
+            ? `${originalPrompt} (but make it safe for my dietary restrictions - avoid ${Array.from(criticalConflictingItems).join(", ")} and use suitable alternatives)`
+            : originalPrompt;
+
+        navigateToMeals(modifiedPrompt);
+    };
+
+    // Handle quick prompt selection with conflict checking
+    const handleQuickPrompt = (quickPromptText: string) => {
+        const conflictResult = checkPromptForConflicts(
+            quickPromptText,
+            userAllergies,
+            userSensitivities,
+            userDietType,
+            blockedIngredients,
+            blockedGroups,
+            familyMemberRestrictions
+        );
+
+        if (conflictResult.hasConflict) {
+            // Set the prompt so the modal shows the correct text
+            setPrompt(quickPromptText);
+            setDetectedConflicts(conflictResult.conflicts);
+            setShowConflictModal(true);
+            return;
+        }
+
+        // No conflicts, navigate immediately
+        navigateToMeals(quickPromptText);
     };
 
     if (loadingUser) {
@@ -345,17 +456,15 @@ export default function PromptPage() {
                     {/* Pantry Mode Card */}
                     <button
                         onClick={() => setPantryMode(!pantryMode)}
-                        className={`w-full rounded-2xl p-4 mb-6 flex items-center justify-between transition-all ${animateFromSetup ? "animate-content-after-greeting" : ""} ${
-                            pantryMode
-                                ? "bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-400"
-                                : "bg-white border border-gray-200 hover:border-gray-300 hover:shadow-sm"
-                        }`}
+                        className={`w-full rounded-2xl p-4 mb-6 flex items-center justify-between transition-all ${animateFromSetup ? "animate-content-after-greeting" : ""} ${pantryMode
+                            ? "bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-400"
+                            : "bg-white border border-gray-200 hover:border-gray-300 hover:shadow-sm"
+                            }`}
                     >
                         <div className="flex items-center gap-3">
                             <div
-                                className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                                    pantryMode ? "bg-amber-100" : "bg-gray-100"
-                                }`}
+                                className={`w-10 h-10 rounded-xl flex items-center justify-center ${pantryMode ? "bg-amber-100" : "bg-gray-100"
+                                    }`}
                             >
                                 <Home className={`w-5 h-5 ${pantryMode ? "text-amber-600" : "text-gray-500"}`} />
                             </div>
@@ -372,14 +481,12 @@ export default function PromptPage() {
                         </div>
                         {/* Toggle Switch */}
                         <div
-                            className={`w-12 h-7 rounded-full p-1 transition-colors ${
-                                pantryMode ? "bg-amber-500" : "bg-gray-200"
-                            }`}
+                            className={`w-12 h-7 rounded-full p-1 transition-colors ${pantryMode ? "bg-amber-500" : "bg-gray-200"
+                                }`}
                         >
                             <div
-                                className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${
-                                    pantryMode ? "translate-x-5" : "translate-x-0"
-                                }`}
+                                className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${pantryMode ? "translate-x-5" : "translate-x-0"
+                                    }`}
                             />
                         </div>
                     </button>
@@ -398,9 +505,8 @@ export default function PromptPage() {
                         <div className="mt-3">
                             <button
                                 onClick={() => setShowTips(!showTips)}
-                                className={`flex items-center gap-2 transition-colors ${
-                                    pantryMode ? "text-amber-600 hover:text-amber-700" : "text-gray-500 hover:text-gray-700"
-                                }`}
+                                className={`flex items-center gap-2 transition-colors ${pantryMode ? "text-amber-600 hover:text-amber-700" : "text-gray-500 hover:text-gray-700"
+                                    }`}
                             >
                                 <Lightbulb className="w-5 h-5" />
                                 <span className="text-base font-medium">{showTips ? "Hide tips" : "Show tips"}</span>
@@ -497,32 +603,30 @@ export default function PromptPage() {
 
                     {/* Quick Prompt Chips */}
                     <div className={`grid grid-cols-2 gap-2 mt-3 ${animateFromSetup ? "animate-content-after-greeting" : ""}`}>
-                        {(pantryMode ? pantryQuickPrompts : quickPrompts).map((qp, index) => (
-                            <button
-                                key={qp.label}
-                                onClick={() => {
-                                    const qpParams = new URLSearchParams({
-                                        prompt: qp.prompt,
-                                        stream: "true",
-                                    });
-                                    if (pantryMode) {
-                                        qpParams.set("pantryMode", "true");
-                                    }
-                                    router.push(`/meals?${qpParams.toString()}`);
-                                }}
-                                className={`flex items-center gap-2 p-3 bg-white border rounded-xl transition-all text-left ${
-                                    pantryMode
+                        {(pantryMode ? pantryQuickPrompts : quickPrompts).map((qp, index) => {
+                            let Icon = qp.icon;
+                            // Override icon for vegetarians/vegans on high protein prompt
+                            if (qp.label === "High protein meals" && (userDietType === "vegetarian" || userDietType === "vegan")) {
+                                Icon = Bean;
+                            }
+
+                            return (
+                                <button
+                                    key={qp.label}
+                                    onClick={() => handleQuickPrompt(qp.prompt)}
+                                    className={`flex items-center gap-2 p-3 bg-white border rounded-xl transition-all text-left ${pantryMode
                                         ? "border-amber-200 hover:border-amber-400 hover:bg-amber-50/50"
                                         : "border-gray-200 hover:border-[#4A90E2] hover:bg-[#4A90E2]/5"
-                                }`}
-                            >
-                                <qp.icon
-                                    className="w-4 h-4 flex-shrink-0"
-                                    style={{ color: pantryMode ? "#d97706" : ACCENT_COLORS[index % ACCENT_COLORS.length].primary }}
-                                />
-                                <span className="text-sm font-medium text-gray-700">{qp.label}</span>
-                            </button>
-                        ))}
+                                        }`}
+                                >
+                                    <Icon
+                                        className="w-4 h-4 flex-shrink-0"
+                                        style={{ color: pantryMode ? "#d97706" : (Icon === Bean ? "#10b981" : ACCENT_COLORS[index % ACCENT_COLORS.length].primary) }}
+                                    />
+                                    <span className="text-sm font-medium text-gray-700">{qp.label}</span>
+                                </button>
+                            );
+                        })}
                     </div>
 
                     {/* Prompt Counter - Free Tier */}
@@ -536,13 +640,12 @@ export default function PromptPage() {
                             </div>
                             <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                                 <div
-                                    className={`h-full rounded-full transition-all ${
-                                        monthlyPromptCount >= monthlyPromptLimit
-                                            ? "bg-red-500"
-                                            : monthlyPromptCount >= monthlyPromptLimit * 0.8
+                                    className={`h-full rounded-full transition-all ${monthlyPromptCount >= monthlyPromptLimit
+                                        ? "bg-red-500"
+                                        : monthlyPromptCount >= monthlyPromptLimit * 0.8
                                             ? "bg-amber-500"
                                             : ""
-                                    }`}
+                                        }`}
                                     style={{
                                         width: `${Math.min((monthlyPromptCount / monthlyPromptLimit) * 100, 100)}%`,
                                         backgroundColor: monthlyPromptCount < monthlyPromptLimit * 0.8 ? accentColor.primary : undefined
@@ -576,6 +679,15 @@ export default function PromptPage() {
                     )}
                 </div>
             </div>
+
+            {/* Dietary Conflict Warning Modal */}
+            <DietaryConflictModal
+                isOpen={showConflictModal}
+                onClose={() => setShowConflictModal(false)}
+                onProceed={handleProceedWithConflicts}
+                conflicts={detectedConflicts}
+                prompt={prompt.trim()}
+            />
         </div>
     );
 }

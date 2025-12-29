@@ -85,7 +85,7 @@ type KrogerLocationSearchResult = {
 };
 
 const SHOPPING_PREFERENCE_OPTIONS = [
-    {
+    ...(process.env.NEXT_PUBLIC_ENABLE_INSTACART === 'true' ? [{
         value: "instacart",
         label: "Instacart",
         description: "Shop from multiple stores with delivery",
@@ -94,7 +94,7 @@ const SHOPPING_PREFERENCE_OPTIONS = [
             "Same-day delivery available",
             "No store account linking required",
         ],
-    },
+    }] : []),
     {
         value: "kroger",
         label: "Kroger Direct",
@@ -108,6 +108,8 @@ const SHOPPING_PREFERENCE_OPTIONS = [
 ];
 
 const TOTAL_STEPS = 7;
+const ENABLE_INSTACART = process.env.NEXT_PUBLIC_ENABLE_INSTACART === 'true';
+const VISIBLE_STEPS = ENABLE_INSTACART ? 7 : 6;
 
 function SetupPageContent() {
     const router = useRouter();
@@ -128,7 +130,7 @@ function SetupPageContent() {
     const [customSensitivity, setCustomSensitivity] = useState("");
     const [saving, setSaving] = useState(false);
     const [accentColor, setAccentColor] = useState<AccentColor>({ primary: "#3b82f6", dark: "#2563eb" });
-    const [shoppingPreference, setShoppingPreference] = useState<"kroger" | "instacart">("instacart");
+    const [shoppingPreference, setShoppingPreference] = useState<"kroger" | "instacart">("kroger");
 
     // Kroger state
     const [krogerLinked, setKrogerLinked] = useState(false);
@@ -332,11 +334,25 @@ function SetupPageContent() {
     };
 
     const nextStep = () => {
-        if (step < TOTAL_STEPS) setStep(step + 1);
+        if (step < TOTAL_STEPS) {
+            // Skip step 5 (Shopping Preference) if Instacart is disabled
+            if (step === 4 && !ENABLE_INSTACART) {
+                setStep(6);
+            } else {
+                setStep(step + 1);
+            }
+        }
     };
 
     const prevStep = () => {
-        if (step > 1) setStep(step - 1);
+        if (step > 1) {
+            // Skip step 5 (Shopping Preference) if Instacart is disabled
+            if (step === 6 && !ENABLE_INSTACART) {
+                setStep(4);
+            } else {
+                setStep(step - 1);
+            }
+        }
     };
 
     const handleLinkKroger = async () => {
@@ -536,14 +552,19 @@ function SetupPageContent() {
 
                     {/* Progress Steps */}
                     <div className="flex items-center gap-2 mb-8">
-                        {Array.from({ length: TOTAL_STEPS }, (_, i) => i + 1).map((s) => (
-                            <div
-                                key={s}
-                                className={`h-1 flex-1 rounded-full transition-colors ${
-                                    s <= step ? "bg-gray-900" : "bg-gray-200"
-                                }`}
-                            />
-                        ))}
+                        {Array.from({ length: VISIBLE_STEPS }, (_, i) => i + 1).map((s) => {
+                            // Map visual step to logical step
+                            // If Instacart disabled, visual step 5 maps to logical step 6, etc.
+                            const logicalStep = (!ENABLE_INSTACART && s >= 5) ? s + 1 : s;
+
+                            return (
+                                <div
+                                    key={s}
+                                    className={`h-1 flex-1 rounded-full transition-colors ${logicalStep <= step ? "bg-gray-900" : "bg-gray-200"
+                                        }`}
+                                />
+                            );
+                        })}
                     </div>
 
                     <form onSubmit={handleSubmit}>
@@ -597,11 +618,10 @@ function SetupPageContent() {
                                                     key={opt.value}
                                                     type="button"
                                                     onClick={() => setCookingExperience(opt.value)}
-                                                    className={`w-full p-3 rounded-lg border text-left transition-all ${
-                                                        cookingExperience === opt.value
-                                                            ? "border-gray-900 bg-gray-50"
-                                                            : "border-gray-200 hover:border-gray-300"
-                                                    }`}
+                                                    className={`w-full p-3 rounded-lg border text-left transition-all ${cookingExperience === opt.value
+                                                        ? "border-gray-900 bg-gray-50"
+                                                        : "border-gray-200 hover:border-gray-300"
+                                                        }`}
                                                 >
                                                     <span className="font-medium text-gray-900">{opt.label}</span>
                                                     <p className="text-sm text-gray-500 mt-0.5">{opt.description}</p>
@@ -626,11 +646,10 @@ function SetupPageContent() {
                                                 key={item}
                                                 type="button"
                                                 onClick={() => toggleAllergy(item)}
-                                                className={`px-4 py-2.5 rounded-full text-sm font-medium transition-all ${
-                                                    selectedAllergies.includes(item)
-                                                        ? "bg-gray-900 text-white"
-                                                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                                                }`}
+                                                className={`px-4 py-2.5 rounded-full text-sm font-medium transition-all ${selectedAllergies.includes(item)
+                                                    ? "bg-gray-900 text-white"
+                                                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                                    }`}
                                             >
                                                 {item}
                                             </button>
@@ -710,11 +729,10 @@ function SetupPageContent() {
                                                 key={item}
                                                 type="button"
                                                 onClick={() => toggleSensitivity(item)}
-                                                className={`px-4 py-2.5 rounded-full text-sm font-medium transition-all ${
-                                                    selectedSensitivities.includes(item)
-                                                        ? "bg-gray-900 text-white"
-                                                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                                                }`}
+                                                className={`px-4 py-2.5 rounded-full text-sm font-medium transition-all ${selectedSensitivities.includes(item)
+                                                    ? "bg-gray-900 text-white"
+                                                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                                    }`}
                                             >
                                                 {item}
                                             </button>
@@ -794,11 +812,10 @@ function SetupPageContent() {
                                                 key={item}
                                                 type="button"
                                                 onClick={() => toggleDislikedFood(item)}
-                                                className={`px-4 py-2.5 rounded-full text-sm font-medium transition-all ${
-                                                    selectedDislikedFoods.includes(item)
-                                                        ? "bg-gray-900 text-white"
-                                                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                                                }`}
+                                                className={`px-4 py-2.5 rounded-full text-sm font-medium transition-all ${selectedDislikedFoods.includes(item)
+                                                    ? "bg-gray-900 text-white"
+                                                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                                    }`}
                                             >
                                                 {item}
                                             </button>
@@ -878,22 +895,20 @@ function SetupPageContent() {
                                                 key={option.value}
                                                 type="button"
                                                 onClick={() => setShoppingPreference(option.value as "kroger" | "instacart")}
-                                                className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
-                                                    shoppingPreference === option.value
-                                                        ? "border-gray-900 bg-gray-50"
-                                                        : "border-gray-200 hover:border-gray-300"
-                                                }`}
+                                                className={`w-full p-4 rounded-xl border-2 text-left transition-all ${shoppingPreference === option.value
+                                                    ? "border-gray-900 bg-gray-50"
+                                                    : "border-gray-200 hover:border-gray-300"
+                                                    }`}
                                             >
                                                 <div className="flex items-start justify-between mb-2">
                                                     <div>
                                                         <h3 className="font-semibold text-gray-900">{option.label}</h3>
                                                         <p className="text-sm text-gray-500">{option.description}</p>
                                                     </div>
-                                                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                                                        shoppingPreference === option.value
-                                                            ? "border-gray-900 bg-gray-900"
-                                                            : "border-gray-300"
-                                                    }`}>
+                                                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${shoppingPreference === option.value
+                                                        ? "border-gray-900 bg-gray-900"
+                                                        : "border-gray-300"
+                                                        }`}>
                                                         {shoppingPreference === option.value && (
                                                             <div className="w-2 h-2 bg-white rounded-full" />
                                                         )}
@@ -921,7 +936,7 @@ function SetupPageContent() {
                             {step === 6 && shoppingPreference === "kroger" && (
                                 <div className="space-y-6">
                                     <div>
-                                        <h2 className="font-medium text-gray-900 mb-1">Choose Your Store</h2>
+                                        <h2 className="font-medium text-gray-900 mb-1">Choose Your Kroger Brand Store</h2>
                                         <p className="text-sm text-gray-500">
                                             Find your local store for pricing and availability
                                         </p>
@@ -954,6 +969,36 @@ function SetupPageContent() {
                                     ) : (
                                         <>
                                             <div>
+                                                {/* Marquee for supported stores */}
+                                                <div className="mb-6 rounded-xl border border-gray-200 overflow-hidden relative bg-gray-50/50">
+                                                    {/* Right Gradient Mask only - to ensure first item (Kroger) is visible at start */}
+                                                    <div className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-gray-50/50 to-transparent z-10" />
+
+                                                    <div className="flex overflow-hidden w-full py-3">
+                                                        <div className="flex animate-scroll gap-3 min-w-full items-center">
+                                                            {[
+                                                                "Kroger", "King Soopers", "Ralphs", "City Market", "Fred Meyer", "Smith's", "Fry's", "QFC",
+                                                                "Harris Teeter", "Pick 'n Save", "Mariano's", "Food 4 Less",
+                                                                "Baker's", "Dillons"
+                                                            ].map((store, i) => (
+                                                                <div key={`store-marquee-${i}`} className="flex-shrink-0 px-3 py-1.5 bg-white border border-gray-200 rounded-full text-xs font-medium text-gray-700 shadow-sm whitespace-nowrap">
+                                                                    {store}
+                                                                </div>
+                                                            ))}
+                                                            {/* Duplicate for seamless loop */}
+                                                            {[
+                                                                "Kroger", "King Soopers", "Ralphs", "City Market", "Fred Meyer", "Smith's", "Fry's", "QFC",
+                                                                "Harris Teeter", "Pick 'n Save", "Mariano's", "Food 4 Less",
+                                                                "Baker's", "Dillons"
+                                                            ].map((store, i) => (
+                                                                <div key={`store-marquee-dup-${i}`} className="flex-shrink-0 px-3 py-1.5 bg-white border border-gray-200 rounded-full text-xs font-medium text-gray-700 shadow-sm whitespace-nowrap">
+                                                                    {store}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
                                                 <label className="block text-sm font-medium text-gray-700 mb-2">
                                                     Search by ZIP Code
                                                 </label>
@@ -1072,75 +1117,75 @@ function SetupPageContent() {
                                 const storeBrand = selectedStore ? getStoreBrand(selectedStore.name) : { displayName: "Kroger", tagline: "Kroger Family of Stores" };
                                 const isGenericKroger = !selectedStore;
                                 return (
-                                <div className="space-y-6">
-                                    <div>
-                                        <h2 className="font-medium text-gray-900 mb-1">
-                                            {isGenericKroger ? "Connect Your Store Account" : `Connect Your ${storeBrand.displayName} Account`}
-                                        </h2>
-                                        <p className="text-sm text-gray-500">Link your account to add items directly to your cart</p>
+                                    <div className="space-y-6">
+                                        <div>
+                                            <h2 className="font-medium text-gray-900 mb-1">
+                                                {isGenericKroger ? "Connect Your Store Account" : `Connect Your ${storeBrand.displayName} Account`}
+                                            </h2>
+                                            <p className="text-sm text-gray-500">Link your account to add items directly to your cart</p>
+                                        </div>
+
+                                        {krogerLinked ? (
+                                            <div className="bg-green-50 border border-green-100 rounded-xl p-6 text-center">
+                                                <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                                    <CheckCircle className="w-6 h-6 text-green-600" />
+                                                </div>
+                                                <h3 className="font-medium text-green-900 mb-1">{storeBrand.displayName} Connected</h3>
+                                                <p className="text-sm text-green-700">Your account is linked and ready to use.</p>
+                                            </div>
+                                        ) : (
+                                            <div className="bg-gray-50 border border-gray-100 rounded-xl p-6 overflow-hidden relative">
+                                                <div className="flex items-center gap-4 mb-6 relative z-10">
+                                                    <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                                                        <ShoppingCart className="w-6 h-6 text-blue-600" />
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="font-medium text-gray-900">
+                                                            {isGenericKroger ? "Kroger Family of Stores" : storeBrand.displayName}
+                                                        </h3>
+                                                        <p className="text-sm text-gray-500">{storeBrand.tagline}</p>
+                                                    </div>
+                                                </div>
+
+                                                {/* Show supported stores when no specific store selected */}
+                                                {isGenericKroger && (
+                                                    <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                                                        <p className="text-xs font-medium text-blue-800 mb-2">Supported stores include:</p>
+                                                        <p className="text-xs text-blue-700 leading-relaxed">
+                                                            Kroger, Ralphs, Fred Meyer, King Soopers, Fry&apos;s, Smith&apos;s, Dillons, QFC, Harris Teeter, Pick &apos;n Save, Mariano&apos;s, Food 4 Less, City Market, Baker&apos;s, and more
+                                                        </p>
+                                                    </div>
+                                                )}
+
+                                                <ul className="space-y-2 mb-4 text-sm text-gray-600">
+                                                    <li className="flex items-center gap-2">
+                                                        <CheckCircle className="w-4 h-4 text-green-500" />
+                                                        <span>See real product prices</span>
+                                                    </li>
+                                                    <li className="flex items-center gap-2">
+                                                        <CheckCircle className="w-4 h-4 text-green-500" />
+                                                        <span>Add items directly to your {isGenericKroger ? "store" : storeBrand.displayName} cart</span>
+                                                    </li>
+                                                    <li className="flex items-center gap-2">
+                                                        <CheckCircle className="w-4 h-4 text-green-500" />
+                                                        <span>Get product availability at your store</span>
+                                                    </li>
+                                                </ul>
+                                                <button
+                                                    type="button"
+                                                    onClick={handleLinkKroger}
+                                                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2 relative z-10"
+                                                >
+                                                    <ExternalLink className="w-4 h-4" />
+                                                    <span>Connect {isGenericKroger ? "Store" : storeBrand.displayName} Account</span>
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        <p className="text-sm text-gray-400 text-center">
+                                            This step is optional. You can link your account later in settings.
+                                        </p>
                                     </div>
-
-                                    {krogerLinked ? (
-                                        <div className="bg-green-50 border border-green-100 rounded-xl p-6 text-center">
-                                            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                                <CheckCircle className="w-6 h-6 text-green-600" />
-                                            </div>
-                                            <h3 className="font-medium text-green-900 mb-1">{storeBrand.displayName} Connected</h3>
-                                            <p className="text-sm text-green-700">Your account is linked and ready to use.</p>
-                                        </div>
-                                    ) : (
-                                        <div className="bg-gray-50 border border-gray-100 rounded-xl p-6">
-                                            <div className="flex items-center gap-4 mb-4">
-                                                <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                                                    <ShoppingCart className="w-6 h-6 text-blue-600" />
-                                                </div>
-                                                <div>
-                                                    <h3 className="font-medium text-gray-900">
-                                                        {isGenericKroger ? "Kroger Family of Stores" : storeBrand.displayName}
-                                                    </h3>
-                                                    <p className="text-sm text-gray-500">{storeBrand.tagline}</p>
-                                                </div>
-                                            </div>
-
-                                            {/* Show supported stores when no specific store selected */}
-                                            {isGenericKroger && (
-                                                <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-100">
-                                                    <p className="text-xs font-medium text-blue-800 mb-2">Supported stores include:</p>
-                                                    <p className="text-xs text-blue-700 leading-relaxed">
-                                                        Kroger, Ralphs, Fred Meyer, King Soopers, Fry&apos;s, Smith&apos;s, Dillons, QFC, Harris Teeter, Pick &apos;n Save, Mariano&apos;s, Food 4 Less, City Market, Baker&apos;s, and more
-                                                    </p>
-                                                </div>
-                                            )}
-
-                                            <ul className="space-y-2 mb-4 text-sm text-gray-600">
-                                                <li className="flex items-center gap-2">
-                                                    <CheckCircle className="w-4 h-4 text-green-500" />
-                                                    <span>See real product prices</span>
-                                                </li>
-                                                <li className="flex items-center gap-2">
-                                                    <CheckCircle className="w-4 h-4 text-green-500" />
-                                                    <span>Add items directly to your {isGenericKroger ? "store" : storeBrand.displayName} cart</span>
-                                                </li>
-                                                <li className="flex items-center gap-2">
-                                                    <CheckCircle className="w-4 h-4 text-green-500" />
-                                                    <span>Get product availability at your store</span>
-                                                </li>
-                                            </ul>
-                                            <button
-                                                type="button"
-                                                onClick={handleLinkKroger}
-                                                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
-                                            >
-                                                <ExternalLink className="w-4 h-4" />
-                                                <span>Connect {isGenericKroger ? "Store" : storeBrand.displayName} Account</span>
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    <p className="text-sm text-gray-400 text-center">
-                                        This step is optional. You can link your account later in settings.
-                                    </p>
-                                </div>
                                 );
                             })()}
 
