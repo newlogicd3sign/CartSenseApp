@@ -6,7 +6,7 @@ import { onAuthStateChanged, sendEmailVerification, signOut, type User } from "f
 import { doc, setDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { Mail, RefreshCw, CheckCircle, LogOut } from "lucide-react";
+import { Mail, RefreshCw, CheckCircle, LogOut, Loader2 } from "lucide-react";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
 import { useToast } from "@/components/Toast";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -23,19 +23,19 @@ export default function VerifyEmailPage() {
     const [checking, setChecking] = useState(false);
 
     useEffect(() => {
-        const unsub = onAuthStateChanged(auth, (firebaseUser) => {
+        const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
             if (!firebaseUser) {
-                // Not logged in, redirect to login
                 router.push("/login");
                 return;
             }
 
-            // If already verified, redirect to setup
             if (firebaseUser.emailVerified) {
-                // Update Firestore
-                setDoc(doc(db, "users", firebaseUser.uid), {
-                    emailVerified: true,
-                }, { merge: true }).catch(console.error);
+                // Already verified, go to setup
+                try {
+                    await setDoc(doc(db, "users", firebaseUser.uid), {
+                        emailVerified: true,
+                    }, { merge: true });
+                } catch (e) { console.error("Error updating user doc", e); }
 
                 router.push("/setup");
                 return;
@@ -45,7 +45,36 @@ export default function VerifyEmailPage() {
             setLoading(false);
         });
 
-        return () => unsub();
+        // Poll for verification status every 3 seconds
+        const pollInterval = setInterval(async () => {
+            if (auth.currentUser && !auth.currentUser.emailVerified) {
+                await auth.currentUser.reload();
+                if (auth.currentUser.emailVerified) {
+                    // Force token refresh to update claims
+                    await auth.currentUser.getIdToken(true);
+                    router.push("/setup");
+                }
+            }
+        }, 3000);
+
+        // Also check when window gains focus (user tabs back)
+        const onFocus = async () => {
+            if (auth.currentUser && !auth.currentUser.emailVerified) {
+                await auth.currentUser.reload();
+                if (auth.currentUser.emailVerified) {
+                    await auth.currentUser.getIdToken(true);
+                    router.push("/setup");
+                }
+            }
+        };
+
+        window.addEventListener("focus", onFocus);
+
+        return () => {
+            unsub();
+            clearInterval(pollInterval);
+            window.removeEventListener("focus", onFocus);
+        };
     }, [router]);
 
     const handleResendVerification = async () => {
@@ -54,8 +83,12 @@ export default function VerifyEmailPage() {
         setResending(true);
 
         try {
-            // Send email verification (uses Firebase's default handler)
-            await sendEmailVerification(user);
+            // Send custom email verification via Resend
+            await fetch("/api/auth/send-verification", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: user.email }),
+            });
             showToast("Verification email sent! Check your inbox.", "success");
         } catch (error: any) {
             if (error.code === "auth/too-many-requests") {
@@ -151,32 +184,31 @@ export default function VerifyEmailPage() {
 
                         {/* Action Buttons */}
                         <div className="space-y-3">
-                            {/* Check Verification Button */}
-                            <Button
-                                onClick={handleCheckVerification}
-                                loading={checking}
-                                fullWidth
-                                size="lg"
-                                icon={!checking ? <CheckCircle className="w-5 h-5" /> : undefined}
-                                className="rounded-2xl py-4"
-                            >
-                                {checking ? "Checking..." : "I've Verified My Email"}
-                            </Button>
-
                             {/* Resend Button */}
                             <Button
                                 onClick={handleResendVerification}
                                 disabled={resending}
-                                loading={resending}
-                                variant="outline"
-                                fullWidth
-                                icon={!resending ? <RefreshCw className="w-4 h-4" /> : undefined}
+                                className="w-full bg-orange-600 hover:bg-orange-700 text-white"
                             >
-                                {resending ? "Sending..." : "Resend Verification Email"}
+                                {resending ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                        Sending...
+                                    </>
+                                ) : (
+                                    "Resend Verification Email"
+                                )}
                             </Button>
                         </div>
 
-                        {/* Sign Out Link */}
+                        <div className="mt-6 text-center">
+                            <button
+                                onClick={() => router.push("/login")}
+                                className="text-sm text-gray-500 hover:text-gray-900 transition-colors"
+                            >
+                                Back to Login
+                            </button>
+                        </div>
                         <div className="mt-6 pt-6 border-t border-gray-100">
                             <button
                                 onClick={handleSignOut}

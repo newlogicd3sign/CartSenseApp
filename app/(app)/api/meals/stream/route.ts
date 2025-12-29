@@ -324,7 +324,7 @@ async function getOrGenerateImage(meal: Meal): Promise<string | undefined> {
             const permanentUrl = await uploadImageToCloudinary(cacheKey, imageBuffer);
 
             // Cache the permanent URL in Firestore
-            cacheImage(cacheKey, permanentUrl, meal.name).catch(() => {});
+            cacheImage(cacheKey, permanentUrl, meal.name).catch(() => { });
 
             return permanentUrl;
         }
@@ -968,8 +968,10 @@ VARIETY RULE: Do NOT suggest these exact recipes again. You CAN use the same ing
 
 TOPIC VALIDATION (FIRST PRIORITY):
 Before generating meals, determine if the user's request is related to food, cooking, meals, recipes, nutrition, or grocery shopping.
-- If the request is NOT food-related (e.g., health advice, quitting habits, relationship questions, coding help, general life advice, medical conditions not related to diet), respond ONLY with: {"error": "off_topic", "message": "I'm a meal planning assistant. I can help you with recipes, meal ideas, and grocery planning. What would you like to eat?"}
-- If the request IS food-related, proceed with meal generation.
+- FOOD-RELATED requests include: any dish name (e.g., "beef tacos", "pasta", "cookies"), ingredients (e.g., "chicken", "vegetables"), cuisines (e.g., "Italian", "Korean"), dietary preferences (e.g., "high protein", "low carb"), meal types (e.g., "breakfast", "dinner", "snack"), or cooking methods (e.g., "grilled", "baked"). These should ALL proceed with meal generation.
+- NON-FOOD requests include: health advice unrelated to diet, relationship questions, coding help, general life advice, financial advice, etc. Only these should return the off-topic error.
+- If the request is NOT food-related, respond ONLY with: {"error": "off_topic", "message": "I'm a meal planning assistant. I can help you with recipes, meal ideas, and grocery planning. What would you like to eat?"}
+- If the request IS food-related (which includes ANY dish, ingredient, or cuisine name), proceed with meal generation.
 
 RULES: Respect allergies/doctor restrictions (STRICT). Heart-conscious by default. U.S. grocery ingredients.
 ${allergyWarning}${dislikesGuidance}${cookingGuidance}
@@ -988,10 +990,17 @@ KEY RULES:
   - Simple meals: range of 10-15 min (e.g., {"min":15,"max":25})
   - Moderate meals: range of 15-20 min (e.g., {"min":30,"max":50})
   - Complex meals: range of 20-30 min (e.g., {"min":45,"max":75})
-- grocerySearchTerm = raw product (no prep words). "diced onion" → "yellow onion"
+- grocerySearchTerm: MUST be the RAW, UNCOOKED, WHOLE product. NEVER use "cooked", "grilled", "roasted", "baked", "sliced", "diced" here. "diced onion" -> "yellow onion", "cooked chicken" -> "boneless skinless chicken breast".
 - Include seasonings in ingredients
 - description: 1 sentence max
 - steps: 5-7 steps, written in a warm food blogger style. Be conversational and enthusiastic! Include specific seasoning tips (e.g., "season generously with salt and pepper", "add a pinch of red pepper flakes for heat"). Explain WHY certain techniques matter (e.g., "let the onions caramelize until golden - this builds amazing flavor"). Share little tips like "taste and adjust seasoning as you go!"
+
+MEAL TYPE CLASSIFICATION:
+- breakfast: Morning meals (eggs, pancakes, oatmeal, smoothies, breakfast sandwiches)
+- lunch: Midday meals (sandwiches, salads, soups, wraps, light entrees)
+- dinner: Evening meals (main courses, hearty entrees, complete meals with protein and sides)
+- snack: Light bites, desserts, cookies, treats, energy bites, fruit dishes, yogurt parfaits, anything sweet or dessert-like
+IMPORTANT: Desserts, cookies, brownies, cakes, ice cream, and any sweet treats should ALWAYS be classified as "snack", never as dinner or other meal types.
 
 CRITICAL - MEAL TYPE DISTRIBUTION:
 ${mealCountInstruction}${isBroadRequest ? `\nDo NOT return all the same mealType. You must vary the mealType field across meals.` : ``}`;

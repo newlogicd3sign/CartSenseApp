@@ -9,6 +9,7 @@ import {
     onSnapshot,
     deleteDoc,
     doc,
+    getDoc,
     query,
     orderBy,
 } from "firebase/firestore";
@@ -61,6 +62,8 @@ export default function SavedMealsPage() {
 
     const [user, setUser] = useState<User | null>(null);
     const [loadingUser, setLoadingUser] = useState(true);
+    const [dietType, setDietType] = useState<string | undefined>(undefined);
+    const [isPremium, setIsPremium] = useState(false);
 
     const [meals, setMeals] = useState<SavedMeal[]>([]);
     const [loadingMeals, setLoadingMeals] = useState(true);
@@ -74,13 +77,31 @@ export default function SavedMealsPage() {
     }, []);
 
     useEffect(() => {
-        const unsub = onAuthStateChanged(auth, (firebaseUser) => {
+        const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
             if (!firebaseUser) {
                 router.push("/login");
                 return;
             }
 
             setUser(firebaseUser);
+
+            // Fetch user profile for diet type
+            try {
+                const docRef = doc(db, "users", firebaseUser.uid);
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    if (data.dietType) {
+                        setDietType(data.dietType);
+                    }
+                    if (data.isPremium) {
+                        setIsPremium(data.isPremium);
+                    }
+                }
+            } catch (err) {
+                console.error("Error fetching user profile", err);
+            }
+
             setLoadingUser(false);
         });
 
@@ -99,8 +120,8 @@ export default function SavedMealsPage() {
             q,
             (snapshot) => {
                 const docs: SavedMeal[] = snapshot.docs.map((d) => ({
-                    id: d.id,
                     ...(d.data() as Omit<SavedMeal, "id">),
+                    id: d.id,
                 }));
                 setMeals(docs);
                 setLoadingMeals(false);
@@ -240,6 +261,7 @@ export default function SavedMealsPage() {
                                             <Trash2 className="w-3.5 h-3.5" />
                                         </button>
                                     }
+                                    dietType={dietType}
                                 />
                             ))}
                         </div>

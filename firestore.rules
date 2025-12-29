@@ -28,6 +28,16 @@ service cloud.firestore {
       allow read, create, update, delete: if request.auth != null && request.auth.uid == uid;
     }
 
+    // Shopping lists - user can CRUD their own items
+    match /shoppingLists/{uid}/items/{itemId} {
+      allow read, create, update, delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Pantry items - user can CRUD their own items
+    match /pantryItems/{uid}/items/{itemId} {
+      allow read, create, update, delete: if request.auth != null && request.auth.uid == uid;
+    }
+
     // Meal image cache - publicly readable, server-side write only
     match /mealImageCache/{documentId} {
       allow read: if true;

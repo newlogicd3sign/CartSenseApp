@@ -142,10 +142,13 @@ export async function checkPantryItems(
     pantryKeys.add(data.ingredientKey);
   });
 
+  console.log(`[Pantry] User has ${pantryKeys.size} items in pantry:`, Array.from(pantryKeys));
+
   // Check which requested ingredients are in pantry
   const inPantry = new Set<string>();
   for (const name of ingredientNames) {
     const key = normalizeIngredientKey(name);
+    console.log(`[Pantry] Checking "${name}" -> normalized key: "${key}" -> in pantry: ${pantryKeys.has(key)}`);
     if (pantryKeys.has(key)) {
       inPantry.add(key);
     }

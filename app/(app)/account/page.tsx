@@ -838,6 +838,18 @@ function AccountPageContent() {
         resetMemberForm();
     };
 
+    // Handle hash scrolling after data load
+    useEffect(() => {
+        if (!loadingLocations && window.location.hash) {
+            const id = window.location.hash.replace("#", "");
+            const element = document.getElementById(id);
+            if (element) {
+                setTimeout(() => {
+                    element.scrollIntoView({ behavior: "smooth", block: "start" });
+                }, 100);
+            }
+        }
+    }, [loadingLocations, locations]);
     const handleSaveMember = async () => {
         if (!user) return;
         if (!memberName.trim()) {
@@ -1242,13 +1254,12 @@ function AccountPageContent() {
                                     </div>
                                     <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
                                         <div
-                                            className={`h-full rounded-full transition-all ${
-                                                usagePercent >= 100
-                                                    ? "bg-red-500"
-                                                    : usagePercent >= 80
+                                            className={`h-full rounded-full transition-all ${usagePercent >= 100
+                                                ? "bg-red-500"
+                                                : usagePercent >= 80
                                                     ? "bg-amber-500"
                                                     : "bg-purple-500"
-                                            }`}
+                                                }`}
                                             style={{ width: `${usagePercent}%` }}
                                         />
                                     </div>
@@ -1305,13 +1316,12 @@ function AccountPageContent() {
                                     </div>
                                     <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
                                         <div
-                                            className={`h-full rounded-full transition-all ${
-                                                monthlyCount >= FREE_TIER_MONTHLY_LIMIT
-                                                    ? "bg-red-500"
-                                                    : monthlyCount >= FREE_TIER_MONTHLY_LIMIT * 0.8
+                                            className={`h-full rounded-full transition-all ${monthlyCount >= FREE_TIER_MONTHLY_LIMIT
+                                                ? "bg-red-500"
+                                                : monthlyCount >= FREE_TIER_MONTHLY_LIMIT * 0.8
                                                     ? "bg-amber-500"
                                                     : "bg-purple-500"
-                                            }`}
+                                                }`}
                                             style={{ width: `${Math.min((monthlyCount / FREE_TIER_MONTHLY_LIMIT) * 100, 100)}%` }}
                                         />
                                     </div>
@@ -1430,11 +1440,10 @@ function AccountPageContent() {
                                                     key={opt.value}
                                                     type="button"
                                                     onClick={() => setSelectedCookingExperience(opt.value)}
-                                                    className={`w-full p-3 rounded-xl border text-left transition-all ${
-                                                        selectedCookingExperience === opt.value
-                                                            ? "border-[#4A90E2] bg-blue-50"
-                                                            : "border-gray-200 bg-gray-50 hover:border-gray-300"
-                                                    }`}
+                                                    className={`w-full p-3 rounded-xl border text-left transition-all ${selectedCookingExperience === opt.value
+                                                        ? "border-[#4A90E2] bg-blue-50"
+                                                        : "border-gray-200 bg-gray-50 hover:border-gray-300"
+                                                        }`}
                                                 >
                                                     <span className="font-medium text-gray-900">{opt.label}</span>
                                                     <p className="text-xs text-gray-500 mt-0.5">{opt.description}</p>
@@ -1451,11 +1460,10 @@ function AccountPageContent() {
                                                     key={item}
                                                     type="button"
                                                     onClick={() => toggleAllergy(item)}
-                                                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                                                        selectedAllergies.includes(item)
-                                                            ? "bg-[#4A90E2] text-white"
-                                                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                                                    }`}
+                                                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${selectedAllergies.includes(item)
+                                                        ? "bg-[#4A90E2] text-white"
+                                                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                                        }`}
                                                 >
                                                     {item}
                                                 </button>
@@ -1515,11 +1523,10 @@ function AccountPageContent() {
                                                     key={item}
                                                     type="button"
                                                     onClick={() => toggleSensitivity(item)}
-                                                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                                                        selectedSensitivities.includes(item)
-                                                            ? "bg-[#4A90E2] text-white"
-                                                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                                                    }`}
+                                                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${selectedSensitivities.includes(item)
+                                                        ? "bg-[#4A90E2] text-white"
+                                                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                                        }`}
                                                 >
                                                     {item}
                                                 </button>
@@ -1579,11 +1586,10 @@ function AccountPageContent() {
                                                     key={item}
                                                     type="button"
                                                     onClick={() => toggleDislikedFood(item)}
-                                                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                                                        selectedDislikedFoods.includes(item)
-                                                            ? "bg-[#4A90E2] text-white"
-                                                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                                                    }`}
+                                                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${selectedDislikedFoods.includes(item)
+                                                        ? "bg-[#4A90E2] text-white"
+                                                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                                        }`}
                                                 >
                                                     {item}
                                                 </button>
@@ -1794,17 +1800,15 @@ function AccountPageContent() {
                                                 )}
                                             >
                                                 <div className="flex items-center gap-3">
-                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                                                        member.isActive
-                                                            ? "bg-purple-100 text-purple-600"
-                                                            : "bg-gray-100 text-gray-400"
-                                                    }`}>
+                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${member.isActive
+                                                        ? "bg-purple-100 text-purple-600"
+                                                        : "bg-gray-100 text-gray-400"
+                                                        }`}>
                                                         {member.name.charAt(0).toUpperCase()}
                                                     </div>
                                                     <div>
-                                                        <p className={`text-sm font-medium ${
-                                                            member.isActive ? "text-gray-900" : "text-gray-400"
-                                                        }`}>
+                                                        <p className={`text-sm font-medium ${member.isActive ? "text-gray-900" : "text-gray-400"
+                                                            }`}>
                                                             {member.name}
                                                         </p>
                                                         <p className="text-xs text-gray-500">
@@ -1812,13 +1816,13 @@ function AccountPageContent() {
                                                                 ? getDietLabel(member.dietType)
                                                                 : "No diet preference"}
                                                             {((member.allergiesAndSensitivities?.allergies?.length ?? 0) > 0 ||
-                                                              (member.allergiesAndSensitivities?.sensitivities?.length ?? 0) > 0) && (
-                                                                <span className="text-gray-400">
-                                                                    {" • "}
-                                                                    {(member.allergiesAndSensitivities?.allergies?.length ?? 0) +
-                                                                     (member.allergiesAndSensitivities?.sensitivities?.length ?? 0)} restriction{((member.allergiesAndSensitivities?.allergies?.length ?? 0) + (member.allergiesAndSensitivities?.sensitivities?.length ?? 0)) !== 1 ? "s" : ""}
-                                                                </span>
-                                                            )}
+                                                                (member.allergiesAndSensitivities?.sensitivities?.length ?? 0) > 0) && (
+                                                                    <span className="text-gray-400">
+                                                                        {" • "}
+                                                                        {(member.allergiesAndSensitivities?.allergies?.length ?? 0) +
+                                                                            (member.allergiesAndSensitivities?.sensitivities?.length ?? 0)} restriction{((member.allergiesAndSensitivities?.allergies?.length ?? 0) + (member.allergiesAndSensitivities?.sensitivities?.length ?? 0)) !== 1 ? "s" : ""}
+                                                                    </span>
+                                                                )}
                                                         </p>
                                                     </div>
                                                 </div>
@@ -1850,23 +1854,23 @@ function AccountPageContent() {
                                                 <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
                                                     <div className="space-y-2 text-sm">
                                                         {member.allergiesAndSensitivities?.allergies &&
-                                                         member.allergiesAndSensitivities.allergies.length > 0 && (
-                                                            <div>
-                                                                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Allergies</span>
-                                                                <p className="text-gray-700">
-                                                                    {member.allergiesAndSensitivities.allergies.join(", ")}
-                                                                </p>
-                                                            </div>
-                                                        )}
+                                                            member.allergiesAndSensitivities.allergies.length > 0 && (
+                                                                <div>
+                                                                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Allergies</span>
+                                                                    <p className="text-gray-700">
+                                                                        {member.allergiesAndSensitivities.allergies.join(", ")}
+                                                                    </p>
+                                                                </div>
+                                                            )}
                                                         {member.allergiesAndSensitivities?.sensitivities &&
-                                                         member.allergiesAndSensitivities.sensitivities.length > 0 && (
-                                                            <div>
-                                                                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Sensitivities</span>
-                                                                <p className="text-gray-700">
-                                                                    {member.allergiesAndSensitivities.sensitivities.join(", ")}
-                                                                </p>
-                                                            </div>
-                                                        )}
+                                                            member.allergiesAndSensitivities.sensitivities.length > 0 && (
+                                                                <div>
+                                                                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Sensitivities</span>
+                                                                    <p className="text-gray-700">
+                                                                        {member.allergiesAndSensitivities.sensitivities.join(", ")}
+                                                                    </p>
+                                                                </div>
+                                                            )}
                                                         {member.dislikedFoods && member.dislikedFoods.length > 0 && (
                                                             <div>
                                                                 <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Dislikes</span>
@@ -1920,184 +1924,182 @@ function AccountPageContent() {
                     </div>
 
                     {/* Shopping Preference Card */}
-                    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-                        <div className="px-5 py-4 border-b border-gray-100">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-[#43B02A]/10 rounded-xl flex items-center justify-center">
-                                    <ShoppingCart className="w-5 h-5 text-[#43B02A]" />
-                                </div>
-                                <div>
-                                    <h2 className="font-medium text-gray-900">Shopping Preference</h2>
-                                    <p className="text-xs text-gray-500">Choose how you prefer to shop for groceries</p>
+                    {process.env.NEXT_PUBLIC_ENABLE_INSTACART === 'true' && (
+                        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                            <div className="px-5 py-4 border-b border-gray-100">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-[#43B02A]/10 rounded-xl flex items-center justify-center">
+                                        <ShoppingCart className="w-5 h-5 text-[#43B02A]" />
+                                    </div>
+                                    <div>
+                                        <h2 className="font-medium text-gray-900">Shopping Preference</h2>
+                                        <p className="text-xs text-gray-500">Choose how you prefer to shop for groceries</p>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        <div className="px-5 py-4">
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={() => void handleChangeShoppingPreference("instacart")}
-                                    disabled={savingShoppingPreference}
-                                    className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all ${
-                                        (userDoc?.shoppingPreference || "instacart") === "instacart"
+                            <div className="px-5 py-4">
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => void handleChangeShoppingPreference("instacart")}
+                                        disabled={savingShoppingPreference}
+                                        className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all ${(userDoc?.shoppingPreference || "instacart") === "instacart"
                                             ? "border-[#003D29] bg-[#003D29]/5"
                                             : "border-gray-200 hover:border-gray-300"
-                                    }`}
-                                >
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2 text-left">
-                                            <Image src={InstacartCarrot} alt="Instacart" className="w-6 h-6" />
-                                            <div>
-                                                <p className="font-medium text-gray-900">Instacart</p>
-                                                <p className="text-xs text-gray-500">Multiple stores, delivery</p>
+                                            }`}
+                                    >
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2 text-left">
+                                                <Image src={InstacartCarrot} alt="Instacart" className="w-6 h-6" />
+                                                <div>
+                                                    <p className="font-medium text-gray-900">Instacart</p>
+                                                    <p className="text-xs text-gray-500">Multiple stores, delivery</p>
+                                                </div>
                                             </div>
+                                            {(userDoc?.shoppingPreference || "instacart") === "instacart" && (
+                                                <CheckCircle className="w-5 h-5 text-[#003D29]" />
+                                            )}
                                         </div>
-                                        {(userDoc?.shoppingPreference || "instacart") === "instacart" && (
-                                            <CheckCircle className="w-5 h-5 text-[#003D29]" />
-                                        )}
-                                    </div>
-                                </button>
-                                <button
-                                    onClick={() => void handleChangeShoppingPreference("kroger")}
-                                    disabled={savingShoppingPreference}
-                                    className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all ${
-                                        userDoc?.shoppingPreference === "kroger"
+                                    </button>
+                                    <button
+                                        onClick={() => void handleChangeShoppingPreference("kroger")}
+                                        disabled={savingShoppingPreference}
+                                        className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all ${userDoc?.shoppingPreference === "kroger"
                                             ? "border-[#0056a3] bg-[#0056a3]/5"
                                             : "border-gray-200 hover:border-gray-300"
-                                    }`}
-                                >
-                                    <div className="flex items-center justify-between">
-                                        <div className="text-left">
-                                            <p className="font-medium text-gray-900">Kroger Direct</p>
-                                            <p className="text-xs text-gray-500">Add to Kroger cart</p>
+                                            }`}
+                                    >
+                                        <div className="flex items-center justify-between">
+                                            <div className="text-left">
+                                                <p className="font-medium text-gray-900">Kroger Direct</p>
+                                                <p className="text-xs text-gray-500">Add to Kroger cart</p>
+                                            </div>
+                                            {userDoc?.shoppingPreference === "kroger" && (
+                                                <CheckCircle className="w-5 h-5 text-[#0056a3]" />
+                                            )}
                                         </div>
-                                        {userDoc?.shoppingPreference === "kroger" && (
-                                            <CheckCircle className="w-5 h-5 text-[#0056a3]" />
-                                        )}
-                                    </div>
-                                </button>
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    )}
 
-                    {/* Store & Account Card - Only show for Kroger preference */}
-                    {userDoc?.shoppingPreference === "kroger" && (() => {
+                    {/* Store & Account Card - Only show for Kroger preference OR if Instacart is disabled (forcing Kroger mode) */}
+                    {(userDoc?.shoppingPreference === "kroger" || process.env.NEXT_PUBLIC_ENABLE_INSTACART !== 'true') && (() => {
                         const defaultLocation = locations.find(loc => loc.krogerLocationId === userDoc?.defaultKrogerLocationId);
                         const storeBrand = defaultLocation ? getStoreBrand(defaultLocation.name) : { displayName: "Kroger", tagline: "Kroger Family of Stores" };
                         const isGenericKroger = !defaultLocation;
                         return (
-                    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-                        <div className="px-5 py-4 border-b border-gray-100">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-[#0056a3]/10 rounded-xl flex items-center justify-center">
-                                    <ShoppingCart className="w-5 h-5 text-[#0056a3]" />
-                                </div>
-                                <div>
-                                    <h2 className="font-medium text-gray-900">
-                                        {isGenericKroger ? "Store & Account" : `${storeBrand.displayName} Store & Account`}
-                                    </h2>
-                                    <p className="text-xs text-gray-500">Add items directly to your cart</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="px-5 py-4 space-y-4">
-                            {/* Store Selection Row */}
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
-                                        defaultLocation ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
-                                    }`}>
-                                        {defaultLocation ? <CheckCircle className="w-4 h-4" /> : "1"}
-                                    </div>
-                                    <div>
-                                        <span className="text-sm font-medium text-gray-900">Your Store</span>
-                                        {loadingLocations ? (
-                                            <p className="text-xs text-gray-500">Loading...</p>
-                                        ) : defaultLocation ? (
-                                            <p className="text-xs text-gray-500">{defaultLocation.name}{defaultLocation.city ? `, ${defaultLocation.city}` : ""}</p>
-                                        ) : (
-                                            <p className="text-xs text-gray-400">No store selected</p>
-                                        )}
+                            <div id="store-connection" className="bg-white rounded-2xl border border-gray-100 overflow-hidden scroll-mt-24">
+                                <div className="px-5 py-4 border-b border-gray-100">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 bg-[#0056a3]/10 rounded-xl flex items-center justify-center">
+                                            <ShoppingCart className="w-5 h-5 text-[#0056a3]" />
+                                        </div>
+                                        <div>
+                                            <h2 className="font-medium text-gray-900">
+                                                {isGenericKroger ? "Store & Account" : `${storeBrand.displayName} Store & Account`}
+                                            </h2>
+                                            <p className="text-xs text-gray-500">Add items directly to your cart</p>
+                                        </div>
                                     </div>
                                 </div>
-                                <button
-                                    onClick={() => setShowStoreSearchModal(true)}
-                                    className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200 transition-colors"
-                                >
-                                    {defaultLocation ? "Change" : "Find Store"}
-                                </button>
-                            </div>
 
-                            {/* Divider */}
-                            <div className="border-t border-gray-100" />
-
-                            {/* Account Connection Row */}
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
-                                        userDoc?.krogerLinked ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
-                                    }`}>
-                                        {userDoc?.krogerLinked ? <CheckCircle className="w-4 h-4" /> : "2"}
+                                <div className="px-5 py-4 space-y-4">
+                                    {/* Store Selection Row */}
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${defaultLocation ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
+                                                }`}>
+                                                {defaultLocation ? <CheckCircle className="w-4 h-4" /> : "1"}
+                                            </div>
+                                            <div>
+                                                <span className="text-sm font-medium text-gray-900">Your Store</span>
+                                                {loadingLocations ? (
+                                                    <p className="text-xs text-gray-500">Loading...</p>
+                                                ) : defaultLocation ? (
+                                                    <p className="text-xs text-gray-500">{defaultLocation.name}{defaultLocation.city ? `, ${defaultLocation.city}` : ""}</p>
+                                                ) : (
+                                                    <p className="text-xs text-gray-400">No store selected</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => setShowStoreSearchModal(true)}
+                                            className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200 transition-colors"
+                                        >
+                                            {defaultLocation ? "Change" : "Find Store"}
+                                        </button>
                                     </div>
-                                    <div>
-                                        <span className="text-sm font-medium text-gray-900">
-                                            {defaultLocation ? `${storeBrand.displayName} Account` : "Store Account"}
-                                        </span>
+
+                                    {/* Divider */}
+                                    <div className="border-t border-gray-100" />
+
+                                    {/* Account Connection Row */}
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${userDoc?.krogerLinked ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
+                                                }`}>
+                                                {userDoc?.krogerLinked ? <CheckCircle className="w-4 h-4" /> : "2"}
+                                            </div>
+                                            <div>
+                                                <span className="text-sm font-medium text-gray-900">
+                                                    {defaultLocation ? `${storeBrand.displayName} Account` : "Store Account"}
+                                                </span>
+                                                {userDoc?.krogerLinked ? (
+                                                    <p className="text-xs text-emerald-600">Connected</p>
+                                                ) : (
+                                                    <p className="text-xs text-gray-400">Not connected</p>
+                                                )}
+                                            </div>
+                                        </div>
                                         {userDoc?.krogerLinked ? (
-                                            <p className="text-xs text-emerald-600">Connected</p>
+                                            <button
+                                                onClick={() => void handleUnlinkKroger()}
+                                                disabled={unlinkingKroger}
+                                                className="px-3 py-1.5 text-red-500 text-xs font-medium hover:bg-red-50 rounded-lg transition-colors disabled:opacity-70"
+                                            >
+                                                {unlinkingKroger ? "..." : "Unlink"}
+                                            </button>
                                         ) : (
-                                            <p className="text-xs text-gray-400">Not connected</p>
+                                            <button
+                                                onClick={() => {
+                                                    if (user) {
+                                                        window.location.href = `/api/kroger/auth?userId=${user.uid}`;
+                                                    }
+                                                }}
+                                                className="px-3 py-1.5 bg-[#0056a3] text-white rounded-lg text-xs font-medium hover:bg-[#004080] transition-colors"
+                                            >
+                                                Connect
+                                            </button>
                                         )}
                                     </div>
-                                </div>
-                                {userDoc?.krogerLinked ? (
-                                    <button
-                                        onClick={() => void handleUnlinkKroger()}
-                                        disabled={unlinkingKroger}
-                                        className="px-3 py-1.5 text-red-500 text-xs font-medium hover:bg-red-50 rounded-lg transition-colors disabled:opacity-70"
-                                    >
-                                        {unlinkingKroger ? "..." : "Unlink"}
-                                    </button>
-                                ) : (
-                                    <button
-                                        onClick={() => {
-                                            if (user) {
-                                                window.location.href = `/api/kroger/auth?userId=${user.uid}`;
-                                            }
-                                        }}
-                                        className="px-3 py-1.5 bg-[#0056a3] text-white rounded-lg text-xs font-medium hover:bg-[#004080] transition-colors"
-                                    >
-                                        Connect
-                                    </button>
-                                )}
-                            </div>
 
-                            {/* Info text when not fully set up */}
-                            {(!defaultLocation || !userDoc?.krogerLinked) && (
-                                <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl">
-                                    <p className="text-xs text-amber-800 font-medium mb-1">
-                                        {!defaultLocation && !userDoc?.krogerLinked
-                                            ? "Complete setup to unlock full features"
-                                            : !defaultLocation
-                                            ? "Select a store to continue"
-                                            : "Connect your account to unlock full features"}
-                                    </p>
-                                    <ul className="text-xs text-amber-700 space-y-0.5 list-disc list-inside">
-                                        {!userDoc?.krogerLinked && (
-                                            <>
-                                                <li>Add items directly to your Kroger cart</li>
-                                                <li>See exact prices and availability</li>
-                                                <li>View aisle locations</li>
-                                            </>
-                                        )}
-                                        {!defaultLocation && (
-                                            <li>Get local store pricing and stock</li>
-                                        )}
-                                    </ul>
+                                    {/* Info text when not fully set up */}
+                                    {(!defaultLocation || !userDoc?.krogerLinked) && (
+                                        <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl">
+                                            <p className="text-xs text-amber-800 font-medium mb-1">
+                                                {!defaultLocation && !userDoc?.krogerLinked
+                                                    ? "Complete setup to unlock full features"
+                                                    : !defaultLocation
+                                                        ? "Select a store to continue"
+                                                        : "Connect your account to unlock full features"}
+                                            </p>
+                                            <ul className="text-xs text-amber-700 space-y-0.5 list-disc list-inside">
+                                                {!userDoc?.krogerLinked && (
+                                                    <>
+                                                        <li>Add items directly to your Kroger cart</li>
+                                                        <li>See exact prices and availability</li>
+                                                        <li>View aisle locations</li>
+                                                    </>
+                                                )}
+                                                {!defaultLocation && (
+                                                    <li>Get local store pricing and stock</li>
+                                                )}
+                                            </ul>
+                                        </div>
+                                    )}
                                 </div>
-                            )}
-                        </div>
-                    </div>
+                            </div>
                         );
                     })()}
 
@@ -2200,17 +2202,15 @@ function AccountPageContent() {
                                         <p className="text-sm text-gray-900 mt-0.5">••••••••</p>
                                     </div>
                                     {passwordMessage && (
-                                        <div className={`flex items-center gap-2 p-2 rounded-lg ${
-                                            passwordMessageType === "success" ? "bg-emerald-50" : "bg-red-50"
-                                        }`}>
+                                        <div className={`flex items-center gap-2 p-2 rounded-lg ${passwordMessageType === "success" ? "bg-emerald-50" : "bg-red-50"
+                                            }`}>
                                             {passwordMessageType === "success" ? (
                                                 <CheckCircle className="w-4 h-4 text-emerald-500" />
                                             ) : (
                                                 <AlertCircle className="w-4 h-4 text-red-500" />
                                             )}
-                                            <span className={`text-sm ${
-                                                passwordMessageType === "success" ? "text-emerald-700" : "text-red-700"
-                                            }`}>{passwordMessage}</span>
+                                            <span className={`text-sm ${passwordMessageType === "success" ? "text-emerald-700" : "text-red-700"
+                                                }`}>{passwordMessage}</span>
                                         </div>
                                     )}
                                 </div>
@@ -2278,19 +2278,17 @@ function AccountPageContent() {
 
                                     {/* Error/Success Message */}
                                     {passwordMessage && (
-                                        <div className={`flex items-start gap-2 p-3 rounded-xl ${
-                                            passwordMessageType === "success"
-                                                ? "bg-emerald-50 border border-emerald-100"
-                                                : "bg-red-50 border border-red-100"
-                                        }`}>
+                                        <div className={`flex items-start gap-2 p-3 rounded-xl ${passwordMessageType === "success"
+                                            ? "bg-emerald-50 border border-emerald-100"
+                                            : "bg-red-50 border border-red-100"
+                                            }`}>
                                             {passwordMessageType === "success" ? (
                                                 <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
                                             ) : (
                                                 <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
                                             )}
-                                            <p className={`text-sm ${
-                                                passwordMessageType === "success" ? "text-emerald-600" : "text-red-600"
-                                            }`}>{passwordMessage}</p>
+                                            <p className={`text-sm ${passwordMessageType === "success" ? "text-emerald-600" : "text-red-600"
+                                                }`}>{passwordMessage}</p>
                                         </div>
                                     )}
 
@@ -2501,11 +2499,10 @@ function AccountPageContent() {
                                     key={item}
                                     type="button"
                                     onClick={() => toggleMemberAllergy(item)}
-                                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                                        memberAllergies.includes(item)
-                                            ? "bg-purple-500 text-white"
-                                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                                    }`}
+                                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${memberAllergies.includes(item)
+                                        ? "bg-purple-500 text-white"
+                                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                        }`}
                                 >
                                     {item}
                                 </button>
@@ -2566,11 +2563,10 @@ function AccountPageContent() {
                                     key={item}
                                     type="button"
                                     onClick={() => toggleMemberSensitivity(item)}
-                                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                                        memberSensitivities.includes(item)
-                                            ? "bg-purple-500 text-white"
-                                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                                    }`}
+                                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${memberSensitivities.includes(item)
+                                        ? "bg-purple-500 text-white"
+                                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                        }`}
                                 >
                                     {item}
                                 </button>
@@ -2631,11 +2627,10 @@ function AccountPageContent() {
                                     key={item}
                                     type="button"
                                     onClick={() => toggleMemberDislikedFood(item)}
-                                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                                        memberDislikedFoods.includes(item)
-                                            ? "bg-purple-500 text-white"
-                                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                                    }`}
+                                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${memberDislikedFoods.includes(item)
+                                        ? "bg-purple-500 text-white"
+                                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                        }`}
                                 >
                                     {item}
                                 </button>

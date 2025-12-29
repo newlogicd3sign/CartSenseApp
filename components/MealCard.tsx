@@ -1,7 +1,6 @@
-"use client";
-
 import { type ReactNode } from "react";
-import { Flame, Beef, Wheat, Droplet, ChevronRight, Clock } from "lucide-react";
+import { Flame, Beef, Wheat, Droplet, ChevronRight, Clock, Bean } from "lucide-react";
+import { MealImage } from "./MealImage";
 
 interface Macros {
     calories: number;
@@ -27,6 +26,8 @@ interface MealCardProps {
     actionButton?: ReactNode;
     animationDelay?: number;
     className?: string;
+    dietType?: string;
+    isPremium?: boolean;
 }
 
 export function MealCard({
@@ -41,8 +42,9 @@ export function MealCard({
     actionButton,
     animationDelay,
     className = "",
+    dietType,
+    isPremium = false,
 }: MealCardProps) {
-    const thumbSrc = imageUrl ?? "https://placehold.co/256x256/e5e7eb/9ca3af?text=Meal";
 
     return (
         <div
@@ -63,13 +65,13 @@ export function MealCard({
             {/* Thumbnail - Left */}
             <div
                 onClick={onClick}
-                className="w-20 h-20 bg-gray-100 rounded-xl overflow-hidden cursor-pointer flex-shrink-0"
+                className="w-20 h-20 rounded-xl overflow-hidden cursor-pointer flex-shrink-0"
             >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                    src={thumbSrc}
+                <MealImage
+                    src={imageUrl}
                     alt={name}
-                    className="w-full h-full object-cover transition-opacity duration-300"
+                    className="w-full h-full"
+                    isPremium={isPremium}
                 />
             </div>
 
@@ -104,7 +106,11 @@ export function MealCard({
                         <span>{macros.calories}</span>
                     </div>
                     <div className="flex items-center gap-1">
-                        <Beef className="w-3 h-3 text-blue-500" />
+                        {(dietType === "vegetarian" || dietType === "vegan") ? (
+                            <Bean className="w-3 h-3 text-emerald-500" />
+                        ) : (
+                            <Beef className="w-3 h-3 text-blue-500" />
+                        )}
                         <span>{macros.protein}g</span>
                     </div>
                     <div className="flex items-center gap-1" title={`${macros.carbs}g total carbs - ${macros.fiber ?? 0}g fiber`}>
