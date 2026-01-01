@@ -243,9 +243,10 @@ updatedMeal shape:
 {"id":"","mealType":"breakfast|lunch|dinner|snack","name":"","description":"","servings":N,"macros":{"calories":N,"protein":N,"carbs":N,"fiber":N,"fat":N},"cookTimeRange":{"min":N,"max":N},"ingredients":[{"name":"display","quantity":"","grocerySearchTerm":"raw product","preparation":""}],"steps":[""]}
 
 KEY RULES:
+- servings: Default to \${householdSize} serving\${householdSize > 1 ? 's' : ''} (household size) unless the user specifically requests a different amount
 - macros = PER SERVING
 - cookTimeRange = estimated cook time in minutes as a range (min to max) accounting for skill variance
-- grocerySearchTerm: MUST be the RAW, UNCOOKED, WHOLE product. NEVER use "cooked", "grilled", "roasted", "baked", "sliced", "diced" here. "diced onion" -> "yellow onion", "cooked chicken" -> "boneless skinless chicken breast".
+- grocerySearchTerm: MUST be the RAW, UNCOOKED, WHOLE product. NEVER use "cooked", "grilled", "roasted", "baked", "sliced", "diced" here. "diced onion" -> "yellow onion", "cooked chicken" -> "boneless skinless chicken breast", "ground chicken" -> "ground chicken" (NOT "chicken breast"), "ground beef" -> "ground beef".
 - Include all seasonings with measurements
 - Steps: detailed, food-blogger style`;
 

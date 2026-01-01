@@ -180,7 +180,7 @@ function DietRestrictionsContent() {
                 // Save to family member document
                 const memberRef = doc(db, "users", user.uid, "familyMembers", memberId);
                 await updateDoc(memberRef, {
-                    doctorDietInstructions: dietInstructionsData,
+                    dietRestrictions: dietInstructionsData,
                     updatedAt: serverTimestamp(),
                 });
                 showToast(`Diet instructions saved for ${memberName || "family member"}.`, "success");
@@ -189,7 +189,7 @@ function DietRestrictionsContent() {
                 const userRef = doc(db, "users", user.uid);
                 await setDoc(
                     userRef,
-                    { doctorDietInstructions: dietInstructionsData },
+                    { dietRestrictions: dietInstructionsData },
                     { merge: true }
                 );
                 showToast("Diet instructions saved to your profile.", "success");
@@ -384,12 +384,6 @@ function DietRestrictionsContent() {
                                 </div>
 
                                 <div className="px-5 py-4 space-y-4">
-                                    {result.summaryText && (
-                                        <div className="p-4 bg-gray-50 rounded-xl">
-                                            <p className="text-sm text-gray-700">{result.summaryText}</p>
-                                        </div>
-                                    )}
-
                                     {/* Blocked Ingredients */}
                                     <div>
                                         <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">

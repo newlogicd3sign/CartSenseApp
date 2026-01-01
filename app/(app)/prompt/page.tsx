@@ -97,7 +97,6 @@ const quickPrompts = [
     { label: "High protein meals", icon: Beef, prompt: "High protein meals for muscle building" },
     { label: "Budget-friendly", icon: Wallet, prompt: "Budget-friendly meals using pantry staples" },
     { label: "Healthy lunch ideas", icon: Salad, prompt: "Healthy lunch ideas that are filling" },
-    { label: "Weekly meal plan", icon: CalendarDays, prompt: "Meal prep recipes for the week" },
     { label: "Kid-friendly", icon: Baby, prompt: "Kid-friendly meals the whole family will love" },
 ];
 
@@ -140,6 +139,7 @@ export default function PromptPage() {
     const [userAllergies, setUserAllergies] = useState<string[]>([]);
     const [userSensitivities, setUserSensitivities] = useState<string[]>([]);
     const [userDietType, setUserDietType] = useState<string | undefined>();
+    const [userDislikes, setUserDislikes] = useState<string[]>([]);
 
     // Conflict modal state
     const [showConflictModal, setShowConflictModal] = useState(false);
@@ -268,7 +268,7 @@ export default function PromptPage() {
                     setMonthlyPromptCount(count);
 
                     // Check for doctor diet instructions
-                    const dietInstructions = data.doctorDietInstructions;
+                    const dietInstructions = data.dietRestrictions;
                     if (dietInstructions?.hasActiveNote) {
                         setHasDietInstructions(true);
                         setBlockedIngredients(dietInstructions.blockedIngredients || []);
@@ -281,6 +281,9 @@ export default function PromptPage() {
                         setUserAllergies(allergiesAndSensitivities.allergies || []);
                         setUserSensitivities(allergiesAndSensitivities.sensitivities || []);
                     }
+
+                    // Load user dislikes
+                    setUserDislikes(data.dislikedFoods || []);
 
                     // Load diet type
                     if (data.dietType) {
@@ -311,8 +314,9 @@ export default function PromptPage() {
                                 allergies: memberData.allergiesAndSensitivities?.allergies || [],
                                 sensitivities: memberData.allergiesAndSensitivities?.sensitivities || [],
                                 dietType: memberData.dietType,
-                                blockedIngredients: memberData.doctorDietInstructions?.blockedIngredients || [],
-                                blockedGroups: memberData.doctorDietInstructions?.blockedGroups || []
+                                blockedIngredients: memberData.dietRestrictions?.blockedIngredients || [],
+                                blockedGroups: memberData.dietRestrictions?.blockedGroups || [],
+                                dislikes: memberData.dislikedFoods || []
                             });
                         }
                     });
@@ -330,13 +334,16 @@ export default function PromptPage() {
     }, [router]);
 
     // Navigate to meals page with the current prompt
-    const navigateToMeals = (promptText: string) => {
+    const navigateToMeals = (promptText: string, ignoreConflicts = false) => {
         const params = new URLSearchParams({
             prompt: promptText,
             stream: "true",
         });
         if (pantryMode) {
             params.set("pantryMode", "true");
+        }
+        if (ignoreConflicts) {
+            params.set("ignoreConflicts", "true");
         }
         router.push(`/meals?${params.toString()}`);
     };
@@ -362,6 +369,7 @@ export default function PromptPage() {
             userDietType,
             blockedIngredients,
             blockedGroups,
+            userDislikes,
             familyMemberRestrictions
         );
 
@@ -379,23 +387,8 @@ export default function PromptPage() {
     // Handle proceeding despite conflicts
     const handleProceedWithConflicts = () => {
         setShowConflictModal(false);
-
-        // Only modify prompt for CRITICAL conflicts (allergies, doctor-blocked)
-        // For sensitivities, user explicitly wants the ingredient, so don't modify
-        const criticalConflictingItems = new Set<string>();
-        for (const conflict of detectedConflicts) {
-            if (conflict.type === "allergy" || conflict.type === "doctor_blocked") {
-                criticalConflictingItems.add(conflict.matchedKeyword);
-            }
-        }
-
-        // Modify the prompt ONLY if there are critical conflicts
-        const originalPrompt = prompt.trim();
-        const modifiedPrompt = criticalConflictingItems.size > 0
-            ? `${originalPrompt} (but make it safe for my dietary restrictions - avoid ${Array.from(criticalConflictingItems).join(", ")} and use suitable alternatives)`
-            : originalPrompt;
-
-        navigateToMeals(modifiedPrompt);
+        // Pass original prompt but flag to ignore conflicts
+        navigateToMeals(prompt.trim(), true);
     };
 
     // Handle quick prompt selection with conflict checking
@@ -407,6 +400,7 @@ export default function PromptPage() {
             userDietType,
             blockedIngredients,
             blockedGroups,
+            userDislikes,
             familyMemberRestrictions
         );
 

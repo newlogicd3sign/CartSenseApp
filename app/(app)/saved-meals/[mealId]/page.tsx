@@ -59,11 +59,13 @@ import {
     ExternalLink,
     Minus,
     Plus,
+    Share2, // Added
 } from "lucide-react";
 import { logUserEvent } from "@/lib/logUserEvent";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { useToast } from "@/components/Toast";
+import { ShareModal } from "@/components/ShareModal"; // Added
 import { DietaryConflictModal } from "@/components/DietaryConflictModal";
 import { checkPromptForConflicts, type ConflictResult, type FamilyMemberRestrictions } from "@/lib/sensitivityMapping";
 
@@ -116,11 +118,12 @@ type UserPrefs = {
         allergies?: string[];
         sensitivities?: string[];
     };
-    doctorDietInstructions?: {
+    dietRestrictions?: {
         hasActiveNote?: boolean;
         blockedIngredients?: string[];
         blockedGroups?: string[];
     };
+    dislikedFoods?: string[];
     isPremium?: boolean;
     shoppingPreference?: "kroger" | "instacart";
 };
@@ -158,6 +161,7 @@ export default function SavedMealDetailPage() {
     const [krogerConnected, setKrogerConnected] = useState(false);
     const [krogerStoreSet, setKrogerStoreSet] = useState(false);
     const [prefs, setPrefs] = useState<UserPrefs | null>(null);
+    const [showShareModal, setShowShareModal] = useState(false);
 
     // Lazy loading Kroger enrichment state
     const [enrichingKroger, setEnrichingKroger] = useState(false);
@@ -282,8 +286,9 @@ export default function SavedMealDetailPage() {
                                     allergies: memberData.allergiesAndSensitivities?.allergies || [],
                                     sensitivities: memberData.allergiesAndSensitivities?.sensitivities || [],
                                     dietType: memberData.dietType,
-                                    blockedIngredients: memberData.doctorDietInstructions?.blockedIngredients || [],
-                                    blockedGroups: memberData.doctorDietInstructions?.blockedGroups || []
+                                    blockedIngredients: memberData.dietRestrictions?.blockedIngredients || [],
+                                    blockedGroups: memberData.dietRestrictions?.blockedGroups || [],
+                                    dislikes: memberData.dislikedFoods || []
                                 });
                             }
                         });
@@ -713,8 +718,9 @@ export default function SavedMealDetailPage() {
             prefs?.allergiesAndSensitivities?.allergies || [],
             prefs?.allergiesAndSensitivities?.sensitivities || [],
             prefs?.dietType,
-            prefs?.doctorDietInstructions?.blockedIngredients || [],
-            prefs?.doctorDietInstructions?.blockedGroups || [],
+            prefs?.dietRestrictions?.blockedIngredients || [],
+            prefs?.dietRestrictions?.blockedGroups || [],
+            prefs?.dislikedFoods || [],
             familyMemberRestrictions
         );
 
@@ -1249,11 +1255,13 @@ export default function SavedMealDetailPage() {
                         </ul>
                     </div>
 
-                    {/* Recipe Quantities */}
+                    {/* Recipe Measurements */}
                     <div className="bg-white rounded-2xl border border-gray-100 p-5">
                         <div className="flex items-center gap-2 mb-4">
                             <PencilRuler className="w-5 h-5 text-gray-400" />
-                            <h3 className="font-medium text-gray-900">Recipe Quantities</h3>
+                            <h3 className="font-medium text-gray-900">
+                                Recipe Measurements <span className="text-gray-500 text-sm font-normal">(for {currentServings} serving{currentServings !== 1 ? 's' : ''})</span>
+                            </h3>
                         </div>
                         <div className="grid grid-cols-2 gap-2">
                             {meal.ingredients.map((ing, idx) => (
@@ -1326,6 +1334,15 @@ export default function SavedMealDetailPage() {
                                 </button>
                             )
                         }
+
+                        {/* Share Button */}
+                        <button
+                            onClick={() => setShowShareModal(true)}
+                            className="w-full py-4 bg-white border border-[#4A90E2] text-[#4A90E2] rounded-2xl hover:bg-blue-50 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                        >
+                            <Share2 className="w-5 h-5" />
+                            <span>Share this meal</span>
+                        </button>
                     </div>
 
                 </div>
@@ -1337,6 +1354,16 @@ export default function SavedMealDetailPage() {
                     feature="meal_chat"
                     onClose={() => setShowUpgradePrompt(false)}
                     reason="voluntary"
+                />
+            )}
+
+            {/* Share Modal */}
+            {meal && user && (
+                <ShareModal
+                    isOpen={showShareModal}
+                    onClose={() => setShowShareModal(false)}
+                    meal={meal}
+                    userId={user?.uid}
                 />
             )}
 

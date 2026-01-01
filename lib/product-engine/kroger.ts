@@ -18,6 +18,7 @@ import { queueKrogerRequest, getKrogerQueueStats } from "./krogerQueue";
 import { fetchWithRetry, getCircuitBreakerStatus } from "./krogerRetry";
 import { canMakeRequest, recordRequest } from "./krogerRateLimiter";
 import { QUEUE_PRIORITY, createKrogerError } from "./krogerConfig";
+import { correctSpelling } from "./spellingCorrections";
 
 // ✅ Defaults for Kroger api-ce, overridable via env
 const TOKEN_URL =
@@ -459,14 +460,21 @@ export async function searchKrogerProduct(
     const trimmed = searchTerm.trim();
     if (!trimmed) return null;
 
+    // Apply spelling correction
+    const correctedTerm = correctSpelling(trimmed);
+    if (correctedTerm !== trimmed) {
+        console.log(`📝 Spelling corrected: "${trimmed}" -> "${correctedTerm}"`);
+    }
+
     // Must have locationId for caching (prices vary by location)
     const locationId = opts.locationId;
 
     // ─────────────────────────────────────────────────────────────────────────
     // Step 1: Check Firestore cache first
     // ─────────────────────────────────────────────────────────────────────────
-    if (!opts.skipCache && locationId) {
-        const cached = await getCachedProducts(locationId, trimmed);
+    // Temporary fix: Force bypass cache for "buttermilk" to fix improper biscuit mapping
+    if (!opts.skipCache && locationId && !correctedTerm.toLowerCase().includes("buttermilk")) {
+        const cached = await getCachedProducts(locationId, correctedTerm);
 
         if (cached) {
             // Empty products array means "not found" was cached
@@ -489,7 +497,7 @@ export async function searchKrogerProduct(
             // Score and pick best
             let best: { product: CachedKrogerProduct; score: number } | null = null;
             for (const p of availableProducts) {
-                const s = scoreProduct(p, trimmed);
+                const s = scoreProduct(p, correctedTerm);
                 if (!best || s > best.score) {
                     best = { product: p, score: s };
                 }
@@ -624,12 +632,12 @@ export async function searchKrogerProduct(
     }
 
     // Try full search term first
-    const firstTry = await runSearch(searchTerm);
+    const firstTry = await runSearch(correctedTerm);
 
     // Cache the results (even if no match, to avoid repeated API calls)
     if (locationId && firstTry.products.length > 0) {
         const cachedProducts = firstTry.products.map(krogerProductToCached);
-        await writeProductsCache(locationId, trimmed, cachedProducts, cachedProducts.length);
+        await writeProductsCache(locationId, correctedTerm, cachedProducts, cachedProducts.length);
     }
 
     if (firstTry.match) {
@@ -637,11 +645,11 @@ export async function searchKrogerProduct(
     }
 
     // Try fallback search term
-    const fallback = buildFallbackSearchTerm(searchTerm);
+    const fallback = buildFallbackSearchTerm(correctedTerm);
     if (!fallback) {
         // Cache as "not found"
         if (locationId) {
-            await cacheNotFound(locationId, trimmed);
+            await cacheNotFound(locationId, correctedTerm);
         }
         return null;
     }
@@ -652,7 +660,7 @@ export async function searchKrogerProduct(
     // Cache fallback results under original term
     if (locationId && fallbackTry.products.length > 0) {
         const cachedProducts = fallbackTry.products.map(krogerProductToCached);
-        await writeProductsCache(locationId, trimmed, cachedProducts, cachedProducts.length);
+        await writeProductsCache(locationId, correctedTerm, cachedProducts, cachedProducts.length);
     }
 
     if (fallbackTry.match) {
@@ -661,7 +669,7 @@ export async function searchKrogerProduct(
 
     // Cache as "not found"
     if (locationId) {
-        await cacheNotFound(locationId, trimmed);
+        await cacheNotFound(locationId, correctedTerm);
     }
     return null;
 }
@@ -676,8 +684,11 @@ export async function searchAlternativeProduct(
     const trimmed = searchTerm.trim();
     if (!trimmed) return null;
 
+    // Apply spelling correction
+    const correctedTerm = correctSpelling(trimmed);
+
     const locationId = opts.locationId;
-    const simplifiedTerm = buildFallbackSearchTerm(trimmed) || trimmed;
+    const simplifiedTerm = buildFallbackSearchTerm(correctedTerm) || correctedTerm;
 
     // ─────────────────────────────────────────────────────────────────────────
     // Check cache first

@@ -118,7 +118,7 @@ const COOKING_EXPERIENCE_OPTIONS = [
     { value: "advanced", label: "Advanced", description: "Enjoy complex techniques and recipes" },
 ];
 
-type DoctorDietInstructions = {
+type DietRestrictions = {
     hasActiveNote?: boolean;
     sourceType?: "photo" | "manual";
     summaryText?: string;
@@ -139,7 +139,7 @@ type UserPrefsDoc = {
     defaultKrogerLocationId?: string | null;
     krogerLinked?: boolean;
     shoppingPreference?: "kroger" | "instacart";
-    doctorDietInstructions?: DoctorDietInstructions | null;
+    dietRestrictions?: DietRestrictions | null;
     monthlyPromptCount?: number;
     promptPeriodStart?: any;
     isPremium?: boolean;
@@ -194,7 +194,7 @@ function AccountPageContent() {
     const [customSensitivity, setCustomSensitivity] = useState("");
     const [savingDietAllergies, setSavingDietAllergies] = useState(false);
 
-    const [removingDoctorNote, setRemovingDoctorNote] = useState(false);
+    const [removingDietRestrictions, setRemovingDoctorNote] = useState(false);
 
     // Kroger profile state
     const [krogerProfile, setKrogerProfile] = useState<{ firstName?: string; lastName?: string } | null>(null);
@@ -250,7 +250,7 @@ function AccountPageContent() {
     // Upgrade modal state for household members
     const [showHouseholdUpgradeModal, setShowHouseholdUpgradeModal] = useState(false);
 
-    const formatDoctorUpdatedAt = (value?: any) => {
+    const formatDietRestrictionsUpdatedAt = (value?: any) => {
         if (!value) return "";
         let date: Date | null = null;
 
@@ -438,7 +438,7 @@ function AccountPageContent() {
                         dietType: data.dietType,
                         allergiesAndSensitivities: data.allergiesAndSensitivities,
                         dislikedFoods: data.dislikedFoods,
-                        doctorDietInstructions: data.doctorDietInstructions,
+                        dietRestrictions: data.dietRestrictions,
                         createdAt: data.createdAt,
                         updatedAt: data.updatedAt,
                     });
@@ -717,7 +717,7 @@ function AccountPageContent() {
         }
     };
 
-    const handleRemoveDoctorInstructions = async () => {
+    const handleRemoveDietRestrictions = async () => {
         if (!user) return;
 
         try {
@@ -725,11 +725,11 @@ function AccountPageContent() {
 
             const userRef = doc(db, "users", user.uid);
             await updateDoc(userRef, {
-                doctorDietInstructions: null,
+                dietRestrictions: null,
             });
 
             setUserDoc((prev) =>
-                prev ? { ...prev, doctorDietInstructions: null } : prev
+                prev ? { ...prev, dietRestrictions: null } : prev
             );
 
             showToast("Diet instructions removed.", "success");
@@ -1173,8 +1173,8 @@ function AccountPageContent() {
         return opt?.label ?? value;
     };
 
-    const doctor = (userDoc?.doctorDietInstructions ?? null) as DoctorDietInstructions | null;
-    const hasDoctorNote = Boolean(doctor?.hasActiveNote);
+    const dietRestrictions = (userDoc?.dietRestrictions ?? null) as DietRestrictions | null;
+    const hasDietRestrictions = Boolean(dietRestrictions?.hasActiveNote);
 
     if (loadingUser) {
         return <LoadingScreen message="Loading your account..." />;
@@ -1190,8 +1190,10 @@ function AccountPageContent() {
             <div className="bg-white border-b border-gray-100 px-6 py-6">
                 <div className="max-w-3xl mx-auto">
                     <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 bg-gradient-to-br from-[#4A90E2] to-[#357ABD] rounded-full flex items-center justify-center">
-                            <UserIcon className="w-6 h-6 text-white" />
+                        <div className="w-12 h-12 bg-gradient-to-br from-[#4A90E2] to-[#357ABD] rounded-full flex items-center justify-center shadow-sm">
+                            <span className="text-xl font-semibold text-white">
+                                {(userDoc?.name || user.email || "A").charAt(0).toUpperCase()}
+                            </span>
                         </div>
                         <div>
                             <h1 className="text-xl lg:text-2xl text-gray-900">
@@ -1673,7 +1675,7 @@ function AccountPageContent() {
                                     <p className="text-xs text-gray-500">Upload to filter meal suggestions</p>
                                 </div>
                             </div>
-                            {hasDoctorNote && (
+                            {hasDietRestrictions && (
                                 <button
                                     onClick={() => router.push("/diet-restrictions")}
                                     className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors"
@@ -1684,7 +1686,7 @@ function AccountPageContent() {
                         </div>
 
                         <div className="px-5 py-4">
-                            {!hasDoctorNote ? (
+                            {!hasDietRestrictions ? (
                                 <div>
                                     <p className="text-sm text-gray-500 mb-4">
                                         Upload your diet instructions to automatically filter meal suggestions.
@@ -1702,20 +1704,20 @@ function AccountPageContent() {
                                     <div className="flex items-center gap-2">
                                         <div className="w-2 h-2 bg-emerald-500 rounded-full" />
                                         <span className="text-sm font-medium text-emerald-700">Active</span>
-                                        {doctor?.updatedAt && (
+                                        {dietRestrictions?.updatedAt && (
                                             <span className="text-xs text-gray-400">
-                                                • Updated {formatDoctorUpdatedAt(doctor.updatedAt)}
+                                                • Updated {formatDietRestrictionsUpdatedAt(dietRestrictions.updatedAt)}
                                             </span>
                                         )}
                                     </div>
 
-                                    {doctor?.summaryText && (
-                                        <p className="text-sm text-gray-600">{doctor.summaryText}</p>
+                                    {dietRestrictions?.summaryText && (
+                                        <p className="text-sm text-gray-600">{dietRestrictions.summaryText}</p>
                                     )}
 
-                                    {doctor?.blockedIngredients && doctor.blockedIngredients.length > 0 && (
+                                    {dietRestrictions?.blockedIngredients && dietRestrictions.blockedIngredients.length > 0 && (
                                         <div className="flex flex-wrap gap-1.5">
-                                            {doctor.blockedIngredients.map((item) => (
+                                            {dietRestrictions.blockedIngredients.map((item) => (
                                                 <span
                                                     key={item}
                                                     className="px-2 py-1 bg-red-50 text-red-700 rounded-lg text-xs"
@@ -1727,12 +1729,12 @@ function AccountPageContent() {
                                     )}
 
                                     <button
-                                        onClick={() => void handleRemoveDoctorInstructions()}
-                                        disabled={removingDoctorNote}
+                                        onClick={() => void handleRemoveDietRestrictions()}
+                                        disabled={removingDietRestrictions}
                                         className="flex items-center gap-2 text-sm text-red-500 hover:text-red-600 transition-colors"
                                     >
                                         <Trash2 className="w-4 h-4" />
-                                        <span>{removingDoctorNote ? "Removing..." : "Remove"}</span>
+                                        <span>{removingDietRestrictions ? "Removing..." : "Remove"}</span>
                                     </button>
                                 </div>
                             )}
@@ -1879,7 +1881,7 @@ function AccountPageContent() {
                                                                 </p>
                                                             </div>
                                                         )}
-                                                        {member.doctorDietInstructions?.hasActiveNote && (
+                                                        {member.dietRestrictions?.hasActiveNote && (
                                                             <div className="flex items-center gap-2 text-blue-600">
                                                                 <FileText className="w-4 h-4" />
                                                                 <span className="text-xs font-medium">Has diet instructions</span>
@@ -2694,7 +2696,7 @@ function AccountPageContent() {
                             >
                                 <FileText className="w-4 h-4" />
                                 <span>
-                                    {editingMember.doctorDietInstructions?.hasActiveNote
+                                    {editingMember.dietRestrictions?.hasActiveNote
                                         ? "Update Diet Instructions"
                                         : "Upload Diet Instructions"}
                                 </span>

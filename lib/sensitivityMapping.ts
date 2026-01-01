@@ -118,10 +118,47 @@ export const dietTypeConflicts: Record<string, string[]> = {
     ]
 };
 
+// Smart keyword expansion for dislikes
+// Maps disliked foods to related search terms, with exclusion patterns for false positives
+export const dislikeKeywordExpansions: Record<string, { keywords: string[], exclude?: string[] }> = {
+    "bell pepper": {
+        keywords: ["bell pepper", "bell peppers", "stuffed pepper", "stuffed peppers"],
+        exclude: ["black pepper", "white pepper", "red pepper flakes", "pepper seasoning", "peppercorn", "cayenne pepper"]
+    },
+    "bell peppers": {
+        keywords: ["bell pepper", "bell peppers", "stuffed pepper", "stuffed peppers"],
+        exclude: ["black pepper", "white pepper", "red pepper flakes", "pepper seasoning", "peppercorn", "cayenne pepper"]
+    },
+    "mushroom": {
+        keywords: ["mushroom", "mushrooms", "portobello", "shiitake", "cremini"],
+        exclude: ["mushroom powder", "mushroom extract", "mushroom broth"]
+    },
+    "mushrooms": {
+        keywords: ["mushroom", "mushrooms", "portobello", "shiitake", "cremini"],
+        exclude: ["mushroom powder", "mushroom extract", "mushroom broth"]
+    },
+    "onion": {
+        keywords: ["onion", "onions", "yellow onion", "white onion", "red onion", "sweet onion"],
+        exclude: ["onion powder", "onion salt", "onion seasoning"]
+    },
+    "onions": {
+        keywords: ["onion", "onions", "yellow onion", "white onion", "red onion", "sweet onion"],
+        exclude: ["onion powder", "onion salt", "onion seasoning"]
+    },
+    "tomato": {
+        keywords: ["tomato", "tomatoes", "fresh tomato", "sliced tomato", "diced tomato", "cherry tomato"],
+        exclude: ["tomato sauce", "tomato paste", "ketchup", "marinara", "tomato powder"]
+    },
+    "tomatoes": {
+        keywords: ["tomato", "tomatoes", "fresh tomato", "sliced tomato", "diced tomato", "cherry tomato"],
+        exclude: ["tomato sauce", "tomato paste", "ketchup", "marinara", "tomato powder"]
+    }
+};
+
 export type ConflictResult = {
     hasConflict: boolean;
     conflicts: {
-        type: "allergy" | "sensitivity" | "diet" | "doctor_blocked";
+        type: "allergy" | "sensitivity" | "diet" | "diet_restricted" | "dislike";
         restriction: string;
         matchedKeyword: string;
         person?: string; // Name of the person (undefined = primary user, string = family member name)
@@ -136,6 +173,7 @@ export type FamilyMemberRestrictions = {
     dietType?: string;
     blockedIngredients: string[];
     blockedGroups: string[];
+    dislikes: string[];
 };
 
 // Words that negate or exclude ingredients
@@ -281,8 +319,9 @@ function checkPersonRestrictions(
     allergies: string[],
     sensitivities: string[],
     dietType: string | undefined,
-    blockedIngredients: string[],
-    blockedGroups: string[],
+    customBlockedIngredients: string[],
+    customBlockedGroups: string[],
+    dislikes: string[],
     personName?: string // undefined = primary user
 ): ConflictResult["conflicts"] {
     const conflicts: ConflictResult["conflicts"] = [];
@@ -371,27 +410,71 @@ function checkPersonRestrictions(
         }
     }
 
-    // Check doctor-blocked ingredients
-    for (const blocked of blockedIngredients) {
+    // Check custom blocked ingredients
+    for (const blocked of customBlockedIngredients) {
         if (keywordPresentAndNotNegated(promptLower, blocked)) {
             conflicts.push({
-                type: "doctor_blocked",
-                restriction: `Doctor-restricted: ${blocked}`,
+                type: "diet_restricted",
+                restriction: `Restricted: ${blocked}`,
                 matchedKeyword: blocked,
                 person: personName
             });
         }
     }
 
-    // Check doctor-blocked groups
-    for (const group of blockedGroups) {
+    // Check custom blocked groups
+    for (const group of customBlockedGroups) {
         if (keywordPresentAndNotNegated(promptLower, group)) {
             conflicts.push({
-                type: "doctor_blocked",
-                restriction: `Doctor-restricted group: ${group}`,
+                type: "diet_restricted",
+                restriction: `Restricted group: ${group}`,
                 matchedKeyword: group,
                 person: personName
             });
+        }
+    }
+
+    // Check dislikes with smart keyword expansion
+    for (const dislike of dislikes) {
+        const dislikeLower = dislike.toLowerCase();
+        const expansion = dislikeKeywordExpansions[dislikeLower];
+
+        if (expansion) {
+            // Use expanded keywords with exclusion patterns
+            const { keywords, exclude = [] } = expansion;
+
+            for (const keyword of keywords) {
+                if (keywordPresentAndNotNegated(promptLower, keyword)) {
+                    // Check if this match should be excluded (e.g., "black pepper" when dislike is "bell pepper")
+                    let shouldExclude = false;
+                    for (const excludePattern of exclude) {
+                        if (promptLower.includes(excludePattern.toLowerCase())) {
+                            shouldExclude = true;
+                            break;
+                        }
+                    }
+
+                    if (!shouldExclude) {
+                        conflicts.push({
+                            type: "dislike",
+                            restriction: `Disliked food: ${dislike}`,
+                            matchedKeyword: keyword,
+                            person: personName
+                        });
+                        break; // Only report first match per dislike
+                    }
+                }
+            }
+        } else {
+            // No expansion defined, use direct matching
+            if (keywordPresentAndNotNegated(promptLower, dislike)) {
+                conflicts.push({
+                    type: "dislike",
+                    restriction: `Disliked food: ${dislike}`,
+                    matchedKeyword: dislike,
+                    person: personName
+                });
+            }
         }
     }
 
@@ -407,8 +490,9 @@ export function checkPromptForConflicts(
     allergies: string[],
     sensitivities: string[],
     dietType?: string,
-    doctorBlockedIngredients?: string[],
-    doctorBlockedGroups?: string[],
+    customBlockedIngredients?: string[],
+    customBlockedGroups?: string[],
+    dislikes?: string[],
     familyMembers?: FamilyMemberRestrictions[]
 ): ConflictResult {
     const promptLower = prompt.toLowerCase();
@@ -420,8 +504,9 @@ export function checkPromptForConflicts(
         allergies,
         sensitivities,
         dietType,
-        doctorBlockedIngredients || [],
-        doctorBlockedGroups || [],
+        customBlockedIngredients || [],
+        customBlockedGroups || [],
+        dislikes || [],
         undefined // primary user has no name attribution
     );
     conflicts.push(...primaryUserConflicts);
@@ -436,6 +521,7 @@ export function checkPromptForConflicts(
                 member.dietType,
                 member.blockedIngredients,
                 member.blockedGroups,
+                member.dislikes,
                 member.name
             );
             conflicts.push(...memberConflicts);
@@ -457,7 +543,7 @@ export function formatConflictMessage(conflicts: ConflictResult["conflicts"]): s
     const allergyConflicts = conflicts.filter(c => c.type === "allergy");
     const sensitivityConflicts = conflicts.filter(c => c.type === "sensitivity");
     const dietConflicts = conflicts.filter(c => c.type === "diet");
-    const doctorConflicts = conflicts.filter(c => c.type === "doctor_blocked");
+    const customRestrictionConflicts = conflicts.filter(c => c.type === "diet_restricted");
 
     const parts: string[] = [];
 
@@ -466,9 +552,9 @@ export function formatConflictMessage(conflicts: ConflictResult["conflicts"]): s
         parts.push(`Allergy warning: ${items.join(", ")}`);
     }
 
-    if (doctorConflicts.length > 0) {
-        const items = doctorConflicts.map(c => `"${c.matchedKeyword}"`);
-        parts.push(`Doctor-restricted: ${items.join(", ")}`);
+    if (customRestrictionConflicts.length > 0) {
+        const items = customRestrictionConflicts.map(c => `"${c.matchedKeyword}"`);
+        parts.push(`Restricted: ${items.join(", ")}`);
     }
 
     if (sensitivityConflicts.length > 0) {
@@ -482,4 +568,44 @@ export function formatConflictMessage(conflicts: ConflictResult["conflicts"]): s
     }
 
     return parts.join("\n");
+}
+
+/**
+ * Check which diets a list of ingredients complies with
+ * Returns a list of diet names (e.g. "vegan", "keto")
+ */
+export function getCompliantDiets(ingredients: { name: string }[]): string[] {
+    const compliantDiets: string[] = [];
+
+    // Get all defined diets
+    const diets = Object.keys(dietTypeConflicts);
+
+    for (const diet of diets) {
+        let isCompliant = true;
+        const conflicts = dietTypeConflicts[diet] || [];
+
+        // Check if any ingredient conflicts with this diet
+        for (const ingredient of ingredients) {
+            const ingredientLower = ingredient.name.toLowerCase();
+
+            // Check against each conflict keyword for this diet
+            for (const conflictKeyword of conflicts) {
+                // We use simple inclusion checking here
+                // Ideally this would reuse the more robust keyword matching from checkPersonRestrictions
+                // but we want to be conservative for auto-badging
+                if (ingredientLower.includes(conflictKeyword.toLowerCase())) {
+                    isCompliant = false;
+                    break;
+                }
+            }
+
+            if (!isCompliant) break;
+        }
+
+        if (isCompliant) {
+            compliantDiets.push(diet);
+        }
+    }
+
+    return compliantDiets;
 }

@@ -67,7 +67,7 @@ export default function PrivacyPolicyPage() {
                                     <li>Meal selections and replacements</li>
                                 </ul>
 
-                                <h4 className="font-semibold text-gray-800 mb-2">Doctor Instruction Uploads (if enabled in the future)</h4>
+                                <h4 className="font-semibold text-gray-800 mb-2">Diet Instruction Uploads (if enabled in the future)</h4>
                                 <ul className="list-disc list-inside text-gray-600 mb-4 space-y-1">
                                     <li>Photos or documents you upload containing food restrictions</li>
                                     <li>Any text or content extracted from them</li>
@@ -132,7 +132,7 @@ export default function PrivacyPolicyPage() {
                                 <li>Your dietary preferences</li>
                                 <li>Food allergies</li>
                                 <li>High-level nutritional goals</li>
-                                <li>Optional extracted text from doctor instructions (if uploaded)</li>
+                                <li>Optional extracted text from diet instructions (if uploaded)</li>
                             </ul>
                             <p className="text-gray-600 mb-4">We do not send:</p>
                             <ul className="list-disc list-inside text-gray-600 mb-4 space-y-1">
@@ -221,7 +221,7 @@ export default function PrivacyPolicyPage() {
 
                         <Section title="8. Medical Information Disclaimer">
                             <p className="text-gray-800 font-semibold mb-4">CartSense is not a medical device and is not HIPAA-regulated.</p>
-                            <p className="text-gray-600 mb-2">If you upload photos of doctor instructions or enter health-related preferences:</p>
+                            <p className="text-gray-600 mb-2">If you upload photos of diet instructions or enter health-related preferences:</p>
                             <ul className="list-disc list-inside text-gray-600 mb-4 space-y-1">
                                 <li>These are used solely to filter meal suggestions</li>
                                 <li>They are not reviewed by medical professionals</li>

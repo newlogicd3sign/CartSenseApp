@@ -417,6 +417,11 @@ export function filterValidProducts(
 ): ProductCandidate[] {
   const excludeIds = options.excludeProductIds || new Set();
 
+  // Fix #2: Hard-block produce when ingredient category is pantry
+  const ingredientName = options.ingredientName;
+  const ingredientRule = ingredientName ? findIngredientRule(ingredientName) : null;
+  const isPantryIngredient = ingredientRule?.category === 'pantry';
+
   return products.filter((product) => {
     // Exclude specific product IDs
     if (excludeIds.has(product.productId)) {
@@ -436,6 +441,21 @@ export function filterValidProducts(
     // Only show available products
     if (!isProductAvailable(product)) {
       return false;
+    }
+
+    // Fix #2 Implementation
+    if (isPantryIngredient) {
+      const categories = getProductCategories(product);
+      const isProduce = categories.some(c =>
+        c.includes('produce') ||
+        c.includes('fresh vegetables') ||
+        c.includes('fresh fruit')
+      );
+
+      // If we want a pantry item (spice), forbid fresh produce
+      if (isProduce) {
+        return false;
+      }
     }
 
     return true;

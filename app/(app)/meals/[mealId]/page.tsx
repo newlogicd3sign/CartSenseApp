@@ -64,6 +64,10 @@ import {
     Home,
     Minus,
     Plus,
+    ShieldCheck,
+    Info,
+    ChevronDown,
+    ChevronUp,
 } from "lucide-react";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { useToast } from "@/components/Toast";
@@ -79,7 +83,7 @@ import { getIngredientImageUrl } from "@/lib/ingredientImages";
 import { getEstimatedPrice } from "@/lib/priceEstimates";
 import { normalizeIngredientKey } from "@/lib/ingredientNormalization";
 import { DietaryConflictModal } from "@/components/DietaryConflictModal";
-import { checkPromptForConflicts, type ConflictResult, type FamilyMemberRestrictions } from "@/lib/sensitivityMapping";
+import { checkPromptForConflicts, getCompliantDiets, type ConflictResult, type FamilyMemberRestrictions } from "@/lib/sensitivityMapping";
 
 type Ingredient = {
     name: string;
@@ -117,6 +121,7 @@ type Meal = {
         min: number;
         max: number;
     };
+    estimatedCost?: number;
 };
 
 type UserPrefs = {
@@ -128,11 +133,12 @@ type UserPrefs = {
         allergies?: string[];
         sensitivities?: string[];
     };
-    doctorDietInstructions?: {
+    dietRestrictions?: {
         hasActiveNote?: boolean;
         blockedIngredients?: string[];
         blockedGroups?: string[];
     };
+    dislikedFoods?: string[];
     isPremium?: boolean;
     monthlyChatCount?: number;
     chatPeriodStart?: { toDate: () => Date } | null;
@@ -179,9 +185,9 @@ type ThreadMessage = {
 };
 
 type MealsMeta = {
-    usedDoctorInstructions?: boolean;
-    blockedIngredientsFromDoctor?: string[];
-    blockedGroupsFromDoctor?: string[];
+    usedDietRestrictions?: boolean;
+    blockedIngredientsFromUpload?: string[];
+    blockedGroupsFromUpload?: string[];
     pantryMode?: boolean;
 };
 
@@ -383,8 +389,9 @@ function MealDetailPageContent() {
                                     allergies: memberData.allergiesAndSensitivities?.allergies || [],
                                     sensitivities: memberData.allergiesAndSensitivities?.sensitivities || [],
                                     dietType: memberData.dietType,
-                                    blockedIngredients: memberData.doctorDietInstructions?.blockedIngredients || [],
-                                    blockedGroups: memberData.doctorDietInstructions?.blockedGroups || []
+                                    blockedIngredients: memberData.dietRestrictions?.blockedIngredients || [],
+                                    blockedGroups: memberData.dietRestrictions?.blockedGroups || [],
+                                    dislikes: memberData.dislikedFoods || []
                                 });
                             }
                         });
@@ -564,6 +571,13 @@ function MealDetailPageContent() {
     // Use enriched ingredients if available, otherwise fall back to meal ingredients
     const displayIngredients = enrichedIngredients ?? meal?.ingredients ?? [];
 
+    // Calculate compliant diets based on ingredients
+    const compliantDiets = useMemo(() => {
+        if (!meal) return [];
+        // Use base ingredients for check to avoid pricing/stock updates flickering the badges
+        return getCompliantDiets(meal.ingredients);
+    }, [meal]);
+
     const toggleIngredient = (idx: number) => {
         setSelectedIngredients((prev) => {
             const newSet = new Set(prev);
@@ -584,6 +598,41 @@ function MealDetailPageContent() {
             setSelectedIngredients(new Set(displayIngredients.map((_, idx) => idx)));
         }
     };
+
+    // Calculate dynamic total cost of selected ingredients (using real Kroger prices if available)
+    const totalCalculatedCost = useMemo(() => {
+        let freshCost = 0;
+        let stapleCost = 0;
+        let total = 0;
+        let hasRealPrices = false;
+
+        selectedIngredients.forEach(idx => {
+            const ing = displayIngredients[idx];
+            let price = 0;
+
+            // Prefer real Kroger price
+            if (ing.price !== undefined && ing.price !== null) {
+                price = ing.price;
+                hasRealPrices = true;
+            }
+            // Fallback to estimated price if no real price
+            else if (ing.name) {
+                const est = getEstimatedPrice(ing.name);
+                price = est.min; // Conservative estimate using lower bound
+            }
+
+            total += price;
+
+            // Separate into fresh vs staple cost
+            if (isStapleItem(ing.name)) {
+                stapleCost += price;
+            } else {
+                freshCost += price;
+            }
+        });
+
+        return { total, freshCost, stapleCost, hasRealPrices };
+    }, [selectedIngredients, displayIngredients]);
 
     const applyUpdatedMeal = (updatedMeal: Meal) => {
         setMeal(updatedMeal);
@@ -1291,8 +1340,9 @@ function MealDetailPageContent() {
             prefs?.allergiesAndSensitivities?.allergies || [],
             prefs?.allergiesAndSensitivities?.sensitivities || [],
             prefs?.dietType,
-            prefs?.doctorDietInstructions?.blockedIngredients || [],
-            prefs?.doctorDietInstructions?.blockedGroups || [],
+            prefs?.dietRestrictions?.blockedIngredients || [],
+            prefs?.dietRestrictions?.blockedGroups || [],
+            prefs?.dislikedFoods || [],
             familyMemberRestrictions
         );
 
@@ -1345,7 +1395,7 @@ function MealDetailPageContent() {
         );
     }
 
-    const doctorApplied = Boolean(mealsMeta?.usedDoctorInstructions);
+    const customRestrictionsApplied = Boolean(mealsMeta?.usedDietRestrictions);
 
     return (
         <div className="min-h-screen bg-[#f8fafb]">
@@ -1400,6 +1450,41 @@ function MealDetailPageContent() {
                                         <span className="text-[10px] font-medium text-sky-700">{meal.cookTimeRange.min}-{meal.cookTimeRange.max}m</span>
                                     </div>
                                 )}
+                                {compliantDiets.map(diet => (
+                                    <div key={diet} className="flex items-center gap-1 px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-full">
+                                        <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                                        <span className="text-[10px] font-medium text-emerald-700 capitalize">{diet}</span>
+                                    </div>
+                                ))}
+                                {customRestrictionsApplied && (
+                                    <div className="flex items-center gap-1 px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-full">
+                                        <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                                        <span className="text-[10px] font-medium text-emerald-700">Diet Compliant</span>
+                                    </div>
+                                )}
+                                {mealsMeta?.pantryMode && (
+                                    <div className="flex items-center gap-1 px-2 py-0.5 bg-amber-50 border border-amber-200 rounded-full">
+                                        <Home className="w-3 h-3 text-amber-600" />
+                                        <span className="text-[10px] font-medium text-amber-700">Pantry Mode</span>
+                                    </div>
+                                )}
+                                {/* Force re-render */}
+                                {/* Force re-render */}
+                                {/* Cost Display - Cart Total Only */}
+                                {(totalCalculatedCost.total > 0 || meal.estimatedCost) && (
+                                    <div className={`flex items-center gap-1 px-2 py-0.5 border rounded-full ${totalCalculatedCost.hasRealPrices
+                                        ? "bg-green-50 border-green-200"
+                                        : "bg-gray-50 border-gray-200"
+                                        }`}>
+                                        <ShoppingCart className={`w-3 h-3 ${totalCalculatedCost.hasRealPrices ? "text-green-600" : "text-gray-500"}`} />
+                                        <span className={`text-[10px] font-medium ${totalCalculatedCost.hasRealPrices ? "text-green-700" : "text-gray-600"}`}>
+                                            {totalCalculatedCost.total > 0
+                                                ? `Cart: ~$${totalCalculatedCost.total.toFixed(2)}`
+                                                : `Est. Cart: ~$${(meal.estimatedCost ?? 0).toFixed(2)}`
+                                            }
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                             <h1 className="text-lg sm:text-xl font-medium text-gray-900 mb-1">{meal.name}</h1>
                             <p className="text-sm text-gray-500">{meal.description}</p>
@@ -1412,24 +1497,7 @@ function MealDetailPageContent() {
             <div className="px-6 pb-6">
                 <div className="max-w-3xl mx-auto space-y-6">
                     {/* Status Badges */}
-                    <div className="flex flex-wrap gap-2">
-                        {mealsMeta?.pantryMode && (
-                            <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl">
-                                <Home className="w-4 h-4 text-amber-600" />
-                                <span className="text-sm font-medium text-amber-700">
-                                    Pantry Mode — cook with what you have
-                                </span>
-                            </div>
-                        )}
-                        {doctorApplied && (
-                            <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-xl">
-                                <Heart className="w-4 h-4 text-emerald-500" />
-                                <span className="text-sm font-medium text-emerald-700">
-                                    Generated with your diet instructions
-                                </span>
-                            </div>
-                        )}
-                    </div>
+
 
                     {/* Macros Card */}
                     <div className="bg-white rounded-2xl border border-gray-100 p-5">
@@ -1593,7 +1661,12 @@ function MealDetailPageContent() {
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
                                 <h3 className="font-medium text-gray-900">
-                                    Ingredients ({selectedIngredients.size} of {displayIngredients.length} selected)
+                                    Ingredients ({selectedIngredients.size} of {displayIngredients.length})
+                                    {totalCalculatedCost.total > 0 && (
+                                        <span className="ml-2 text-[#4A90E2] text-sm">
+                                            Cart Total: ~${totalCalculatedCost.total.toFixed(2)}
+                                        </span>
+                                    )}
                                 </h3>
                                 {enrichingKroger && (
                                     <div className="flex items-center gap-1.5 text-xs text-gray-400">

@@ -61,6 +61,7 @@ type Meal = {
         min: number;
         max: number;
     };
+    estimatedCost?: number;
 };
 
 type UserPrefs = {
@@ -220,6 +221,7 @@ function normalizeMeal(raw: unknown): Meal {
         steps: stepsArray.map((s) => normalizeString(s, "")).filter((s) => s.length > 0),
         imageUrl: typeof r.imageUrl === "string" && r.imageUrl.trim().length > 0 ? r.imageUrl.trim() : undefined,
         cookTimeRange,
+        estimatedCost: normalizeNumber(r.estimatedCost, 0) || undefined,
     };
 }
 
@@ -726,7 +728,7 @@ function combineFamilyRestrictions(
 }
 
 // Validate a meal against dietary restrictions
-function validateMealAgainstRestrictions(meal: Meal, restrictions: CombinedDietaryRestrictions): ValidationResult {
+function validateMealAgainstRestrictions(meal: Meal, restrictions: CombinedDietaryRestrictions, ignoreConflicts: boolean = false): ValidationResult {
     const violations: string[] = [];
 
     // Create a combined list of all ingredient names and search terms (lowercase for comparison)
@@ -785,6 +787,14 @@ function validateMealAgainstRestrictions(meal: Meal, restrictions: CombinedDieta
         if (allMealText.includes(groupLower)) {
             violations.push(`Contains doctor-blocked food group: ${group}`);
         }
+    }
+
+    // If ignoring conflicts, we still calculate violations but always return valid
+    if (ignoreConflicts) {
+        return {
+            isValid: true,
+            violations
+        };
     }
 
     return {
@@ -846,7 +856,7 @@ function isBroadMealPlanRequest(prompt: string): boolean {
     return false;
 }
 
-function buildSystemPrompt(prompt: string, restrictions: CombinedDietaryRestrictions, isPremium: boolean, pantryMode: boolean = false, preferences: PreferenceData | null = null, recentMeals: { name: string; daysAgo: number }[] = []): string {
+function buildSystemPrompt(prompt: string, restrictions: CombinedDietaryRestrictions, isPremium: boolean, pantryMode: boolean = false, preferences: PreferenceData | null = null, recentMeals: { name: string; daysAgo: number }[] = [], ignoreConflicts: boolean = false, householdSize: number = 1): string {
     // Build household section if multiple members
     const householdSection = restrictions.householdMembers.length > 1
         ? `\nHousehold (${restrictions.householdMembers.length}): ${restrictions.householdMembers.map(m => `${m.name}${m.dietType ? ` (${m.dietType})` : ""}`).join(", ")}`
@@ -872,23 +882,32 @@ function buildSystemPrompt(prompt: string, restrictions: CombinedDietaryRestrict
     }
     if (restrictions.dietTypes.length) restrictionParts.push(`Diets: ${restrictions.dietTypes.join(", ")}`);
 
-    // Build allergy warning as a separate, prominent section
+    // Build allergy warning
+    // If ignoreConflicts is true, we soften the warning significantly to allow user override
     const allergyWarning = restrictions.combinedAllergies.length > 0
-        ? `\n⚠️ CRITICAL ALLERGIES - DO NOT USE THESE INGREDIENTS UNDER ANY CIRCUMSTANCES:\n${restrictions.combinedAllergies.map(a => `• ${a} (and all ${a}-derived ingredients)`).join("\n")}\nThese allergies are potentially life-threatening. NEVER suggest meals containing these allergens or their derivatives.\n`
+        ? ignoreConflicts
+            ? `\n⚠️ USER OVERRIDE ACTIVE: User has explicitly authorized the use of all ingredients, including allergens: ${restrictions.combinedAllergies.join(", ")}. IGNORE allergy restrictions if the prompt requires these ingredients.\n`
+            : `\n⚠️ CRITICAL ALLERGIES - DO NOT USE THESE INGREDIENTS UNDER ANY CIRCUMSTANCES:\n${restrictions.combinedAllergies.map(a => `• ${a} (and all ${a}-derived ingredients)`).join("\n")}\nThese allergies are potentially life-threatening. NEVER suggest meals containing these allergens or their derivatives.\n`
         : "";
 
     // Build dislikes guidance for semantic understanding
     const dislikesGuidance = restrictions.combinedDislikes.length > 0
-        ? `\n🔸 IMPORTANT - SEMANTIC UNDERSTANDING OF DISLIKES:\nWhen someone dislikes an ingredient, they typically mean the whole/raw form, NOT processed or cooked versions:
-- "Tomatoes" disliked → AVOID whole/raw tomatoes, but tomato sauce, ketchup, marinara, and cooked tomato products are FINE
-- "Mushrooms" disliked → AVOID whole mushrooms, but mushroom powder/extract in sauces is FINE
-- "Onions" disliked → AVOID visible onion pieces, but onion powder and well-cooked onions in sauces are usually FINE
-- "Peppers" disliked → AVOID bell peppers/chunks, but pepper powder and hot sauces may be FINE
-Apply common sense: if they dislike the texture/appearance of something, the processed version is usually acceptable.\n`
+        ? `\n🔸 IMPORTANT - DISLIKES AND VARIANTS:\n
+The user has dislike restrictions for: ${restrictions.combinedDislikes.join(", ")}.
+You must STRICTLY AVOID all whole, raw, chopped, slices, or chunky forms of these ingredients, INCLUDING ALL VARIANTS.
+- "Tomatoes" disliked → AVOID cherry tomatoes, grape tomatoes, roma tomatoes, diced tomatoes, sun-dried tomatoes. (Smooth tomato sauce/paste is OK).
+- "Mushrooms" disliked → AVOID all varieties (cremini, shiitake, portobello). (Mushroom powder/broth is OK).
+- "Onions" disliked → AVOID red onion, white onion, shallots, scallions, leeks. (Onion powder is OK).
+- "Peppers" disliked → AVOID bell peppers, jalapeños, habaneros, chili peppers. (Paprika/chili powder/hot sauce is OK).
+- "Potatoes" disliked → AVOID sweet potatoes, russet potatoes, red potatoes.
+
+RULE: If the disliked item introduces TEXTURE or VISIBLE PIECES, it is BANNED. Only smooth, indistinguishable processed forms (sauces, powders) are allowed.\n`
         : "";
 
     const restrictionsText = restrictionParts.length > 0
-        ? `RESTRICTIONS:${householdSection}\n${restrictionParts.map(r => `- ${r}`).join("\n")}`
+        ? ignoreConflicts
+            ? `RESTRICTIONS (USER OVERRIDE ACTIVE - TREAT AS SUGGESTIONS ONLY):${householdSection}\n${restrictionParts.map(r => `- ${r}`).join("\n")}`
+            : `RESTRICTIONS:${householdSection}\n${restrictionParts.map(r => `- ${r}`).join("\n")}`
         : "";
 
     // Ingredient quality rules - only apply when user will be shopping (not pantry mode)
@@ -964,16 +983,30 @@ VARIETY RULE: Do NOT suggest these exact recipes again. You CAN use the same ing
         mealCountInstruction = `Return 3-4 recipe options matching the request. All recipes should match the meal type the user requested (e.g., if they ask for dinner, return only dinner recipes). If no specific meal type is mentioned, infer the appropriate type from context.`;
     }
 
-    return `You are CartSense, an AI meal planner. Be concise.
+    // Build specific rules based on override status
+    const rulesText = ignoreConflicts
+        ? "RULES: USER OVERRIDE ACTIVE. Strict allergy/doctor checks are DISABLED. Proceed with generating meals even if they contain restricted ingredients."
+        : "RULES: Respect allergies/doctor restrictions (STRICT). Heart-conscious by default. U.S. grocery ingredients.";
 
-TOPIC VALIDATION (FIRST PRIORITY):
+    // Topic validation tailored for override
+    const topicValidation = ignoreConflicts
+        ? `TOPIC VALIDATION:
+- The user has explicitly overridden safety checks. Treat requests for allergenic foods as VALID food requests.
+- Only reject if the request is completely unrelated to food/cooking (e.g. coding, finance).`
+        : `TOPIC VALIDATION (FIRST PRIORITY):
 Before generating meals, determine if the user's request is related to food, cooking, meals, recipes, nutrition, or grocery shopping.
-- FOOD-RELATED requests include: any dish name (e.g., "beef tacos", "pasta", "cookies"), ingredients (e.g., "chicken", "vegetables"), cuisines (e.g., "Italian", "Korean"), dietary preferences (e.g., "high protein", "low carb"), meal types (e.g., "breakfast", "dinner", "snack"), or cooking methods (e.g., "grilled", "baked"). These should ALL proceed with meal generation.
+- **IMPORTANT**: Be extremely lenient with typos and spelling errors. If a word looks like a food word (e.g., "chineese" for "Chinese", "chiken" for "chicken"), treat it as the intended food.
+- **BIAS TOWARDS FOOD**: If a request is ambiguous, assume the user is asking for food. Only reject requests that are clearly and unambiguously unrelated to food (e.g. "write python code", "investment advice").
+- FOOD-RELATED requests include: any dish name, ingredients, cuisines, dietary preferences, meal types, or cooking methods. ALL proceed with meal generation.
 - NON-FOOD requests include: health advice unrelated to diet, relationship questions, coding help, general life advice, financial advice, etc. Only these should return the off-topic error.
 - If the request is NOT food-related, respond ONLY with: {"error": "off_topic", "message": "I'm a meal planning assistant. I can help you with recipes, meal ideas, and grocery planning. What would you like to eat?"}
-- If the request IS food-related (which includes ANY dish, ingredient, or cuisine name), proceed with meal generation.
+- If the request IS food-related, proceed with meal generation.`;
 
-RULES: Respect allergies/doctor restrictions (STRICT). Heart-conscious by default. U.S. grocery ingredients.
+    return `You are CartSense, an AI meal planner. Be concise.
+
+${topicValidation}
+
+${rulesText}
 ${allergyWarning}${dislikesGuidance}${cookingGuidance}
 ${restrictionsText}
 ${preferencesSection}
@@ -982,15 +1015,19 @@ ${qualityRulesText}
 ${pantryModeText}
 
 JSON output:
-{"meals":[{"mealType":"breakfast|lunch|dinner|snack","name":"","description":"","servings":N,"macros":{"calories":N,"protein":N,"carbs":N,"fiber":N,"fat":N},"cookTimeRange":{"min":N,"max":N},"ingredients":[{"name":"display name","quantity":"","grocerySearchTerm":"raw product","preparation":""}],"steps":[""]}]}
+{"meals":[{"mealType":"breakfast|lunch|dinner|snack","name":"","description":"","estimatedCost":N,"servings":N,"macros":{"calories":N,"protein":N,"carbs":N,"fiber":N,"fat":N},"cookTimeRange":{"min":N,"max":N},"ingredients":[{"name":"display name","quantity":"","grocerySearchTerm":"raw product","preparation":""}],"steps":[""]}]}
 
 KEY RULES:
+- servings: Default to ${householdSize} serving${householdSize > 1 ? 's' : ''} (household size) unless the user specifically requests a different amount
 - macros = PER SERVING, not total
 - cookTimeRange = estimated cook time in minutes as a range (min to max) accounting for skill variance
   - Simple meals: range of 10-15 min (e.g., {"min":15,"max":25})
-  - Moderate meals: range of 15-20 min (e.g., {"min":30,"max":50})
   - Complex meals: range of 20-30 min (e.g., {"min":45,"max":75})
-- grocerySearchTerm: MUST be the RAW, UNCOOKED, WHOLE product. NEVER use "cooked", "grilled", "roasted", "baked", "sliced", "diced" here. "diced onion" -> "yellow onion", "cooked chicken" -> "boneless skinless chicken breast".
+- estimatedCost: Estimated **SHOPPING CART TOTAL** in USD (e.g. 18.50). Assume the user needs to buy full bottles/packages of staples (oil, spices, sauces). It is better to overestimate than underestimate.
+- grocerySearchTerm: MUST be the RAW, UNCOOKED, WHOLE product. NEVER use "cooked", "grilled", "roasted", "baked", "sliced", "diced" here. "diced onion" -> "yellow onion", "cooked chicken" -> "boneless skinless chicken breast", "ground chicken" -> "ground chicken" (NOT "chicken breast"), "ground beef" -> "ground beef", "ground turkey" -> "ground turkey".
+- **INGREDIENTS**: List the main ingredients required *for 1 person*. The quantity should be appropriate for a single serving.
+    - Be specific with ingredient names (e.g., use "black pepper" instead of just "pepper", "brown rice" instead of "rice").
+    - Omit very minor pantry staples like water or basic salt unless crucial (but DO include oil, spices/seasonings).
 - Include seasonings in ingredients
 - description: 1 sentence max
 - steps: 5-7 steps, written in a warm food blogger style. Be conversational and enthusiastic! Include specific seasoning tips (e.g., "season generously with salt and pepper", "add a pinch of red pepper flakes for heat"). Explain WHY certain techniques matter (e.g., "let the onions caramelize until golden - this builds amazing flavor"). Share little tips like "taste and adjust seasoning as you go!"
@@ -1027,6 +1064,7 @@ export async function POST(request: Request) {
                 prefs?: UserPrefs;
                 uid?: string;
                 pantryMode?: boolean;
+                ignoreConflicts?: boolean;
             };
 
             // Validation
@@ -1116,7 +1154,7 @@ export async function POST(request: Request) {
                 response_format: { type: "json_object" },
                 stream: true,
                 messages: [
-                    { role: "system", content: buildSystemPrompt(prompt, combinedRestrictions, isPremium, Boolean(pantryMode), userPreferences, recentMeals) },
+                    { role: "system", content: buildSystemPrompt(prompt, combinedRestrictions, isPremium, Boolean(pantryMode), userPreferences, recentMeals, Boolean(body.ignoreConflicts), combinedRestrictions.householdMembers.length) },
                     { role: "user", content: JSON.stringify({ userPrompt: prompt, prefs: prefs || {}, history, familyRestrictions: combinedRestrictions }) },
                 ],
             });
@@ -1158,7 +1196,7 @@ export async function POST(request: Request) {
             const rejectedMeals: { meal: Meal; violations: string[] }[] = [];
 
             for (const meal of meals) {
-                const validation = validateMealAgainstRestrictions(meal, combinedRestrictions);
+                const validation = validateMealAgainstRestrictions(meal, combinedRestrictions, Boolean(body.ignoreConflicts));
                 if (validation.isValid) {
                     validatedMeals.push(meal);
                 } else {

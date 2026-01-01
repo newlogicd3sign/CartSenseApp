@@ -18,12 +18,14 @@ import {
     Bookmark,
     Search,
     Trash2,
+    Share2
 } from "lucide-react";
 import { getRandomAccentColor, type AccentColor } from "@/lib/utils";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { ConfirmationModal } from "@/components/ConfirmationModal";
 import { MealCard } from "@/components/MealCard";
+import { ShareModal } from "@/components/ShareModal";
 
 type Ingredient = {
     name: string;
@@ -70,6 +72,7 @@ export default function SavedMealsPage() {
 
     const [searchQuery, setSearchQuery] = useState("");
     const [mealToDelete, setMealToDelete] = useState<SavedMeal | null>(null);
+    const [mealToShare, setMealToShare] = useState<SavedMeal | null>(null);
     const [accentColor, setAccentColor] = useState<AccentColor>({ primary: "#3b82f6", dark: "#2563eb" });
 
     useEffect(() => {
@@ -251,15 +254,27 @@ export default function SavedMealsPage() {
                                         </div>
                                     }
                                     actionButton={
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setMealToDelete(meal);
-                                            }}
-                                            className="inline-flex items-center justify-center w-6 h-6 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                        >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                        </button>
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setMealToShare(meal);
+                                                }}
+                                                className="inline-flex items-center justify-center w-8 h-8 text-[#4A90E2] hover:bg-blue-50 rounded-lg transition-colors"
+                                                title="Share meal"
+                                            >
+                                                <Share2 className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setMealToDelete(meal);
+                                                }}
+                                                className="inline-flex items-center justify-center w-8 h-8 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
                                     }
                                     dietType={dietType}
                                 />
@@ -284,6 +299,16 @@ export default function SavedMealsPage() {
                 confirmLabel="Remove"
                 variant="danger"
             />
+
+            {/* Share Modal */}
+            {mealToShare && user && (
+                <ShareModal
+                    isOpen={!!mealToShare}
+                    onClose={() => setMealToShare(null)}
+                    meal={mealToShare}
+                    userId={user.uid}
+                />
+            )}
         </div>
     );
 }

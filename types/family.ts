@@ -21,7 +21,7 @@ export type FamilyMember = {
         sensitivities?: string[];
     };
     dislikedFoods?: string[];
-    doctorDietInstructions?: DoctorDietInstructions;
+    dietRestrictions?: DoctorDietInstructions;
     createdAt: Timestamp;
     updatedAt: Timestamp;
 };

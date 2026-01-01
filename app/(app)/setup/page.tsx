@@ -515,6 +515,30 @@ function SetupPageContent() {
             // Clear the saved form data from localStorage
             localStorage.removeItem("setupFormData");
 
+            // Check for pending share claim
+            const pendingShareId = localStorage.getItem("pendingShareId");
+            if (pendingShareId) {
+                try {
+                    const claimRes = await fetch("/api/share/claim", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ shareId: pendingShareId, userId: user.uid }),
+                    });
+
+                    if (claimRes.ok) {
+                        localStorage.removeItem("pendingShareId");
+                        showToast("Preferences saved & shared meal added!", "success");
+                        sessionStorage.setItem("animateEntry", "true");
+                        router.push("/saved-meals");
+                        return;
+                    } else {
+                        console.error("Failed to claim shared meal");
+                    }
+                } catch (e) {
+                    console.error("Error claiming shared meal:", e);
+                }
+            }
+
             showToast("Your preferences have been saved!", "success");
             sessionStorage.setItem("animateEntry", "true");
             router.push("/prompt");

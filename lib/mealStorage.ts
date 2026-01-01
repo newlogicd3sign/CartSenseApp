@@ -46,9 +46,9 @@ type Meal = {
 };
 
 type MealsMeta = {
-    usedDoctorInstructions?: boolean;
-    blockedIngredientsFromDoctor?: string[];
-    blockedGroupsFromDoctor?: string[];
+    usedDietRestrictions?: boolean;
+    blockedIngredientsFromUpload?: string[];
+    blockedGroupsFromUpload?: string[];
     pantryMode?: boolean;
 };
 

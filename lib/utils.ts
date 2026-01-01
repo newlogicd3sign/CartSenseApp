@@ -18,6 +18,7 @@ const STAPLE_ITEMS = new Set([
   // Sauces and condiments
   "soy sauce", "fish sauce", "worcestershire sauce", "hot sauce", "sriracha",
   "ketchup", "mustard", "mayonnaise", "honey", "maple syrup", "molasses",
+  "bbq sauce", "barbecue sauce", "steak sauce", "teriyaki sauce", "hoisin sauce",
   // Spices and seasonings (these are typically bought once)
   "salt", "pepper", "black pepper", "garlic powder", "onion powder",
   "cumin", "paprika", "chili powder", "oregano", "basil", "thyme",
@@ -78,8 +79,21 @@ export function isExcludedIngredient(ingredientName: string): boolean {
 
   // Check if it contains an excluded item
   for (const excluded of EXCLUDED_INGREDIENTS) {
-    if (normalized === excluded || normalized.includes(excluded)) {
+    if (normalized === excluded) {
       return true;
+    }
+
+    // Partial matching - be careful with short words like "ice" matching "juice"
+    if (excluded.length > 3 && normalized.includes(excluded)) {
+      return true;
+    }
+
+    // For short excluded words, require word boundaries
+    if (excluded.length <= 3) {
+      const regex = new RegExp(`\\b${excluded}\\b`, 'i');
+      if (regex.test(normalized)) {
+        return true;
+      }
     }
   }
 
