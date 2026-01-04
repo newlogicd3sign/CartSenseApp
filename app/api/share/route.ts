@@ -1,13 +1,19 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
+import { verifyAuth } from "@/lib/authHelper";
 
 export async function POST(request: Request) {
     try {
-        const { meal, userId } = await request.json();
+        // Verify authentication
+        const auth = await verifyAuth(request);
+        if (!auth.success) return auth.error;
+        const userId = auth.userId;
 
-        if (!meal || !userId) {
-            return NextResponse.json({ error: "Missing meal or user ID" }, { status: 400 });
+        const { meal } = await request.json();
+
+        if (!meal) {
+            return NextResponse.json({ error: "Missing meal data" }, { status: 400 });
         }
 
         // Sanitize meal data strictly for public sharing

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { checkPantryItems } from "@/lib/pantry";
+import { verifyAuth } from "@/lib/authHelper";
 
 type RequestBody = {
-  userId: string;
   ingredients: string[]; // ingredient names to check
 };
 
@@ -11,17 +11,16 @@ type RequestBody = {
  *
  * Check which ingredients the user likely has in their pantry.
  * Returns ingredient keys that are in pantry (not expired).
+ * Requires Authorization header with Firebase ID token.
  */
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as RequestBody;
+    // Verify authentication
+    const auth = await verifyAuth(request);
+    if (!auth.success) return auth.error;
+    const userId = auth.userId;
 
-    if (!body.userId) {
-      return NextResponse.json(
-        { error: "USER_ID_REQUIRED", message: "User ID is required" },
-        { status: 400 }
-      );
-    }
+    const body = (await request.json()) as RequestBody;
 
     if (!body.ingredients || !Array.isArray(body.ingredients)) {
       return NextResponse.json(
@@ -30,9 +29,7 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log(`[Pantry Check] Checking ${body.ingredients.length} ingredients for user ${body.userId}`);
-    const inPantry = await checkPantryItems(body.userId, body.ingredients);
-    console.log(`[Pantry Check] Found ${inPantry.size} items in pantry:`, Array.from(inPantry));
+    const inPantry = await checkPantryItems(userId, body.ingredients);
 
     return NextResponse.json({
       success: true,

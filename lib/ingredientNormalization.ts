@@ -12,9 +12,9 @@ export function normalizeIngredientKey(ingredientName: string): string {
   return ingredientName
     .toLowerCase()
     .trim()
-    // Remove quantity prefixes (numbers, fractions, units)
+    // Remove quantity prefixes (numbers, fractions, units) - require at least one digit before unit
     .replace(
-      /^[\d./\s]*(cup|cups|tbsp|tsp|oz|lb|lbs|pound|pounds|gram|grams|g|kg|ml|l|quart|pint|gallon|can|cans|clove|cloves|bunch|bunches|piece|pieces|slice|slices|head|heads|stalk|stalks)\s*/gi,
+      /^[\d./]+\s*(cup|cups|tbsp|tsp|oz|lb|lbs|pound|pounds|gram|grams|g|kg|ml|l|quart|pint|gallon|can|cans|clove|cloves|bunch|bunches|piece|pieces|slice|slices|head|heads|stalk|stalks)?\s*/gi,
       ""
     )
     // Remove leading numbers

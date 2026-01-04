@@ -4,6 +4,7 @@ import { MealCard } from "@/components/MealCard";
 import { Button } from "@/components/Button";
 import Link from "next/link";
 import { Check, ClipboardList, Utensils, ShoppingCart, ArrowRight } from "lucide-react";
+import { getCompliantDiets } from "@/lib/sensitivityMapping";
 
 // Force dynamic rendering to ensure fresh data
 export const dynamic = "force-dynamic";
@@ -97,6 +98,7 @@ export default async function SharedMealPage({ params }: { params: Promise<{ sha
                                 <MealCard
                                     id="preview"
                                     {...mealData}
+                                    dietBadges={getCompliantDiets(mealData.ingredients)}
                                     // Disable interactions for preview
                                     onClick={() => { }}
                                     actionButton={null}

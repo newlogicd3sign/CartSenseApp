@@ -18,7 +18,8 @@ import {
     Bookmark,
     Search,
     Trash2,
-    Share2
+    Share2,
+    ChevronRight
 } from "lucide-react";
 import { getRandomAccentColor, type AccentColor } from "@/lib/utils";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -26,6 +27,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ConfirmationModal } from "@/components/ConfirmationModal";
 import { MealCard } from "@/components/MealCard";
 import { ShareModal } from "@/components/ShareModal";
+import { getCompliantDiets } from "@/lib/sensitivityMapping";
 
 type Ingredient = {
     name: string;
@@ -57,6 +59,7 @@ type SavedMeal = {
         min: number;
         max: number;
     };
+    estimatedCost?: number;
 };
 
 export default function SavedMealsPage() {
@@ -248,35 +251,32 @@ export default function SavedMealsPage() {
                                     imageUrl={meal.imageUrl}
                                     cookTimeRange={meal.cookTimeRange}
                                     onClick={() => handleViewMeal(meal.id)}
-                                    badge={
-                                        <div className="w-5 h-5 bg-[#4A90E2] rounded-full flex items-center justify-center">
-                                            <Bookmark className="w-2.5 h-2.5 text-white fill-white" />
-                                        </div>
-                                    }
                                     actionButton={
-                                        <div className="flex items-center gap-1">
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setMealToShare(meal);
-                                                }}
-                                                className="inline-flex items-center justify-center w-8 h-8 text-[#4A90E2] hover:bg-blue-50 rounded-lg transition-colors"
-                                                title="Share meal"
-                                            >
-                                                <Share2 className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setMealToDelete(meal);
-                                                }}
-                                                className="inline-flex items-center justify-center w-8 h-8 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
-                                        </div>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setMealToDelete(meal);
+                                            }}
+                                            className="inline-flex items-center justify-center w-8 h-8 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    }
+                                    inlineActions={
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setMealToShare(meal);
+                                            }}
+                                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-gray-100 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-200 transition-colors"
+                                        >
+                                            <Share2 className="w-4 h-4" />
+                                            <span>Share</span>
+                                        </button>
                                     }
                                     dietType={dietType}
+                                    dietBadges={getCompliantDiets(meal.ingredients)}
+                                    estimatedCost={meal.estimatedCost}
                                 />
                             ))}
                         </div>

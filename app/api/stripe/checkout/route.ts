@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { adminDb } from "@/lib/firebaseAdmin";
+import { verifyAuth } from "@/lib/authHelper";
 
 const PRICE_IDS = {
     individual: {
@@ -15,17 +16,21 @@ const PRICE_IDS = {
 
 export async function POST(request: Request) {
     try {
+        // Verify authentication
+        const auth = await verifyAuth(request);
+        if (!auth.success) return auth.error;
+        const uid = auth.userId;
+
         const body = await request.json();
-        const { uid, email, plan = "individual", billingCycle = "yearly" } = body as {
-            uid?: string;
+        const { email, plan = "individual", billingCycle = "yearly" } = body as {
             email?: string;
             plan?: "individual" | "family";
             billingCycle?: "monthly" | "yearly";
         };
 
-        if (!uid || !email) {
+        if (!email) {
             return NextResponse.json(
-                { error: "Missing uid or email" },
+                { error: "Missing email" },
                 { status: 400 }
             );
         }

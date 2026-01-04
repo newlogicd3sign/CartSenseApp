@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
 import { searchKrogerProducts } from "@/lib/product-engine/kroger";
 import { normalizeIngredientKey } from "@/lib/ingredientNormalization";
+import { verifyAuth } from "@/lib/authHelper";
 
 type SwapRequest = {
-    userId: string;
     ingredientName: string;
     currentProductId?: string; // Exclude the current product from results
     searchTerm?: string; // Optional: use grocerySearchTerm if available
@@ -68,15 +68,13 @@ async function getUserAvoidedIngredients(userId: string): Promise<AvoidedIngredi
 
 export async function POST(request: Request) {
     try {
-        const body = (await request.json()) as SwapRequest;
-        const { userId, ingredientName, currentProductId, searchTerm } = body;
+        // Verify authentication
+        const auth = await verifyAuth(request);
+        if (!auth.success) return auth.error;
+        const userId = auth.userId;
 
-        if (!userId) {
-            return NextResponse.json(
-                { error: "USER_ID_REQUIRED", message: "User ID is required" },
-                { status: 400 }
-            );
-        }
+        const body = (await request.json()) as SwapRequest;
+        const { ingredientName, currentProductId, searchTerm } = body;
 
         if (!ingredientName) {
             return NextResponse.json(

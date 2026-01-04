@@ -1677,7 +1677,7 @@ function AccountPageContent() {
                             </div>
                             {hasDietRestrictions && (
                                 <button
-                                    onClick={() => router.push("/diet-restrictions")}
+                                    onClick={() => router.push("/diet-instructions")}
                                     className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors"
                                 >
                                     <Edit3 className="w-4 h-4 text-gray-400" />
@@ -1692,7 +1692,7 @@ function AccountPageContent() {
                                         Upload your diet instructions to automatically filter meal suggestions.
                                     </p>
                                     <button
-                                        onClick={() => router.push("/diet-restrictions")}
+                                        onClick={() => router.push("/diet-instructions")}
                                         className="flex items-center gap-2 px-4 py-2.5 bg-[#4A90E2]/10 text-[#4A90E2] rounded-xl text-sm font-medium hover:bg-[#4A90E2]/20 transition-colors"
                                     >
                                         <Plus className="w-4 h-4" />
@@ -1710,10 +1710,6 @@ function AccountPageContent() {
                                             </span>
                                         )}
                                     </div>
-
-                                    {dietRestrictions?.summaryText && (
-                                        <p className="text-sm text-gray-600">{dietRestrictions.summaryText}</p>
-                                    )}
 
                                     {dietRestrictions?.blockedIngredients && dietRestrictions.blockedIngredients.length > 0 && (
                                         <div className="flex flex-wrap gap-1.5">
@@ -1890,7 +1886,7 @@ function AccountPageContent() {
                                                     </div>
                                                     <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-200">
                                                         <button
-                                                            onClick={() => router.push(`/diet-restrictions?member=${member.id}`)}
+                                                            onClick={() => router.push(`/diet-instructions?member=${member.id}`)}
                                                             className="flex-1 py-2 px-3 bg-purple-500 text-white rounded-xl text-sm font-medium hover:bg-purple-600 transition-colors flex items-center justify-center gap-2"
                                                         >
                                                             <FileText className="w-4 h-4" />
@@ -2690,7 +2686,7 @@ function AccountPageContent() {
                             <button
                                 onClick={() => {
                                     handleCloseMemberModal();
-                                    router.push(`/diet-restrictions?member=${editingMember.id}`);
+                                    router.push(`/diet-instructions?member=${editingMember.id}`);
                                 }}
                                 className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 transition-colors"
                             >

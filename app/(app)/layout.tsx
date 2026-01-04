@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
+import { authFetch } from "@/lib/authFetch";
 import { signOut, onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { Search, List, BookmarkCheck, User, LogOut, Sparkles } from "lucide-react";
@@ -62,10 +63,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             if (pendingShareId) {
                 try {
                     // Don't await this to avoid blocking UI rendering, but handle it
-                    fetch("/api/share/claim", {
+                    authFetch("/api/share/claim", {
                         method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ shareId: pendingShareId, userId: user.uid }),
+                        body: JSON.stringify({ shareId: pendingShareId }),
                     }).then(async (res) => {
                         if (res.ok) {
                             localStorage.removeItem("pendingShareId");

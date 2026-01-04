@@ -12,6 +12,7 @@ import { Button } from "@/components/Button";
 import { useToast } from "@/components/Toast";
 import { getRandomAccentColor, type AccentColor } from "@/lib/utils";
 import { loadGeneratedMeals, saveGeneratedMeals } from "@/lib/mealStorage";
+import { getCompliantDiets } from "@/lib/sensitivityMapping";
 
 type Meal = {
     id: string;
@@ -33,6 +34,7 @@ type Meal = {
         max: number;
     };
     imageUrl?: string;
+    estimatedCost?: number;
 };
 
 export default function FreshPicksPage() {
@@ -267,6 +269,8 @@ export default function FreshPicksPage() {
                                 imageUrl={freshMeals[0].imageUrl}
                                 cookTimeRange={freshMeals[0].cookTimeRange}
                                 dietType={dietType}
+                                dietBadges={getCompliantDiets(freshMeals[0].ingredients)}
+                                estimatedCost={freshMeals[0].estimatedCost}
                                 onClick={() => handleViewMeal(freshMeals[0])}
                                 bottomActions={
                                     <div className="flex flex-col gap-3 w-full mt-2">

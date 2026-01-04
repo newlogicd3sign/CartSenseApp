@@ -5,6 +5,7 @@ import InstacartCarrot from "@/app/🥕 Instacart Logos/Logos - Carrot/RGB/PNG/I
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
+import { authFetch } from "@/lib/authFetch";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
     collection,
@@ -201,7 +202,7 @@ export default function ShoppingListPage() {
         const checkKrogerStatus = async () => {
             try {
                 // Use server-side API to check Kroger status (bypasses Firestore rules)
-                const res = await fetch(`/api/kroger/status?userId=${user.uid}`);
+                const res = await authFetch("/api/kroger/status");
                 const data = await res.json();
 
                 console.log("Kroger status API response:", data);
@@ -339,11 +340,9 @@ export default function ShoppingListPage() {
         const checkPantry = async () => {
             try {
                 const ingredientNames = items.map((item) => item.name);
-                const res = await fetch("/api/pantry/check", {
+                const res = await authFetch("/api/pantry/check", {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        userId: user.uid,
                         ingredients: ingredientNames,
                     }),
                 });
@@ -508,11 +507,9 @@ export default function ShoppingListPage() {
         setSwapSearchWarning(null);
 
         try {
-            const res = await fetch("/api/swap-suggestions", {
+            const res = await authFetch("/api/swap-suggestions", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    userId: user.uid,
                     ingredientName: selectedItem.name,
                     currentProductId: selectedItem.krogerProductId,
                     searchTerm: selectedItem.name,

@@ -1,13 +1,19 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
+import { verifyAuth } from "@/lib/authHelper";
 
 export async function POST(request: Request) {
     try {
-        const { shareId, userId } = await request.json();
+        // Verify authentication
+        const auth = await verifyAuth(request);
+        if (!auth.success) return auth.error;
+        const userId = auth.userId;
 
-        if (!shareId || !userId) {
-            return NextResponse.json({ error: "Missing shareId or userId" }, { status: 400 });
+        const { shareId } = await request.json();
+
+        if (!shareId) {
+            return NextResponse.json({ error: "Missing shareId" }, { status: 400 });
         }
 
         // 1. Fetch the shared meal doc

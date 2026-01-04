@@ -495,7 +495,7 @@ function MealsPageContent() {
                                     animationDelay={index * 100}
                                     badge={
                                         (customRestrictionsApplied || userHasDietInstructions) ? (
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-full text-xs font-medium text-emerald-700">
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-pink-50 border border-pink-200 rounded-full text-xs font-medium text-pink-700">
                                                 <ShieldCheck className="w-3 h-3" />
                                                 Diet Compliant
                                             </span>

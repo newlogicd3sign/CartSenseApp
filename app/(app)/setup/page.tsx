@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState, FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
+import { authFetch } from "@/lib/authFetch";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, setDoc, getDoc, collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
 import { ArrowRight, AlertCircle, ShoppingCart, MapPin, CheckCircle, ExternalLink, Search } from "lucide-react";
@@ -519,10 +520,9 @@ function SetupPageContent() {
             const pendingShareId = localStorage.getItem("pendingShareId");
             if (pendingShareId) {
                 try {
-                    const claimRes = await fetch("/api/share/claim", {
+                    const claimRes = await authFetch("/api/share/claim", {
                         method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ shareId: pendingShareId, userId: user.uid }),
+                        body: JSON.stringify({ shareId: pendingShareId }),
                     });
 
                     if (claimRes.ok) {

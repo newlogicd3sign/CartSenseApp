@@ -6,6 +6,7 @@ import { X, Copy, Check, Facebook, Mail, Link as LinkIcon, Share2, Twitter } fro
 import { Button } from "./Button";
 import { useToast } from "./Toast";
 import { LoadingSpinner } from "./LoadingSpinner";
+import { authFetch } from "@/lib/authFetch";
 
 interface ShareModalProps {
     isOpen: boolean;
@@ -36,10 +37,9 @@ export function ShareModal({ isOpen, onClose, meal, userId }: ShareModalProps) {
 
         setLoading(true);
         try {
-            const res = await fetch("/api/share", {
+            const res = await authFetch("/api/share", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ meal, userId }),
+                body: JSON.stringify({ meal }),
             });
 
             if (!res.ok) throw new Error("Failed to generate link");

@@ -32,8 +32,8 @@ function DietRestrictionsContent() {
     const searchParams = useSearchParams();
     const memberId = searchParams.get("member");
     const { showToast } = useToast();
-    const [file, setFile] = useState<File | null>(null);
-    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [files, setFiles] = useState<File[]>([]);
+    const [previewUrls, setPreviewUrls] = useState<string[]>([]);
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState<DietRestrictionsParsed | null>(null);
     const [saving, setSaving] = useState(false);
@@ -79,29 +79,37 @@ function DietRestrictionsContent() {
     }, [router, memberId]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const f = e.target.files?.[0];
-        if (!f) {
-            setFile(null);
-            setPreviewUrl(null);
-            setResult(null);
+        const selectedFiles = e.target.files;
+        if (!selectedFiles || selectedFiles.length === 0) {
             return;
         }
-        setFile(f);
+
+        const newFiles = Array.from(selectedFiles);
+        setFiles((prev) => [...prev, ...newFiles]);
         setResult(null);
 
-        const reader = new FileReader();
-        reader.onload = () => {
-            if (typeof reader.result === "string") {
-                setPreviewUrl(reader.result);
-            }
-        };
-        reader.readAsDataURL(f);
+        // Read all new files as data URLs
+        newFiles.forEach((file) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                if (typeof reader.result === "string") {
+                    setPreviewUrls((prev) => [...prev, reader.result as string]);
+                }
+            };
+            reader.readAsDataURL(file);
+        });
+    };
+
+    const removeImage = (index: number) => {
+        setFiles((prev) => prev.filter((_, i) => i !== index));
+        setPreviewUrls((prev) => prev.filter((_, i) => i !== index));
+        setResult(null);
     };
 
     const handleAnalyze = async () => {
         try {
-            if (!file || !previewUrl) {
-                showToast("Please select a photo of your diet instructions first.", "error");
+            if (files.length === 0 || previewUrls.length === 0) {
+                showToast("Please select at least one photo of your diet instructions.", "error");
                 return;
             }
 
@@ -117,7 +125,7 @@ function DietRestrictionsContent() {
                 headers: {
                     "Content-Type": "application/json",
                 },
-                body: JSON.stringify({ imageDataUrl: previewUrl }),
+                body: JSON.stringify({ imageDataUrls: previewUrls }),
             });
 
             if (!res.ok) {
@@ -170,7 +178,6 @@ function DietRestrictionsContent() {
             const dietInstructionsData = {
                 hasActiveNote: true,
                 sourceType: "photo",
-                summaryText: result.summaryText,
                 blockedIngredients: result.blockedIngredients,
                 blockedGroups: result.blockedGroups,
                 updatedAt: serverTimestamp(),
@@ -202,9 +209,9 @@ function DietRestrictionsContent() {
         }
     };
 
-    const clearFile = () => {
-        setFile(null);
-        setPreviewUrl(null);
+    const clearAllFiles = () => {
+        setFiles([]);
+        setPreviewUrls([]);
         setResult(null);
     };
 
@@ -246,7 +253,7 @@ function DietRestrictionsContent() {
                         </div>
                         <div>
                             <h1 className="text-xl lg:text-2xl text-gray-900">
-                                Diet Restrictions{memberName ? ` for ${memberName}` : ""}
+                                Diet Instructions{memberName ? ` for ${memberName}` : ""}
                             </h1>
                             <p className="text-sm text-gray-500">
                                 {memberId
@@ -276,93 +283,128 @@ function DietRestrictionsContent() {
                         </div>
 
                         <div className="px-5 py-4">
-                            {!previewUrl ? (
-                                <div className="space-y-4">
-                                    <label
-                                        htmlFor="file-upload"
-                                        className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-[#4A90E2]/50 hover:bg-[#4A90E2]/5 transition-colors"
-                                    >
-                                        <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-3">
-                                            <Upload className="w-6 h-6 text-gray-400" />
+                            <div className="space-y-4">
+                                {/* Image Previews Grid */}
+                                {previewUrls.length > 0 && (
+                                    <div className="space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-sm font-medium text-gray-700">
+                                                {previewUrls.length} {previewUrls.length === 1 ? "page" : "pages"} uploaded
+                                            </span>
+                                            <button
+                                                onClick={clearAllFiles}
+                                                className="text-xs text-red-500 hover:text-red-600"
+                                            >
+                                                Clear all
+                                            </button>
                                         </div>
-                                        <span className="text-sm font-medium text-gray-900 mb-1">
-                                            Click to upload
-                                        </span>
-                                        <span className="text-xs text-gray-500">
-                                            PNG, JPG up to 10MB
-                                        </span>
-                                    </label>
-                                    <input
-                                        id="file-upload"
-                                        type="file"
-                                        accept="image/*"
-                                        capture="environment"
-                                        onChange={handleFileChange}
-                                        className="hidden"
-                                    />
-
-                                    <div className="flex items-center gap-2 text-xs text-gray-500">
-                                        <Camera className="w-4 h-4" />
-                                        <span>On mobile, you can use your camera directly</span>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="space-y-4">
-                                    <div className="relative">
-                                        <div className="aspect-[4/3] w-full overflow-hidden rounded-xl bg-gray-100">
-                                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                                            <img
-                                                src={previewUrl}
-                                                alt="Diet instructions preview"
-                                                className="w-full h-full object-contain"
-                                            />
+                                        <div className="flex flex-wrap gap-2">
+                                            {previewUrls.map((url, index) => (
+                                                <div key={index} className="relative w-16 h-20 rounded-lg overflow-hidden bg-gray-100">
+                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                    <img
+                                                        src={url}
+                                                        alt={`Page ${index + 1}`}
+                                                        className="w-full h-full object-cover"
+                                                    />
+                                                    <button
+                                                        onClick={() => removeImage(index)}
+                                                        className="absolute top-0.5 right-0.5 w-5 h-5 bg-black/50 backdrop-blur-sm rounded-full flex items-center justify-center text-white hover:bg-black/70 transition-colors"
+                                                    >
+                                                        <X className="w-2.5 h-2.5" />
+                                                    </button>
+                                                    <div className="absolute bottom-0.5 left-0.5 px-1 py-0.5 bg-black/50 backdrop-blur-sm rounded text-[9px] text-white">
+                                                        {index + 1}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {/* Add More Button */}
+                                            <label
+                                                htmlFor="file-upload"
+                                                className="w-16 h-20 rounded-lg border-2 border-dashed border-gray-200 flex flex-col items-center justify-center cursor-pointer hover:border-[#4A90E2]/50 hover:bg-[#4A90E2]/5 transition-colors"
+                                            >
+                                                <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center mb-1">
+                                                    <span className="text-gray-400 text-lg leading-none">+</span>
+                                                </div>
+                                                <span className="text-[10px] text-gray-500">Add</span>
+                                            </label>
                                         </div>
-                                        <button
-                                            onClick={clearFile}
-                                            className="absolute top-2 right-2 w-8 h-8 bg-black/50 backdrop-blur-sm rounded-full flex items-center justify-center text-white hover:bg-black/70 transition-colors"
-                                        >
-                                            <X className="w-4 h-4" />
-                                        </button>
                                     </div>
+                                )}
 
-                                    {/* Consent Checkbox */}
-                                    <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-xl">
-                                        <input
-                                            id="diet-consent"
-                                            type="checkbox"
-                                            checked={consentChecked}
-                                            onChange={(e) => setConsentChecked(e.target.checked)}
-                                            className="mt-1 h-4 w-4 rounded border-gray-300 text-[#4A90E2] focus:ring-[#4A90E2]"
-                                        />
+                                {/* Initial Upload Area (only show when no images) */}
+                                {previewUrls.length === 0 && (
+                                    <>
                                         <label
-                                            htmlFor="diet-consent"
-                                            className="text-xs text-gray-600 leading-relaxed"
+                                            htmlFor="file-upload"
+                                            className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-[#4A90E2]/50 hover:bg-[#4A90E2]/5 transition-colors"
                                         >
-                                            I understand this feature is for personal meal filtering only
-                                            and results should be verified for accuracy.
+                                            <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-3">
+                                                <Upload className="w-6 h-6 text-gray-400" />
+                                            </div>
+                                            <span className="text-sm font-medium text-gray-900 mb-1">
+                                                Click to upload
+                                            </span>
+                                            <span className="text-xs text-gray-500">
+                                                PNG, JPG up to 10MB each
+                                            </span>
                                         </label>
-                                    </div>
+                                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                                            <Camera className="w-4 h-4" />
+                                            <span>On mobile, you can use your camera directly</span>
+                                        </div>
+                                    </>
+                                )}
+                                <input
+                                    id="file-upload"
+                                    type="file"
+                                    accept="image/*"
+                                    multiple
+                                    onChange={handleFileChange}
+                                    className="hidden"
+                                />
 
-                                    {/* Analyze Button */}
-                                    <button
-                                        onClick={handleAnalyze}
-                                        disabled={!file || loading || !consentChecked}
-                                        className="w-full py-3 bg-gray-900 text-white rounded-xl font-medium hover:bg-gray-800 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                    >
-                                        {loading ? (
-                                            <>
-                                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                                <span>Analyzing...</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <FileSearch className="w-5 h-5" />
-                                                <span>Analyze Instructions</span>
-                                            </>
-                                        )}
-                                    </button>
-                                </div>
-                            )}
+                                {previewUrls.length > 0 && (
+                                    <>
+                                        {/* Consent Checkbox */}
+                                        <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-xl">
+                                            <input
+                                                id="diet-consent"
+                                                type="checkbox"
+                                                checked={consentChecked}
+                                                onChange={(e) => setConsentChecked(e.target.checked)}
+                                                className="mt-1 h-4 w-4 rounded border-gray-300 text-[#4A90E2] focus:ring-[#4A90E2]"
+                                            />
+                                            <label
+                                                htmlFor="diet-consent"
+                                                className="text-xs text-gray-600 leading-relaxed"
+                                            >
+                                                I understand this feature is for personal meal filtering only
+                                                and results should be verified for accuracy.
+                                            </label>
+                                        </div>
+
+                                        {/* Analyze Button */}
+                                        <button
+                                            onClick={handleAnalyze}
+                                            disabled={files.length === 0 || loading || !consentChecked}
+                                            className="w-full py-3 bg-gray-900 text-white rounded-xl font-medium hover:bg-gray-800 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                        >
+                                            {loading ? (
+                                                <>
+                                                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                    <span>Analyzing {previewUrls.length} {previewUrls.length === 1 ? "page" : "pages"}...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <FileSearch className="w-5 h-5" />
+                                                    <span>Analyze {previewUrls.length === 1 ? "Instructions" : `All ${previewUrls.length} Pages`}</span>
+                                                </>
+                                            )}
+                                        </button>
+                                    </>
+                                )}
+                            </div>
                         </div>
                     </div>
 

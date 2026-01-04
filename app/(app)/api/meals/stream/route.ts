@@ -1014,6 +1014,19 @@ ${recentMealsSection}
 ${qualityRulesText}
 ${pantryModeText}
 
+PRICE REFERENCE (2024 US grocery averages - use these for estimatedCost calculation):
+- Protein (chicken, beef, pork): $5-10/lb
+- Seafood (fish, shrimp, salmon): $8-15/lb
+- Deli meats (bacon, sausage): $7-13/lb
+- Dairy (milk, cheese, yogurt): $3-6 each
+- Produce by weight (fruits, tomatoes, potatoes): $1.50-4/lb
+- Produce by unit (lettuce, broccoli, avocado): $1-3 each
+- Grains (bread, rice, pasta): $2-5 each
+- Pantry (canned goods, sauces): $2.50-6 each
+- Spices/seasonings: $3-7 each (full jar/bottle)
+- Cooking oils: $5-10 (full bottle)
+- Eggs: $3.50-6 per dozen
+
 JSON output:
 {"meals":[{"mealType":"breakfast|lunch|dinner|snack","name":"","description":"","estimatedCost":N,"servings":N,"macros":{"calories":N,"protein":N,"carbs":N,"fiber":N,"fat":N},"cookTimeRange":{"min":N,"max":N},"ingredients":[{"name":"display name","quantity":"","grocerySearchTerm":"raw product","preparation":""}],"steps":[""]}]}
 
@@ -1023,7 +1036,12 @@ KEY RULES:
 - cookTimeRange = estimated cook time in minutes as a range (min to max) accounting for skill variance
   - Simple meals: range of 10-15 min (e.g., {"min":15,"max":25})
   - Complex meals: range of 20-30 min (e.g., {"min":45,"max":75})
-- estimatedCost: Estimated **SHOPPING CART TOTAL** in USD (e.g. 18.50). Assume the user needs to buy full bottles/packages of staples (oil, spices, sauces). It is better to overestimate than underestimate.
+- estimatedCost: Calculate the SHOPPING CART TOTAL in USD using the PRICE REFERENCE above:
+  - Sum individual ingredient costs using the HIGH end of each price range
+  - Staples (oil, spices, seasonings) = full bottle/jar price, not just amount used
+  - Multiply by servings if recipe serves more than 1
+  - Round UP to nearest $5 (e.g., $23.40 -> $25)
+  - Minimum $15 for any meal
 - grocerySearchTerm: MUST be the RAW, UNCOOKED, WHOLE product. NEVER use "cooked", "grilled", "roasted", "baked", "sliced", "diced" here. "diced onion" -> "yellow onion", "cooked chicken" -> "boneless skinless chicken breast", "ground chicken" -> "ground chicken" (NOT "chicken breast"), "ground beef" -> "ground beef", "ground turkey" -> "ground turkey".
 - **INGREDIENTS**: List the main ingredients required *for 1 person*. The quantity should be appropriate for a single serving.
     - Be specific with ingredient names (e.g., use "black pepper" instead of just "pepper", "brown rice" instead of "rice").

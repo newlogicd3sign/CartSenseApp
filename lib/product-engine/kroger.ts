@@ -1014,9 +1014,162 @@ export type KrogerLocationResult = {
     zipCode: string;
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Product Details (with Nutrition)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type KrogerNutritionInfo = {
+    servingSize: string | null;
+    calories: number | null;
+    totalFat: number | null;
+    saturatedFat: number | null;
+    transFat: number | null;
+    cholesterol: number | null;
+    sodium: number | null;
+    totalCarbohydrates: number | null;
+    dietaryFiber: number | null;
+    sugars: number | null;
+    protein: number | null;
+};
+
+export type KrogerProductDetails = {
+    productId: string;
+    upc: string | null;
+    brand: string | null;
+    description: string;
+    ingredients: string | null;
+    nutrition: KrogerNutritionInfo | null;
+    imageUrl: string | null;
+    price: number | null;
+    size: string | null;
+};
+
 /**
- * Search Kroger locations near a ZIP code.
+ * Fetch detailed product information including nutrition data.
+ * Requires fetching individual product by ID.
  */
+export async function getKrogerProductDetails(
+    productId: string,
+    opts: { locationId?: string } = {},
+): Promise<KrogerProductDetails | null> {
+    if (!productId) return null;
+
+    const token = await getKrogerToken();
+
+    if (!API_BASE_URL) {
+        console.error("Missing KROGER_API_BASE_URL env var.");
+        throw new Error("Missing Kroger API base URL");
+    }
+
+    const params = new URLSearchParams();
+    if (opts.locationId) {
+        params.append("filter.locationId", opts.locationId);
+    }
+
+    const url = `${API_BASE_URL}/products/${productId}${params.toString() ? `?${params.toString()}` : ""}`;
+
+    let res: Response;
+    try {
+        res = await protectedKrogerFetch(
+            url,
+            {
+                method: "GET",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    Accept: "application/json",
+                },
+            },
+            QUEUE_PRIORITY.ENRICH
+        );
+    } catch (error) {
+        console.error("Kroger product details error (protected):", error);
+        return null;
+    }
+
+    if (!res.ok) {
+        console.error("Kroger product details error:", res.status);
+        return null;
+    }
+
+    type ProductDetailResponse = {
+        data?: {
+            productId: string;
+            upc?: string;
+            brand?: string;
+            description: string;
+            images?: KrogerProduct["images"];
+            items?: {
+                size?: string;
+                price?: { regular?: number; promo?: number } | number;
+                ingredients?: string;
+                nutrition?: {
+                    servingSize?: string;
+                    calories?: number;
+                    totalFat?: number;
+                    saturatedFat?: number;
+                    transFat?: number;
+                    cholesterol?: number;
+                    sodium?: number;
+                    totalCarbohydrates?: number;
+                    dietaryFiber?: number;
+                    sugars?: number;
+                    protein?: number;
+                };
+            }[];
+        };
+    };
+
+    const json = (await res.json()) as ProductDetailResponse;
+    const product = json.data;
+
+    if (!product) {
+        return null;
+    }
+
+    const item = product.items?.[0];
+    const nutrition = item?.nutrition;
+
+    // Extract price
+    let price: number | null = null;
+    if (item?.price) {
+        if (typeof item.price === "number") {
+            price = item.price;
+        } else if (typeof item.price === "object") {
+            price = item.price.promo ?? item.price.regular ?? null;
+        }
+    }
+
+    const imageUrl = selectBestImageUrl(product.images);
+
+    return {
+        productId: product.productId,
+        upc: product.upc ?? null,
+        brand: product.brand ?? null,
+        description: product.description,
+        ingredients: item?.ingredients ?? null,
+        nutrition: nutrition ? {
+            servingSize: nutrition.servingSize ?? null,
+            calories: nutrition.calories ?? null,
+            totalFat: nutrition.totalFat ?? null,
+            saturatedFat: nutrition.saturatedFat ?? null,
+            transFat: nutrition.transFat ?? null,
+            cholesterol: nutrition.cholesterol ?? null,
+            sodium: nutrition.sodium ?? null,
+            totalCarbohydrates: nutrition.totalCarbohydrates ?? null,
+            dietaryFiber: nutrition.dietaryFiber ?? null,
+            sugars: nutrition.sugars ?? null,
+            protein: nutrition.protein ?? null,
+        } : null,
+        imageUrl,
+        price,
+        size: item?.size ?? null,
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Location Search
+// ─────────────────────────────────────────────────────────────────────────────
+
 export async function searchKrogerLocationsByZip(
     zip: string,
     limit = 10,

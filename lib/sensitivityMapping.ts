@@ -75,12 +75,17 @@ export const sensitivityKeywords: Record<string, string[]> = {
         "cajun", "curry", "chili", "pepper", "wasabi", "horseradish"
     ],
     "red meat": [
-        "steak", "beef", "burger", "hamburger", "lamb", "pork", "bacon",
-        "ham", "sausage", "ribs", "brisket", "roast beef", "meatball",
-        "meatloaf", "veal", "venison", "bison", "ground beef", "ribeye",
-        "sirloin", "tenderloin", "filet", "t-bone", "prime rib", "pot roast",
-        "pulled pork", "carnitas", "chorizo", "pepperoni", "salami", "prosciutto",
-        "pastrami", "corned beef", "bratwurst", "kielbasa", "hot dog"
+        // Beef
+        "beef", "steak", "ground beef", "beef burger", "ribeye", "sirloin",
+        "tenderloin", "filet", "t-bone", "prime rib", "brisket", "roast beef",
+        "pot roast", "corned beef", "pastrami",
+        // Pork
+        "pork", "bacon", "ham", "pulled pork", "pork chop", "pork belly",
+        "carnitas", "spare ribs", "pork ribs",
+        // Lamb/Other
+        "lamb", "veal", "venison", "bison", "goat",
+        // Processed (specifically red meat)
+        "pepperoni", "salami", "prosciutto", "chorizo", "bratwurst", "kielbasa"
     ],
     "corn syrup": [
         "corn syrup", "high fructose"
@@ -93,28 +98,91 @@ export const sensitivityKeywords: Record<string, string[]> = {
 // Diet type restrictions - what ingredients conflict with each diet
 export const dietTypeConflicts: Record<string, string[]> = {
     "vegetarian": [
-        "chicken", "beef", "pork", "lamb", "fish", "salmon", "tuna", "shrimp",
-        "bacon", "ham", "sausage", "steak", "burger", "meat", "turkey", "duck"
+        // Poultry
+        "chicken", "turkey", "duck", "goose", "quail", "pheasant",
+        // Red meat
+        "beef", "pork", "lamb", "veal", "venison", "bison", "goat",
+        "steak", "burger", "hamburger", "meatball", "meatloaf", "meat",
+        "bacon", "ham", "sausage", "hot dog", "pepperoni", "salami",
+        "prosciutto", "chorizo", "bratwurst", "kielbasa", "jerky",
+        "ribs", "brisket", "roast", "tenderloin", "sirloin", "ribeye",
+        // Fish (all types)
+        "fish", "salmon", "tuna", "cod", "tilapia", "halibut", "trout",
+        "sardine", "anchovy", "mackerel", "snapper", "bass", "catfish",
+        "flounder", "sole", "haddock", "swordfish", "mahi", "grouper",
+        "herring", "perch", "pollock", "rockfish", "whitefish",
+        // Shellfish
+        "shrimp", "crab", "lobster", "clam", "mussel", "oyster", "scallop",
+        "crawfish", "crayfish", "prawn", "calamari", "squid", "octopus"
     ],
     "vegan": [
-        "chicken", "beef", "pork", "lamb", "fish", "salmon", "tuna", "shrimp",
-        "bacon", "ham", "sausage", "steak", "burger", "meat", "turkey", "duck",
-        "egg", "eggs", "cheese", "milk", "cream", "butter", "yogurt", "honey"
+        // Poultry
+        "chicken", "turkey", "duck", "goose", "quail", "pheasant",
+        // Red meat
+        "beef", "pork", "lamb", "veal", "venison", "bison", "goat",
+        "steak", "burger", "hamburger", "meatball", "meatloaf", "meat",
+        "bacon", "ham", "sausage", "hot dog", "pepperoni", "salami",
+        "prosciutto", "chorizo", "bratwurst", "kielbasa", "jerky",
+        "ribs", "brisket", "roast", "tenderloin", "sirloin", "ribeye",
+        // Fish (all types)
+        "fish", "salmon", "tuna", "cod", "tilapia", "halibut", "trout",
+        "sardine", "anchovy", "mackerel", "snapper", "bass", "catfish",
+        "flounder", "sole", "haddock", "swordfish", "mahi", "grouper",
+        "herring", "perch", "pollock", "rockfish", "whitefish",
+        // Shellfish
+        "shrimp", "crab", "lobster", "clam", "mussel", "oyster", "scallop",
+        "crawfish", "crayfish", "prawn", "calamari", "squid", "octopus",
+        // Dairy
+        "cheese", "milk", "cream", "butter", "yogurt", "ice cream", "whey",
+        "casein", "ghee", "paneer", "ricotta", "mozzarella", "cheddar",
+        "parmesan", "brie", "feta", "gouda", "swiss", "provolone",
+        "cream cheese", "sour cream", "cottage cheese", "custard",
+        // Eggs
+        "egg", "eggs", "omelette", "omelet", "frittata", "quiche",
+        "meringue", "mayonnaise", "mayo",
+        // Other animal products
+        "honey", "gelatin", "lard"
     ],
     "pescatarian": [
-        "chicken", "beef", "pork", "lamb", "bacon", "ham", "sausage", "steak",
-        "burger", "meat", "turkey", "duck", "veal", "venison"
+        // Poultry
+        "chicken", "turkey", "duck", "goose", "quail", "pheasant",
+        // Red meat
+        "beef", "pork", "lamb", "veal", "venison", "bison", "goat",
+        "steak", "burger", "hamburger", "meatball", "meatloaf", "meat",
+        "bacon", "ham", "sausage", "hot dog", "pepperoni", "salami",
+        "prosciutto", "chorizo", "bratwurst", "kielbasa", "jerky",
+        "ribs", "brisket", "roast", "tenderloin", "sirloin", "ribeye"
     ],
     "keto": [
-        "bread", "pasta", "rice", "potato", "corn", "beans", "sugar", "fruit",
-        "banana", "apple", "orange", "oatmeal", "cereal"
+        // Grains and starches
+        "bread", "pasta", "rice", "potato", "potatoes", "corn", "oatmeal", "cereal",
+        "noodle", "noodles", "tortilla", "pita", "naan", "bagel", "muffin",
+        "pancake", "waffle", "croissant", "biscuit", "roll", "bun",
+        "couscous", "quinoa", "barley", "farro",
+        // Legumes
+        "beans", "lentils", "chickpeas", "hummus",
+        // High-sugar fruits
+        "banana", "apple", "orange", "grape", "grapes", "mango", "pineapple",
+        // Sugars
+        "sugar", "honey", "syrup", "candy", "chocolate", "cake", "cookie",
+        "ice cream", "soda", "juice"
     ],
     "gluten free": [
-        "bread", "pasta", "noodle", "pizza", "sandwich", "wrap", "flour",
-        "cake", "pastry", "cracker", "pretzel", "ramen", "couscous"
+        // Wheat-based products
+        "bread", "pasta", "noodle", "pizza", "sandwich", "wrap", "tortilla",
+        "flour", "cake", "pastry", "croissant", "bagel", "muffin",
+        "pancake", "waffle", "cracker", "pretzel", "pita", "naan", "ramen",
+        "spaghetti", "linguine", "fettuccine", "lasagna", "ravioli", "gnocchi",
+        "couscous", "bulgur", "seitan", "breaded", "crusted", "battered",
+        // Grains with gluten
+        "wheat", "barley", "rye", "spelt", "farro"
     ],
     "dairy free": [
-        "cheese", "milk", "cream", "butter", "yogurt", "ice cream", "whey"
+        "cheese", "milk", "cream", "butter", "yogurt", "ice cream", "whey",
+        "casein", "ghee", "paneer", "ricotta", "mozzarella", "cheddar",
+        "parmesan", "brie", "feta", "gouda", "swiss", "provolone",
+        "cream cheese", "sour cream", "cottage cheese", "custard",
+        "buttermilk", "half and half", "heavy cream"
     ]
 };
 
