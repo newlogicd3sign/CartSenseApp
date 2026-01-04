@@ -5,6 +5,7 @@ import InstacartCarrot from "@/app/🥕 Instacart Logos/Logos - Carrot/RGB/PNG/I
 import { Suspense, useEffect, useState, useRef, useMemo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
+import { authFetch } from "@/lib/authFetch";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
     doc,
@@ -64,6 +65,10 @@ import {
     Home,
     Minus,
     Plus,
+    ShieldCheck,
+    Info,
+    ChevronDown,
+    ChevronUp,
 } from "lucide-react";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { useToast } from "@/components/Toast";
@@ -79,7 +84,7 @@ import { getIngredientImageUrl } from "@/lib/ingredientImages";
 import { getEstimatedPrice } from "@/lib/priceEstimates";
 import { normalizeIngredientKey } from "@/lib/ingredientNormalization";
 import { DietaryConflictModal } from "@/components/DietaryConflictModal";
-import { checkPromptForConflicts, type ConflictResult, type FamilyMemberRestrictions } from "@/lib/sensitivityMapping";
+import { checkPromptForConflicts, getCompliantDiets, type ConflictResult, type FamilyMemberRestrictions } from "@/lib/sensitivityMapping";
 
 type Ingredient = {
     name: string;
@@ -117,6 +122,7 @@ type Meal = {
         min: number;
         max: number;
     };
+    estimatedCost?: number;
 };
 
 type UserPrefs = {
@@ -128,11 +134,12 @@ type UserPrefs = {
         allergies?: string[];
         sensitivities?: string[];
     };
-    doctorDietInstructions?: {
+    dietRestrictions?: {
         hasActiveNote?: boolean;
         blockedIngredients?: string[];
         blockedGroups?: string[];
     };
+    dislikedFoods?: string[];
     isPremium?: boolean;
     monthlyChatCount?: number;
     chatPeriodStart?: { toDate: () => Date } | null;
@@ -179,9 +186,9 @@ type ThreadMessage = {
 };
 
 type MealsMeta = {
-    usedDoctorInstructions?: boolean;
-    blockedIngredientsFromDoctor?: string[];
-    blockedGroupsFromDoctor?: string[];
+    usedDietRestrictions?: boolean;
+    blockedIngredientsFromUpload?: string[];
+    blockedGroupsFromUpload?: string[];
     pantryMode?: boolean;
 };
 
@@ -280,6 +287,32 @@ function MealDetailPageContent() {
         rule: "NEVER_INCLUDE" | "AVOID";
         note?: string;
     } | null>(null);
+    const [expandedNutritionId, setExpandedNutritionId] = useState<string | null>(null);
+    const [nutritionData, setNutritionData] = useState<Record<string, {
+        loading: boolean;
+        data: {
+            calories: number | null;
+            protein: number | null;
+            totalCarbohydrates: number | null;
+            totalFat: number | null;
+            sodium: number | null;
+            sugars: number | null;
+            servingSize: string | null;
+        } | null;
+    }>>({});
+    const [currentProductNutrition, setCurrentProductNutrition] = useState<{
+        loading: boolean;
+        productId: string | null;
+        data: {
+            calories: number | null;
+            protein: number | null;
+            totalCarbohydrates: number | null;
+            totalFat: number | null;
+            sodium: number | null;
+            sugars: number | null;
+            servingSize: string | null;
+        } | null;
+    }>({ loading: false, productId: null, data: null });
 
     // Random color for back button
     const backButtonColor = useMemo(() => getRandomAccentColor(), []);
@@ -383,8 +416,9 @@ function MealDetailPageContent() {
                                     allergies: memberData.allergiesAndSensitivities?.allergies || [],
                                     sensitivities: memberData.allergiesAndSensitivities?.sensitivities || [],
                                     dietType: memberData.dietType,
-                                    blockedIngredients: memberData.doctorDietInstructions?.blockedIngredients || [],
-                                    blockedGroups: memberData.doctorDietInstructions?.blockedGroups || []
+                                    blockedIngredients: memberData.dietRestrictions?.blockedIngredients || [],
+                                    blockedGroups: memberData.dietRestrictions?.blockedGroups || [],
+                                    dislikes: memberData.dislikedFoods || []
                                 });
                             }
                         });
@@ -474,11 +508,9 @@ function MealDetailPageContent() {
                 const ingredientNames = meal.ingredients.map((ing) => ing.name);
 
                 // Check which ingredients are in pantry
-                const res = await fetch("/api/pantry/check", {
+                const res = await authFetch("/api/pantry/check", {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        userId: user.uid,
                         ingredients: ingredientNames,
                     }),
                 });
@@ -562,7 +594,17 @@ function MealDetailPageContent() {
     }, [user, meal, krogerConnected, krogerStoreSet, hasEnrichedKroger, mealsMeta?.pantryMode]);
 
     // Use enriched ingredients if available, otherwise fall back to meal ingredients
-    const displayIngredients = enrichedIngredients ?? meal?.ingredients ?? [];
+    const displayIngredients = useMemo(
+        () => enrichedIngredients ?? meal?.ingredients ?? [],
+        [enrichedIngredients, meal?.ingredients]
+    );
+
+    // Calculate compliant diets based on ingredients
+    const compliantDiets = useMemo(() => {
+        if (!meal) return [];
+        // Use base ingredients for check to avoid pricing/stock updates flickering the badges
+        return getCompliantDiets(meal.ingredients);
+    }, [meal]);
 
     const toggleIngredient = (idx: number) => {
         setSelectedIngredients((prev) => {
@@ -584,6 +626,41 @@ function MealDetailPageContent() {
             setSelectedIngredients(new Set(displayIngredients.map((_, idx) => idx)));
         }
     };
+
+    // Calculate dynamic total cost of selected ingredients (using real Kroger prices if available)
+    const totalCalculatedCost = useMemo(() => {
+        let freshCost = 0;
+        let stapleCost = 0;
+        let total = 0;
+        let hasRealPrices = false;
+
+        selectedIngredients.forEach(idx => {
+            const ing = displayIngredients[idx];
+            let price = 0;
+
+            // Prefer real Kroger price
+            if (ing.price !== undefined && ing.price !== null) {
+                price = ing.price;
+                hasRealPrices = true;
+            }
+            // Fallback to estimated price if no real price
+            else if (ing.name) {
+                const est = getEstimatedPrice(ing.name);
+                price = est.min; // Conservative estimate using lower bound
+            }
+
+            total += price;
+
+            // Separate into fresh vs staple cost
+            if (isStapleItem(ing.name)) {
+                stapleCost += price;
+            } else {
+                freshCost += price;
+            }
+        });
+
+        return { total, freshCost, stapleCost, hasRealPrices };
+    }, [selectedIngredients, displayIngredients]);
 
     const applyUpdatedMeal = (updatedMeal: Meal) => {
         setMeal(updatedMeal);
@@ -1008,13 +1085,13 @@ function MealDetailPageContent() {
         setLoadingSwapSuggestions(true);
         setSwapAlternatives(null);
         setSwapSearchWarning(null);
+        setExpandedNutritionId(null);
+        setNutritionData({});
 
         try {
-            const res = await fetch("/api/swap-suggestions", {
+            const res = await authFetch("/api/swap-suggestions", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    userId: user.uid,
                     ingredientName: ing.name,
                     currentProductId: ing.krogerProductId,
                     searchTerm: ing.name, // Use ingredient name for search
@@ -1047,6 +1124,123 @@ function MealDetailPageContent() {
             showToast("Something went wrong getting swap options.", "error");
         } finally {
             setLoadingSwapSuggestions(false);
+        }
+    };
+
+    // Fetch nutrition for the currently selected ingredient
+    useEffect(() => {
+        const fetchCurrentNutrition = async () => {
+            if (selectedIngredientIndex === null) {
+                setCurrentProductNutrition({ loading: false, productId: null, data: null });
+                return;
+            }
+
+            const ing = displayIngredients[selectedIngredientIndex];
+            if (!ing?.krogerProductId) {
+                setCurrentProductNutrition({ loading: false, productId: null, data: null });
+                return;
+            }
+
+            // Already fetched for this product
+            if (currentProductNutrition.productId === ing.krogerProductId && currentProductNutrition.data) {
+                return;
+            }
+
+            setCurrentProductNutrition({ loading: true, productId: ing.krogerProductId, data: null });
+
+            try {
+                const locationId = prefs?.defaultKrogerLocationId;
+                const url = locationId
+                    ? `/api/kroger/product/${ing.krogerProductId}?locationId=${locationId}`
+                    : `/api/kroger/product/${ing.krogerProductId}`;
+
+                const res = await authFetch(url);
+                const data = await res.json();
+
+                if (res.ok && data.nutrition) {
+                    setCurrentProductNutrition({
+                        loading: false,
+                        productId: ing.krogerProductId,
+                        data: {
+                            calories: data.nutrition.calories,
+                            protein: data.nutrition.protein,
+                            totalCarbohydrates: data.nutrition.totalCarbohydrates,
+                            totalFat: data.nutrition.totalFat,
+                            sodium: data.nutrition.sodium,
+                            sugars: data.nutrition.sugars,
+                            servingSize: data.nutrition.servingSize,
+                        }
+                    });
+                } else {
+                    setCurrentProductNutrition({ loading: false, productId: ing.krogerProductId, data: null });
+                }
+            } catch (err) {
+                console.error("Error fetching current product nutrition:", err);
+                setCurrentProductNutrition({ loading: false, productId: ing.krogerProductId, data: null });
+            }
+        };
+
+        fetchCurrentNutrition();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedIngredientIndex, displayIngredients]);
+
+    const fetchProductNutrition = async (productId: string) => {
+        // Toggle off if already expanded
+        if (expandedNutritionId === productId) {
+            setExpandedNutritionId(null);
+            return;
+        }
+
+        setExpandedNutritionId(productId);
+
+        // Already fetched
+        if (nutritionData[productId]?.data) {
+            return;
+        }
+
+        // Set loading
+        setNutritionData(prev => ({
+            ...prev,
+            [productId]: { loading: true, data: null }
+        }));
+
+        try {
+            const locationId = prefs?.defaultKrogerLocationId;
+            const url = locationId
+                ? `/api/kroger/product/${productId}?locationId=${locationId}`
+                : `/api/kroger/product/${productId}`;
+
+            const res = await authFetch(url);
+            const data = await res.json();
+
+            if (res.ok && data.nutrition) {
+                setNutritionData(prev => ({
+                    ...prev,
+                    [productId]: {
+                        loading: false,
+                        data: {
+                            calories: data.nutrition.calories,
+                            protein: data.nutrition.protein,
+                            totalCarbohydrates: data.nutrition.totalCarbohydrates,
+                            totalFat: data.nutrition.totalFat,
+                            sodium: data.nutrition.sodium,
+                            sugars: data.nutrition.sugars,
+                            servingSize: data.nutrition.servingSize,
+                        }
+                    }
+                }));
+            } else {
+                setNutritionData(prev => ({
+                    ...prev,
+                    [productId]: { loading: false, data: null }
+                }));
+            }
+        } catch (err) {
+            console.error("Error fetching nutrition:", err);
+            setNutritionData(prev => ({
+                ...prev,
+                [productId]: { loading: false, data: null }
+            }));
         }
     };
 
@@ -1155,6 +1349,8 @@ function MealDetailPageContent() {
         // Close modals
         setShowSwapOptions(false);
         setSwapAlternatives(null);
+        setExpandedNutritionId(null);
+        setNutritionData({});
         setSelectedIngredientIndex(null);
         setSwappingIngredient(false);
     };
@@ -1291,8 +1487,9 @@ function MealDetailPageContent() {
             prefs?.allergiesAndSensitivities?.allergies || [],
             prefs?.allergiesAndSensitivities?.sensitivities || [],
             prefs?.dietType,
-            prefs?.doctorDietInstructions?.blockedIngredients || [],
-            prefs?.doctorDietInstructions?.blockedGroups || [],
+            prefs?.dietRestrictions?.blockedIngredients || [],
+            prefs?.dietRestrictions?.blockedGroups || [],
+            prefs?.dislikedFoods || [],
             familyMemberRestrictions
         );
 
@@ -1345,7 +1542,7 @@ function MealDetailPageContent() {
         );
     }
 
-    const doctorApplied = Boolean(mealsMeta?.usedDoctorInstructions);
+    const customRestrictionsApplied = Boolean(mealsMeta?.usedDietRestrictions);
 
     return (
         <div className="min-h-screen bg-[#f8fafb]">
@@ -1400,6 +1597,24 @@ function MealDetailPageContent() {
                                         <span className="text-[10px] font-medium text-sky-700">{meal.cookTimeRange.min}-{meal.cookTimeRange.max}m</span>
                                     </div>
                                 )}
+                                {compliantDiets.map(diet => (
+                                    <div key={diet} className="flex items-center gap-1 px-2 py-0.5 bg-pink-50 border border-pink-200 rounded-full">
+                                        <ShieldCheck className="w-3 h-3 text-pink-600" />
+                                        <span className="text-[10px] font-medium text-pink-700 capitalize">{diet}</span>
+                                    </div>
+                                ))}
+                                {customRestrictionsApplied && (
+                                    <div className="flex items-center gap-1 px-2 py-0.5 bg-pink-50 border border-pink-200 rounded-full">
+                                        <ShieldCheck className="w-3 h-3 text-pink-600" />
+                                        <span className="text-[10px] font-medium text-pink-700">Diet Compliant</span>
+                                    </div>
+                                )}
+                                {mealsMeta?.pantryMode && (
+                                    <div className="flex items-center gap-1 px-2 py-0.5 bg-amber-50 border border-amber-200 rounded-full">
+                                        <Home className="w-3 h-3 text-amber-600" />
+                                        <span className="text-[10px] font-medium text-amber-700">Pantry Mode</span>
+                                    </div>
+                                )}
                             </div>
                             <h1 className="text-lg sm:text-xl font-medium text-gray-900 mb-1">{meal.name}</h1>
                             <p className="text-sm text-gray-500">{meal.description}</p>
@@ -1412,46 +1627,10 @@ function MealDetailPageContent() {
             <div className="px-6 pb-6">
                 <div className="max-w-3xl mx-auto space-y-6">
                     {/* Status Badges */}
-                    <div className="flex flex-wrap gap-2">
-                        {mealsMeta?.pantryMode && (
-                            <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl">
-                                <Home className="w-4 h-4 text-amber-600" />
-                                <span className="text-sm font-medium text-amber-700">
-                                    Pantry Mode — cook with what you have
-                                </span>
-                            </div>
-                        )}
-                        {doctorApplied && (
-                            <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-xl">
-                                <Heart className="w-4 h-4 text-emerald-500" />
-                                <span className="text-sm font-medium text-emerald-700">
-                                    Generated with your diet instructions
-                                </span>
-                            </div>
-                        )}
-                    </div>
+
 
                     {/* Macros Card */}
                     <div className="bg-white rounded-2xl border border-gray-100 p-5">
-                        <div className="flex items-center gap-3 mb-4">
-                            <Users className="w-5 h-5 text-gray-400" />
-                            <span className="text-sm text-gray-500">Servings</span>
-                            <button
-                                onClick={() => setAdjustedServings(Math.max(1, currentServings - 1))}
-                                disabled={currentServings <= 1}
-                                className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
-                            >
-                                <Minus className="w-4 h-4 text-gray-600" />
-                            </button>
-                            <span className="text-lg font-semibold text-gray-900 w-6 text-center">{currentServings}</span>
-                            <button
-                                onClick={() => setAdjustedServings(Math.min(20, currentServings + 1))}
-                                disabled={currentServings >= 20}
-                                className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
-                            >
-                                <Plus className="w-4 h-4 text-gray-600" />
-                            </button>
-                        </div>
                         <div className="grid grid-cols-4 gap-4">
                             <div className="text-center">
                                 <div className="w-12 h-12 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-2">
@@ -1486,6 +1665,33 @@ function MealDetailPageContent() {
                                 </div>
                                 <div className="text-lg font-medium text-gray-900">{Math.round(meal.macros.fat * servingMultiplier)}g</div>
                                 <div className="text-xs text-gray-500">Fat</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Servings Card */}
+                    <div className="bg-white rounded-2xl border border-gray-100 p-5">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <Users className="w-5 h-5 text-gray-400" />
+                                <span className="text-sm font-medium text-gray-900">Servings</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <button
+                                    onClick={() => setAdjustedServings(Math.max(1, currentServings - 1))}
+                                    disabled={currentServings <= 1}
+                                    className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+                                >
+                                    <Minus className="w-4 h-4 text-gray-600" />
+                                </button>
+                                <span className="text-lg font-semibold text-gray-900 w-6 text-center">{currentServings}</span>
+                                <button
+                                    onClick={() => setAdjustedServings(Math.min(20, currentServings + 1))}
+                                    disabled={currentServings >= 20}
+                                    className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+                                >
+                                    <Plus className="w-4 h-4 text-gray-600" />
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -1593,7 +1799,12 @@ function MealDetailPageContent() {
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
                                 <h3 className="font-medium text-gray-900">
-                                    Ingredients ({selectedIngredients.size} of {displayIngredients.length} selected)
+                                    Ingredients ({selectedIngredients.size} of {displayIngredients.length})
+                                    {totalCalculatedCost.total > 0 && (
+                                        <span className="ml-2 text-[#4A90E2] text-sm">
+                                            Cart Total: ~${totalCalculatedCost.total.toFixed(2)}
+                                        </span>
+                                    )}
                                 </h3>
                                 {enrichingKroger && (
                                     <div className="flex items-center gap-1.5 text-xs text-gray-400">
@@ -1629,6 +1840,8 @@ function MealDetailPageContent() {
                                             // Clear previous swap state when selecting a new ingredient
                                             setSwapAlternatives(null);
                                             setShowSwapOptions(false);
+                                            setExpandedNutritionId(null);
+                                            setNutritionData({});
                                             setSelectedIngredientIndex(idx);
                                         }}
                                         className={`flex items-center gap-3 flex-1 min-w-0 ${krogerConnected && prefs?.shoppingPreference !== "instacart" ? "cursor-pointer" : ""}`}
@@ -2096,6 +2309,72 @@ function MealDetailPageContent() {
                                             )}
                                         </div>
 
+                                        {/* Nutrition Info */}
+                                        {krogerConnected && ing.krogerProductId && (
+                                            <div className="bg-gray-50 rounded-xl p-4">
+                                                <div className="flex items-center gap-2 mb-3">
+                                                    <Info className="w-4 h-4 text-gray-500" />
+                                                    <span className="text-sm font-medium text-gray-700">Nutrition Facts</span>
+                                                </div>
+                                                {currentProductNutrition.loading ? (
+                                                    <div className="flex items-center justify-center py-4">
+                                                        <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+                                                        <span className="ml-2 text-sm text-gray-500">Loading...</span>
+                                                    </div>
+                                                ) : currentProductNutrition.data ? (
+                                                    <div className="space-y-2">
+                                                        {currentProductNutrition.data.servingSize && (
+                                                            <div className="text-xs text-gray-500 mb-2">
+                                                                Serving: {currentProductNutrition.data.servingSize}
+                                                            </div>
+                                                        )}
+                                                        <div className="grid grid-cols-3 gap-2">
+                                                            {currentProductNutrition.data.calories !== null && (
+                                                                <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
+                                                                    <div className="text-base font-semibold text-gray-900">{currentProductNutrition.data.calories}</div>
+                                                                    <div className="text-xs text-gray-500">Cal</div>
+                                                                </div>
+                                                            )}
+                                                            {currentProductNutrition.data.protein !== null && (
+                                                                <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
+                                                                    <div className="text-base font-semibold text-gray-900">{currentProductNutrition.data.protein}g</div>
+                                                                    <div className="text-xs text-gray-500">Protein</div>
+                                                                </div>
+                                                            )}
+                                                            {currentProductNutrition.data.totalCarbohydrates !== null && (
+                                                                <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
+                                                                    <div className="text-base font-semibold text-gray-900">{currentProductNutrition.data.totalCarbohydrates}g</div>
+                                                                    <div className="text-xs text-gray-500">Carbs</div>
+                                                                </div>
+                                                            )}
+                                                            {currentProductNutrition.data.totalFat !== null && (
+                                                                <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
+                                                                    <div className="text-base font-semibold text-gray-900">{currentProductNutrition.data.totalFat}g</div>
+                                                                    <div className="text-xs text-gray-500">Fat</div>
+                                                                </div>
+                                                            )}
+                                                            {currentProductNutrition.data.sodium !== null && (
+                                                                <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
+                                                                    <div className="text-base font-semibold text-gray-900">{currentProductNutrition.data.sodium}mg</div>
+                                                                    <div className="text-xs text-gray-500">Sodium</div>
+                                                                </div>
+                                                            )}
+                                                            {currentProductNutrition.data.sugars !== null && (
+                                                                <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
+                                                                    <div className="text-base font-semibold text-gray-900">{currentProductNutrition.data.sugars}g</div>
+                                                                    <div className="text-xs text-gray-500">Sugar</div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-sm text-gray-500 text-center py-2">
+                                                        Nutrition info not available
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
                                         {/* Selection Toggle */}
                                         <div
                                             onClick={() => toggleIngredient(selectedIngredientIndex)}
@@ -2148,57 +2427,140 @@ function MealDetailPageContent() {
                                         </div>
                                     )}
 
-                                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                                    <div className="space-y-2 max-h-80 overflow-y-auto">
                                         {swapAlternatives.map((product) => (
-                                            <button
+                                            <div
                                                 key={product.krogerProductId}
-                                                onClick={() => handleSelectSwap(product)}
-                                                disabled={swappingIngredient}
-                                                className={`w-full p-3 border rounded-xl text-left transition-colors disabled:opacity-50 flex items-center gap-3 ${product.avoidWarning
+                                                className={`border rounded-xl overflow-hidden transition-colors ${product.avoidWarning
                                                     ? product.avoidWarning.rule === "NEVER_INCLUDE"
-                                                        ? "bg-red-50 border-red-200 hover:border-red-300"
-                                                        : "bg-amber-50 border-amber-200 hover:border-amber-300"
-                                                    : "bg-gray-50 border-gray-200 hover:bg-[#4A90E2]/10 hover:border-[#4A90E2]"
+                                                        ? "bg-red-50 border-red-200"
+                                                        : "bg-amber-50 border-amber-200"
+                                                    : "bg-gray-50 border-gray-200"
                                                     }`}
                                             >
-                                                {product.imageUrl ? (
-                                                    <div className="w-14 h-14 rounded-lg overflow-hidden bg-white flex-shrink-0">
-                                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                        <img
-                                                            src={product.imageUrl}
-                                                            alt={product.name}
-                                                            className="w-full h-full object-cover"
-                                                        />
-                                                    </div>
-                                                ) : (
-                                                    <div className="w-14 h-14 rounded-lg bg-gray-200 flex items-center justify-center flex-shrink-0">
-                                                        <ShoppingCart className="w-6 h-6 text-gray-400" />
-                                                    </div>
-                                                )}
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="font-medium text-gray-900 text-sm line-clamp-2">{product.name}</span>
-                                                        {product.avoidWarning && (
-                                                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 ${product.avoidWarning.rule === "NEVER_INCLUDE"
-                                                                ? "bg-red-100 text-red-700"
-                                                                : "bg-amber-100 text-amber-700"
-                                                                }`}>
-                                                                <AlertTriangle className="w-3 h-3" />
-                                                                {product.avoidWarning.rule === "NEVER_INCLUDE" ? "Allergy" : "Avoid"}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <div className="text-xs text-gray-500 mt-0.5">
-                                                        {product.size && <span>{product.size}</span>}
-                                                        {product.aisle && <span> • {product.aisle}</span>}
-                                                    </div>
-                                                    {typeof product.price === "number" && (
-                                                        <div className="text-sm font-medium text-[#4A90E2] mt-0.5">
-                                                            ${product.price.toFixed(2)}
+                                                <div className="p-3 flex items-center gap-3">
+                                                    {product.imageUrl ? (
+                                                        <div className="w-14 h-14 rounded-lg overflow-hidden bg-white flex-shrink-0">
+                                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                            <img
+                                                                src={product.imageUrl}
+                                                                alt={product.name}
+                                                                className="w-full h-full object-cover"
+                                                            />
+                                                        </div>
+                                                    ) : (
+                                                        <div className="w-14 h-14 rounded-lg bg-gray-200 flex items-center justify-center flex-shrink-0">
+                                                            <ShoppingCart className="w-6 h-6 text-gray-400" />
                                                         </div>
                                                     )}
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-medium text-gray-900 text-sm line-clamp-2">{product.name}</span>
+                                                            {product.avoidWarning && (
+                                                                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 ${product.avoidWarning.rule === "NEVER_INCLUDE"
+                                                                    ? "bg-red-100 text-red-700"
+                                                                    : "bg-amber-100 text-amber-700"
+                                                                    }`}>
+                                                                    <AlertTriangle className="w-3 h-3" />
+                                                                    {product.avoidWarning.rule === "NEVER_INCLUDE" ? "Allergy" : "Avoid"}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-xs text-gray-500 mt-0.5">
+                                                            {product.size && <span>{product.size}</span>}
+                                                            {product.aisle && <span> • {product.aisle}</span>}
+                                                        </div>
+                                                        {typeof product.price === "number" && (
+                                                            <div className="text-sm font-medium text-[#4A90E2] mt-0.5">
+                                                                ${product.price.toFixed(2)}
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                            </button>
+                                                {/* Action buttons */}
+                                                <div className="flex border-t border-gray-200/50">
+                                                    <button
+                                                        onClick={() => fetchProductNutrition(product.krogerProductId)}
+                                                        className="flex-1 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100/50 flex items-center justify-center gap-1 border-r border-gray-200/50"
+                                                    >
+                                                        {nutritionData[product.krogerProductId]?.loading ? (
+                                                            <div className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin" />
+                                                        ) : (
+                                                            <Info className="w-3 h-3" />
+                                                        )}
+                                                        Nutrition
+                                                        {expandedNutritionId === product.krogerProductId ? (
+                                                            <ChevronUp className="w-3 h-3" />
+                                                        ) : (
+                                                            <ChevronDown className="w-3 h-3" />
+                                                        )}
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleSelectSwap(product)}
+                                                        disabled={swappingIngredient}
+                                                        className="flex-1 py-2 text-xs font-medium text-[#4A90E2] hover:bg-[#4A90E2]/10 flex items-center justify-center gap-1 disabled:opacity-50"
+                                                    >
+                                                        <RefreshCw className="w-3 h-3" />
+                                                        Swap
+                                                    </button>
+                                                </div>
+                                                {/* Nutrition panel */}
+                                                {expandedNutritionId === product.krogerProductId && (
+                                                    <div className="px-3 pb-3 pt-2 border-t border-gray-200/50 bg-white/50">
+                                                        {nutritionData[product.krogerProductId]?.loading ? (
+                                                            <div className="text-xs text-gray-500 text-center py-2">Loading nutrition...</div>
+                                                        ) : nutritionData[product.krogerProductId]?.data ? (
+                                                            <div className="space-y-1">
+                                                                {nutritionData[product.krogerProductId].data?.servingSize && (
+                                                                    <div className="text-[10px] text-gray-500 mb-2">
+                                                                        Serving: {nutritionData[product.krogerProductId].data?.servingSize}
+                                                                    </div>
+                                                                )}
+                                                                <div className="grid grid-cols-3 gap-2">
+                                                                    {nutritionData[product.krogerProductId].data?.calories !== null && (
+                                                                        <div className="text-center p-1.5 bg-gray-100 rounded-lg">
+                                                                            <div className="text-xs font-semibold text-gray-900">{nutritionData[product.krogerProductId].data?.calories}</div>
+                                                                            <div className="text-[10px] text-gray-500">Cal</div>
+                                                                        </div>
+                                                                    )}
+                                                                    {nutritionData[product.krogerProductId].data?.protein !== null && (
+                                                                        <div className="text-center p-1.5 bg-gray-100 rounded-lg">
+                                                                            <div className="text-xs font-semibold text-gray-900">{nutritionData[product.krogerProductId].data?.protein}g</div>
+                                                                            <div className="text-[10px] text-gray-500">Protein</div>
+                                                                        </div>
+                                                                    )}
+                                                                    {nutritionData[product.krogerProductId].data?.totalCarbohydrates !== null && (
+                                                                        <div className="text-center p-1.5 bg-gray-100 rounded-lg">
+                                                                            <div className="text-xs font-semibold text-gray-900">{nutritionData[product.krogerProductId].data?.totalCarbohydrates}g</div>
+                                                                            <div className="text-[10px] text-gray-500">Carbs</div>
+                                                                        </div>
+                                                                    )}
+                                                                    {nutritionData[product.krogerProductId].data?.totalFat !== null && (
+                                                                        <div className="text-center p-1.5 bg-gray-100 rounded-lg">
+                                                                            <div className="text-xs font-semibold text-gray-900">{nutritionData[product.krogerProductId].data?.totalFat}g</div>
+                                                                            <div className="text-[10px] text-gray-500">Fat</div>
+                                                                        </div>
+                                                                    )}
+                                                                    {nutritionData[product.krogerProductId].data?.sodium !== null && (
+                                                                        <div className="text-center p-1.5 bg-gray-100 rounded-lg">
+                                                                            <div className="text-xs font-semibold text-gray-900">{nutritionData[product.krogerProductId].data?.sodium}mg</div>
+                                                                            <div className="text-[10px] text-gray-500">Sodium</div>
+                                                                        </div>
+                                                                    )}
+                                                                    {nutritionData[product.krogerProductId].data?.sugars !== null && (
+                                                                        <div className="text-center p-1.5 bg-gray-100 rounded-lg">
+                                                                            <div className="text-xs font-semibold text-gray-900">{nutritionData[product.krogerProductId].data?.sugars}g</div>
+                                                                            <div className="text-[10px] text-gray-500">Sugar</div>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="text-xs text-gray-500 text-center py-2">Nutrition info not available</div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
                                         ))}
                                     </div>
                                     <button
@@ -2206,6 +2568,8 @@ function MealDetailPageContent() {
                                             setShowSwapOptions(false);
                                             setSwapAlternatives(null);
                                             setSwapSearchWarning(null);
+                                            setExpandedNutritionId(null);
+                                            setNutritionData({});
                                         }}
                                         className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl font-medium"
                                     >
@@ -2243,6 +2607,8 @@ function MealDetailPageContent() {
                                             setShowSwapOptions(false);
                                             setSwapAlternatives(null);
                                             setSwapSearchWarning(null);
+                                            setExpandedNutritionId(null);
+                                            setNutritionData({});
                                         }}
                                         disabled={loadingSwapSuggestions}
                                         className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl font-medium disabled:opacity-50"

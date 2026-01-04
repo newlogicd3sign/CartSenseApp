@@ -6,6 +6,7 @@ import { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { MealImage } from "@/components/MealImage";
 import { auth, db } from "@/lib/firebaseClient";
+import { authFetch } from "@/lib/authFetch";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
     doc,
@@ -59,13 +60,19 @@ import {
     ExternalLink,
     Minus,
     Plus,
+    Share2,
+    Info,
+    ChevronDown,
+    ChevronUp,
+    AlertTriangle,
 } from "lucide-react";
 import { logUserEvent } from "@/lib/logUserEvent";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { useToast } from "@/components/Toast";
+import { ShareModal } from "@/components/ShareModal"; // Added
 import { DietaryConflictModal } from "@/components/DietaryConflictModal";
-import { checkPromptForConflicts, type ConflictResult, type FamilyMemberRestrictions } from "@/lib/sensitivityMapping";
+import { checkPromptForConflicts, getCompliantDiets, type ConflictResult, type FamilyMemberRestrictions } from "@/lib/sensitivityMapping";
 
 type Ingredient = {
     name: string;
@@ -105,6 +112,7 @@ type SavedMeal = {
         min: number;
         max: number;
     };
+    estimatedCost?: number;
 };
 
 type UserPrefs = {
@@ -116,11 +124,12 @@ type UserPrefs = {
         allergies?: string[];
         sensitivities?: string[];
     };
-    doctorDietInstructions?: {
+    dietRestrictions?: {
         hasActiveNote?: boolean;
         blockedIngredients?: string[];
         blockedGroups?: string[];
     };
+    dislikedFoods?: string[];
     isPremium?: boolean;
     shoppingPreference?: "kroger" | "instacart";
 };
@@ -158,6 +167,7 @@ export default function SavedMealDetailPage() {
     const [krogerConnected, setKrogerConnected] = useState(false);
     const [krogerStoreSet, setKrogerStoreSet] = useState(false);
     const [prefs, setPrefs] = useState<UserPrefs | null>(null);
+    const [showShareModal, setShowShareModal] = useState(false);
 
     // Lazy loading Kroger enrichment state
     const [enrichingKroger, setEnrichingKroger] = useState(false);
@@ -189,9 +199,41 @@ export default function SavedMealDetailPage() {
     const [loadingSwapSuggestions, setLoadingSwapSuggestions] = useState(false);
     const [showSwapOptions, setShowSwapOptions] = useState(false);
     const [swappingIngredient, setSwappingIngredient] = useState(false);
+    const [expandedNutritionId, setExpandedNutritionId] = useState<string | null>(null);
+    const [nutritionData, setNutritionData] = useState<Record<string, {
+        loading: boolean;
+        data: {
+            calories: number | null;
+            protein: number | null;
+            totalCarbohydrates: number | null;
+            totalFat: number | null;
+            sodium: number | null;
+            sugars: number | null;
+            servingSize: string | null;
+        } | null;
+    }>>({});
+    const [currentProductNutrition, setCurrentProductNutrition] = useState<{
+        loading: boolean;
+        productId: string | null;
+        data: {
+            calories: number | null;
+            protein: number | null;
+            totalCarbohydrates: number | null;
+            totalFat: number | null;
+            sodium: number | null;
+            sugars: number | null;
+            servingSize: string | null;
+        } | null;
+    }>({ loading: false, productId: null, data: null });
 
     // Random color for back button
     const backButtonColor = useMemo(() => getRandomAccentColor(), []);
+
+    // Calculate compliant diets based on ingredients
+    const compliantDiets = useMemo(() => {
+        if (!meal) return [];
+        return getCompliantDiets(meal.ingredients);
+    }, [meal]);
 
     // Serving adjustment calculations
     const currentServings = adjustedServings ?? meal?.servings ?? 1;
@@ -282,8 +324,9 @@ export default function SavedMealDetailPage() {
                                     allergies: memberData.allergiesAndSensitivities?.allergies || [],
                                     sensitivities: memberData.allergiesAndSensitivities?.sensitivities || [],
                                     dietType: memberData.dietType,
-                                    blockedIngredients: memberData.doctorDietInstructions?.blockedIngredients || [],
-                                    blockedGroups: memberData.doctorDietInstructions?.blockedGroups || []
+                                    blockedIngredients: memberData.dietRestrictions?.blockedIngredients || [],
+                                    blockedGroups: memberData.dietRestrictions?.blockedGroups || [],
+                                    dislikes: memberData.dislikedFoods || []
                                 });
                             }
                         });
@@ -713,8 +756,9 @@ export default function SavedMealDetailPage() {
             prefs?.allergiesAndSensitivities?.allergies || [],
             prefs?.allergiesAndSensitivities?.sensitivities || [],
             prefs?.dietType,
-            prefs?.doctorDietInstructions?.blockedIngredients || [],
-            prefs?.doctorDietInstructions?.blockedGroups || [],
+            prefs?.dietRestrictions?.blockedIngredients || [],
+            prefs?.dietRestrictions?.blockedGroups || [],
+            prefs?.dislikedFoods || [],
             familyMemberRestrictions
         );
 
@@ -753,13 +797,13 @@ export default function SavedMealDetailPage() {
 
         setLoadingSwapSuggestions(true);
         setSwapAlternatives(null);
+        setExpandedNutritionId(null);
+        setNutritionData({});
 
         try {
-            const res = await fetch("/api/swap-suggestions", {
+            const res = await authFetch("/api/swap-suggestions", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    userId: user.uid,
                     ingredientName: ing.name,
                     currentProductId: ing.krogerProductId,
                     searchTerm: ing.name,
@@ -787,6 +831,123 @@ export default function SavedMealDetailPage() {
             showToast("Something went wrong getting swap options.", "error");
         } finally {
             setLoadingSwapSuggestions(false);
+        }
+    };
+
+    // Fetch nutrition for the currently selected ingredient
+    useEffect(() => {
+        const fetchCurrentNutrition = async () => {
+            if (selectedIngredientIndex === null || !meal) {
+                setCurrentProductNutrition({ loading: false, productId: null, data: null });
+                return;
+            }
+
+            const ing = meal.ingredients[selectedIngredientIndex];
+            if (!ing?.krogerProductId) {
+                setCurrentProductNutrition({ loading: false, productId: null, data: null });
+                return;
+            }
+
+            // Already fetched for this product
+            if (currentProductNutrition.productId === ing.krogerProductId && currentProductNutrition.data) {
+                return;
+            }
+
+            setCurrentProductNutrition({ loading: true, productId: ing.krogerProductId, data: null });
+
+            try {
+                const locationId = prefs?.defaultKrogerLocationId;
+                const url = locationId
+                    ? `/api/kroger/product/${ing.krogerProductId}?locationId=${locationId}`
+                    : `/api/kroger/product/${ing.krogerProductId}`;
+
+                const res = await authFetch(url);
+                const data = await res.json();
+
+                if (res.ok && data.nutrition) {
+                    setCurrentProductNutrition({
+                        loading: false,
+                        productId: ing.krogerProductId,
+                        data: {
+                            calories: data.nutrition.calories,
+                            protein: data.nutrition.protein,
+                            totalCarbohydrates: data.nutrition.totalCarbohydrates,
+                            totalFat: data.nutrition.totalFat,
+                            sodium: data.nutrition.sodium,
+                            sugars: data.nutrition.sugars,
+                            servingSize: data.nutrition.servingSize,
+                        }
+                    });
+                } else {
+                    setCurrentProductNutrition({ loading: false, productId: ing.krogerProductId, data: null });
+                }
+            } catch (err) {
+                console.error("Error fetching current product nutrition:", err);
+                setCurrentProductNutrition({ loading: false, productId: ing.krogerProductId, data: null });
+            }
+        };
+
+        fetchCurrentNutrition();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedIngredientIndex, meal]);
+
+    const fetchProductNutrition = async (productId: string) => {
+        // Toggle off if already expanded
+        if (expandedNutritionId === productId) {
+            setExpandedNutritionId(null);
+            return;
+        }
+
+        setExpandedNutritionId(productId);
+
+        // Already fetched
+        if (nutritionData[productId]?.data) {
+            return;
+        }
+
+        // Set loading
+        setNutritionData(prev => ({
+            ...prev,
+            [productId]: { loading: true, data: null }
+        }));
+
+        try {
+            const locationId = prefs?.defaultKrogerLocationId;
+            const url = locationId
+                ? `/api/kroger/product/${productId}?locationId=${locationId}`
+                : `/api/kroger/product/${productId}`;
+
+            const res = await authFetch(url);
+            const data = await res.json();
+
+            if (res.ok && data.nutrition) {
+                setNutritionData(prev => ({
+                    ...prev,
+                    [productId]: {
+                        loading: false,
+                        data: {
+                            calories: data.nutrition.calories,
+                            protein: data.nutrition.protein,
+                            totalCarbohydrates: data.nutrition.totalCarbohydrates,
+                            totalFat: data.nutrition.totalFat,
+                            sodium: data.nutrition.sodium,
+                            sugars: data.nutrition.sugars,
+                            servingSize: data.nutrition.servingSize,
+                        }
+                    }
+                }));
+            } else {
+                setNutritionData(prev => ({
+                    ...prev,
+                    [productId]: { loading: false, data: null }
+                }));
+            }
+        } catch (err) {
+            console.error("Error fetching nutrition:", err);
+            setNutritionData(prev => ({
+                ...prev,
+                [productId]: { loading: false, data: null }
+            }));
         }
     };
 
@@ -851,6 +1012,8 @@ export default function SavedMealDetailPage() {
         // Close modals
         setShowSwapOptions(false);
         setSwapAlternatives(null);
+        setExpandedNutritionId(null);
+        setNutritionData({});
         setSelectedIngredientIndex(null);
         setSwappingIngredient(false);
     };
@@ -918,13 +1081,24 @@ export default function SavedMealDetailPage() {
 
                         {/* Content - Right */}
                         <div className="flex-1 flex flex-col min-w-0">
-                            <div className="flex items-center gap-2 mb-2">
+                            <div className="flex items-center gap-2 mb-2 flex-wrap">
                                 <span className="inline-block px-2 py-0.5 bg-gray-100 rounded-md text-xs font-medium text-gray-600 capitalize">
                                     {meal.mealType}
                                 </span>
                                 <div className="w-5 h-5 bg-[#4A90E2] rounded-full flex items-center justify-center">
                                     <Bookmark className="w-2.5 h-2.5 text-white fill-white" />
                                 </div>
+                                {meal.cookTimeRange && (
+                                    <div className="flex items-center gap-1 px-2 py-0.5 bg-sky-50 border border-sky-200 rounded-full">
+                                        <Clock className="w-3 h-3 text-sky-600" />
+                                        <span className="text-[10px] font-medium text-sky-700">{meal.cookTimeRange.min}-{meal.cookTimeRange.max}m</span>
+                                    </div>
+                                )}
+                                {compliantDiets.map(diet => (
+                                    <span key={diet} className="inline-block px-2 py-0.5 bg-pink-50 border border-pink-200 rounded-full text-xs font-medium text-pink-700 capitalize">
+                                        {diet}
+                                    </span>
+                                ))}
                             </div>
                             <h1 className="text-lg sm:text-xl font-medium text-gray-900 mb-1">{meal.name}</h1>
                             <p className="text-sm text-gray-500">{meal.description}</p>
@@ -958,31 +1132,6 @@ export default function SavedMealDetailPage() {
 
                     {/* Macros Card */}
                     <div className="bg-white rounded-2xl border border-gray-100 p-5">
-                        <div className="flex items-center gap-3 mb-4">
-                            <Users className="w-5 h-5 text-gray-400" />
-                            <span className="text-sm text-gray-500">Servings</span>
-                            <button
-                                onClick={() => setAdjustedServings(Math.max(1, currentServings - 1))}
-                                disabled={currentServings <= 1}
-                                className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
-                            >
-                                <Minus className="w-4 h-4 text-gray-600" />
-                            </button>
-                            <span className="text-lg font-semibold text-gray-900 w-6 text-center">{currentServings}</span>
-                            <button
-                                onClick={() => setAdjustedServings(Math.min(20, currentServings + 1))}
-                                disabled={currentServings >= 20}
-                                className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
-                            >
-                                <Plus className="w-4 h-4 text-gray-600" />
-                            </button>
-                            {meal.cookTimeRange && (
-                                <div className="flex items-center gap-1.5 px-3 py-1 bg-sky-50 border border-sky-200 rounded-full">
-                                    <Clock className="w-4 h-4 text-sky-600" />
-                                    <span className="text-sm font-medium text-sky-700">{meal.cookTimeRange.min}-{meal.cookTimeRange.max} min</span>
-                                </div>
-                            )}
-                        </div>
                         <div className="grid grid-cols-4 gap-4">
                             <div className="text-center">
                                 <div className="w-12 h-12 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-2">
@@ -1017,6 +1166,33 @@ export default function SavedMealDetailPage() {
                                 </div>
                                 <div className="text-lg font-medium text-gray-900">{Math.round(meal.macros.fat * servingMultiplier)}g</div>
                                 <div className="text-xs text-gray-500">Fat</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Servings Card */}
+                    <div className="bg-white rounded-2xl border border-gray-100 p-5">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <Users className="w-5 h-5 text-gray-400" />
+                                <span className="text-sm font-medium text-gray-900">Servings</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <button
+                                    onClick={() => setAdjustedServings(Math.max(1, currentServings - 1))}
+                                    disabled={currentServings <= 1}
+                                    className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+                                >
+                                    <Minus className="w-4 h-4 text-gray-600" />
+                                </button>
+                                <span className="text-lg font-semibold text-gray-900 w-6 text-center">{currentServings}</span>
+                                <button
+                                    onClick={() => setAdjustedServings(Math.min(20, currentServings + 1))}
+                                    disabled={currentServings >= 20}
+                                    className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+                                >
+                                    <Plus className="w-4 h-4 text-gray-600" />
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -1249,11 +1425,13 @@ export default function SavedMealDetailPage() {
                         </ul>
                     </div>
 
-                    {/* Recipe Quantities */}
+                    {/* Recipe Measurements */}
                     <div className="bg-white rounded-2xl border border-gray-100 p-5">
                         <div className="flex items-center gap-2 mb-4">
                             <PencilRuler className="w-5 h-5 text-gray-400" />
-                            <h3 className="font-medium text-gray-900">Recipe Quantities</h3>
+                            <h3 className="font-medium text-gray-900">
+                                Recipe Measurements <span className="text-gray-500 text-sm font-normal">(for {currentServings} serving{currentServings !== 1 ? 's' : ''})</span>
+                            </h3>
                         </div>
                         <div className="grid grid-cols-2 gap-2">
                             {meal.ingredients.map((ing, idx) => (
@@ -1326,6 +1504,15 @@ export default function SavedMealDetailPage() {
                                 </button>
                             )
                         }
+
+                        {/* Share Button */}
+                        <button
+                            onClick={() => setShowShareModal(true)}
+                            className="w-full py-4 bg-white border border-[#4A90E2] text-[#4A90E2] rounded-2xl hover:bg-blue-50 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                        >
+                            <Share2 className="w-5 h-5" />
+                            <span>Share this meal</span>
+                        </button>
                     </div>
 
                 </div>
@@ -1337,6 +1524,16 @@ export default function SavedMealDetailPage() {
                     feature="meal_chat"
                     onClose={() => setShowUpgradePrompt(false)}
                     reason="voluntary"
+                />
+            )}
+
+            {/* Share Modal */}
+            {meal && user && (
+                <ShareModal
+                    isOpen={showShareModal}
+                    onClose={() => setShowShareModal(false)}
+                    meal={meal}
+                    userId={user?.uid}
                 />
             )}
 
@@ -1489,6 +1686,72 @@ export default function SavedMealDetailPage() {
                                             )}
                                         </div>
 
+                                        {/* Nutrition Info */}
+                                        {krogerConnected && ing.krogerProductId && (
+                                            <div className="bg-gray-50 rounded-xl p-4">
+                                                <div className="flex items-center gap-2 mb-3">
+                                                    <Info className="w-4 h-4 text-gray-500" />
+                                                    <span className="text-sm font-medium text-gray-700">Nutrition Facts</span>
+                                                </div>
+                                                {currentProductNutrition.loading ? (
+                                                    <div className="flex items-center justify-center py-4">
+                                                        <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+                                                        <span className="ml-2 text-sm text-gray-500">Loading...</span>
+                                                    </div>
+                                                ) : currentProductNutrition.data ? (
+                                                    <div className="space-y-2">
+                                                        {currentProductNutrition.data.servingSize && (
+                                                            <div className="text-xs text-gray-500 mb-2">
+                                                                Serving: {currentProductNutrition.data.servingSize}
+                                                            </div>
+                                                        )}
+                                                        <div className="grid grid-cols-3 gap-2">
+                                                            {currentProductNutrition.data.calories !== null && (
+                                                                <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
+                                                                    <div className="text-base font-semibold text-gray-900">{currentProductNutrition.data.calories}</div>
+                                                                    <div className="text-xs text-gray-500">Cal</div>
+                                                                </div>
+                                                            )}
+                                                            {currentProductNutrition.data.protein !== null && (
+                                                                <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
+                                                                    <div className="text-base font-semibold text-gray-900">{currentProductNutrition.data.protein}g</div>
+                                                                    <div className="text-xs text-gray-500">Protein</div>
+                                                                </div>
+                                                            )}
+                                                            {currentProductNutrition.data.totalCarbohydrates !== null && (
+                                                                <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
+                                                                    <div className="text-base font-semibold text-gray-900">{currentProductNutrition.data.totalCarbohydrates}g</div>
+                                                                    <div className="text-xs text-gray-500">Carbs</div>
+                                                                </div>
+                                                            )}
+                                                            {currentProductNutrition.data.totalFat !== null && (
+                                                                <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
+                                                                    <div className="text-base font-semibold text-gray-900">{currentProductNutrition.data.totalFat}g</div>
+                                                                    <div className="text-xs text-gray-500">Fat</div>
+                                                                </div>
+                                                            )}
+                                                            {currentProductNutrition.data.sodium !== null && (
+                                                                <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
+                                                                    <div className="text-base font-semibold text-gray-900">{currentProductNutrition.data.sodium}mg</div>
+                                                                    <div className="text-xs text-gray-500">Sodium</div>
+                                                                </div>
+                                                            )}
+                                                            {currentProductNutrition.data.sugars !== null && (
+                                                                <div className="text-center p-2 bg-white rounded-lg border border-gray-100">
+                                                                    <div className="text-base font-semibold text-gray-900">{currentProductNutrition.data.sugars}g</div>
+                                                                    <div className="text-xs text-gray-500">Sugar</div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-sm text-gray-500 text-center py-2">
+                                                        Nutrition info not available
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
                                         {/* Selection Toggle */}
                                         <div
                                             onClick={() => toggleIngredient(selectedIngredientIndex)}
@@ -1514,47 +1777,132 @@ export default function SavedMealDetailPage() {
                             {showSwapOptions && swapAlternatives ? (
                                 <>
                                     <p className="text-sm text-gray-600 font-medium mb-2">Choose a different product:</p>
-                                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                                    <div className="space-y-2 max-h-80 overflow-y-auto">
                                         {swapAlternatives.map((product) => (
-                                            <button
+                                            <div
                                                 key={product.krogerProductId}
-                                                onClick={() => handleSelectSwap(product)}
-                                                disabled={swappingIngredient}
-                                                className="w-full p-3 bg-gray-50 hover:bg-[#4A90E2]/10 border border-gray-200 hover:border-[#4A90E2] rounded-xl text-left transition-colors disabled:opacity-50 flex items-center gap-3"
+                                                className="border rounded-xl overflow-hidden bg-gray-50 border-gray-200"
                                             >
-                                                {product.imageUrl ? (
-                                                    <div className="w-14 h-14 rounded-lg overflow-hidden bg-white flex-shrink-0">
-                                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                        <img
-                                                            src={product.imageUrl}
-                                                            alt={product.name}
-                                                            className="w-full h-full object-cover"
-                                                        />
-                                                    </div>
-                                                ) : (
-                                                    <div className="w-14 h-14 rounded-lg bg-gray-200 flex items-center justify-center flex-shrink-0">
-                                                        <ShoppingCart className="w-6 h-6 text-gray-400" />
-                                                    </div>
-                                                )}
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="font-medium text-gray-900 text-sm line-clamp-2">{product.name}</div>
-                                                    <div className="text-xs text-gray-500 mt-0.5">
-                                                        {product.size && <span>{product.size}</span>}
-                                                        {product.aisle && <span> • {product.aisle}</span>}
-                                                    </div>
-                                                    {typeof product.price === "number" && (
-                                                        <div className="text-sm font-medium text-[#4A90E2] mt-0.5">
-                                                            ${product.price.toFixed(2)}
+                                                <div className="p-3 flex items-center gap-3">
+                                                    {product.imageUrl ? (
+                                                        <div className="w-14 h-14 rounded-lg overflow-hidden bg-white flex-shrink-0">
+                                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                            <img
+                                                                src={product.imageUrl}
+                                                                alt={product.name}
+                                                                className="w-full h-full object-cover"
+                                                            />
+                                                        </div>
+                                                    ) : (
+                                                        <div className="w-14 h-14 rounded-lg bg-gray-200 flex items-center justify-center flex-shrink-0">
+                                                            <ShoppingCart className="w-6 h-6 text-gray-400" />
                                                         </div>
                                                     )}
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="font-medium text-gray-900 text-sm line-clamp-2">{product.name}</div>
+                                                        <div className="text-xs text-gray-500 mt-0.5">
+                                                            {product.size && <span>{product.size}</span>}
+                                                            {product.aisle && <span> • {product.aisle}</span>}
+                                                        </div>
+                                                        {typeof product.price === "number" && (
+                                                            <div className="text-sm font-medium text-[#4A90E2] mt-0.5">
+                                                                ${product.price.toFixed(2)}
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                            </button>
+                                                {/* Action buttons */}
+                                                <div className="flex border-t border-gray-200/50">
+                                                    <button
+                                                        onClick={() => fetchProductNutrition(product.krogerProductId)}
+                                                        className="flex-1 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100/50 flex items-center justify-center gap-1 border-r border-gray-200/50"
+                                                    >
+                                                        {nutritionData[product.krogerProductId]?.loading ? (
+                                                            <div className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin" />
+                                                        ) : (
+                                                            <Info className="w-3 h-3" />
+                                                        )}
+                                                        Nutrition
+                                                        {expandedNutritionId === product.krogerProductId ? (
+                                                            <ChevronUp className="w-3 h-3" />
+                                                        ) : (
+                                                            <ChevronDown className="w-3 h-3" />
+                                                        )}
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleSelectSwap(product)}
+                                                        disabled={swappingIngredient}
+                                                        className="flex-1 py-2 text-xs font-medium text-[#4A90E2] hover:bg-[#4A90E2]/10 flex items-center justify-center gap-1 disabled:opacity-50"
+                                                    >
+                                                        <RefreshCw className="w-3 h-3" />
+                                                        Swap
+                                                    </button>
+                                                </div>
+                                                {/* Nutrition panel */}
+                                                {expandedNutritionId === product.krogerProductId && (
+                                                    <div className="px-3 pb-3 pt-2 border-t border-gray-200/50 bg-white/50">
+                                                        {nutritionData[product.krogerProductId]?.loading ? (
+                                                            <div className="text-xs text-gray-500 text-center py-2">Loading nutrition...</div>
+                                                        ) : nutritionData[product.krogerProductId]?.data ? (
+                                                            <div className="space-y-1">
+                                                                {nutritionData[product.krogerProductId].data?.servingSize && (
+                                                                    <div className="text-[10px] text-gray-500 mb-2">
+                                                                        Serving: {nutritionData[product.krogerProductId].data?.servingSize}
+                                                                    </div>
+                                                                )}
+                                                                <div className="grid grid-cols-3 gap-2">
+                                                                    {nutritionData[product.krogerProductId].data?.calories !== null && (
+                                                                        <div className="text-center p-1.5 bg-gray-100 rounded-lg">
+                                                                            <div className="text-xs font-semibold text-gray-900">{nutritionData[product.krogerProductId].data?.calories}</div>
+                                                                            <div className="text-[10px] text-gray-500">Cal</div>
+                                                                        </div>
+                                                                    )}
+                                                                    {nutritionData[product.krogerProductId].data?.protein !== null && (
+                                                                        <div className="text-center p-1.5 bg-gray-100 rounded-lg">
+                                                                            <div className="text-xs font-semibold text-gray-900">{nutritionData[product.krogerProductId].data?.protein}g</div>
+                                                                            <div className="text-[10px] text-gray-500">Protein</div>
+                                                                        </div>
+                                                                    )}
+                                                                    {nutritionData[product.krogerProductId].data?.totalCarbohydrates !== null && (
+                                                                        <div className="text-center p-1.5 bg-gray-100 rounded-lg">
+                                                                            <div className="text-xs font-semibold text-gray-900">{nutritionData[product.krogerProductId].data?.totalCarbohydrates}g</div>
+                                                                            <div className="text-[10px] text-gray-500">Carbs</div>
+                                                                        </div>
+                                                                    )}
+                                                                    {nutritionData[product.krogerProductId].data?.totalFat !== null && (
+                                                                        <div className="text-center p-1.5 bg-gray-100 rounded-lg">
+                                                                            <div className="text-xs font-semibold text-gray-900">{nutritionData[product.krogerProductId].data?.totalFat}g</div>
+                                                                            <div className="text-[10px] text-gray-500">Fat</div>
+                                                                        </div>
+                                                                    )}
+                                                                    {nutritionData[product.krogerProductId].data?.sodium !== null && (
+                                                                        <div className="text-center p-1.5 bg-gray-100 rounded-lg">
+                                                                            <div className="text-xs font-semibold text-gray-900">{nutritionData[product.krogerProductId].data?.sodium}mg</div>
+                                                                            <div className="text-[10px] text-gray-500">Sodium</div>
+                                                                        </div>
+                                                                    )}
+                                                                    {nutritionData[product.krogerProductId].data?.sugars !== null && (
+                                                                        <div className="text-center p-1.5 bg-gray-100 rounded-lg">
+                                                                            <div className="text-xs font-semibold text-gray-900">{nutritionData[product.krogerProductId].data?.sugars}g</div>
+                                                                            <div className="text-[10px] text-gray-500">Sugar</div>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="text-xs text-gray-500 text-center py-2">Nutrition info not available</div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
                                         ))}
                                     </div>
                                     <button
                                         onClick={() => {
                                             setShowSwapOptions(false);
                                             setSwapAlternatives(null);
+                                            setExpandedNutritionId(null);
+                                            setNutritionData({});
                                         }}
                                         className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl font-medium"
                                     >

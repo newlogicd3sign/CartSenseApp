@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
+import { authFetch } from "@/lib/authFetch";
 import { signOut, onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { Search, List, BookmarkCheck, User, LogOut, Sparkles } from "lucide-react";
@@ -56,6 +57,29 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             }
 
             setAuthChecked(true);
+
+            // Check for pending share claim (for existing users who log in via share link)
+            const pendingShareId = localStorage.getItem("pendingShareId");
+            if (pendingShareId) {
+                try {
+                    // Don't await this to avoid blocking UI rendering, but handle it
+                    authFetch("/api/share/claim", {
+                        method: "POST",
+                        body: JSON.stringify({ shareId: pendingShareId }),
+                    }).then(async (res) => {
+                        if (res.ok) {
+                            localStorage.removeItem("pendingShareId");
+                            // We can't easily show toast here since we are outside the ToastProvider context usually?
+                            // Wait, AppLayout uses useToast? No, it's not imported yet.
+                            // Let's rely on redirection to saved-meals to show IT worked visually?
+                            // Or better: dispatch a custom event or just redirect.
+                            router.push("/saved-meals");
+                        }
+                    });
+                } catch (e) {
+                    console.error("Error claiming shared meal:", e);
+                }
+            }
         });
 
         return () => unsub();
@@ -201,13 +225,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                             className="flex items-center gap-2 px-4 py-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-colors"
                         >
                             <LogOut className="w-5 h-5" />
-                            <span className="text-sm font-medium">Logout</span>
+                            <span className="text-sm font-medium">Sign Out</span>
                         </button>
                     </header>
                 )}
 
                 {/* Page Content */}
-                <main className={navVisible ? "pb-24 lg:pb-6" : ""}>
+                <main className={navVisible ? "pb-36 lg:pb-6" : ""}>
                     {children}
                 </main>
 

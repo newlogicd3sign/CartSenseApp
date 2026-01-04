@@ -18,6 +18,7 @@ import { queueKrogerRequest, getKrogerQueueStats } from "./krogerQueue";
 import { fetchWithRetry, getCircuitBreakerStatus } from "./krogerRetry";
 import { canMakeRequest, recordRequest } from "./krogerRateLimiter";
 import { QUEUE_PRIORITY, createKrogerError } from "./krogerConfig";
+import { correctSpelling } from "./spellingCorrections";
 
 // ✅ Defaults for Kroger api-ce, overridable via env
 const TOKEN_URL =
@@ -459,14 +460,21 @@ export async function searchKrogerProduct(
     const trimmed = searchTerm.trim();
     if (!trimmed) return null;
 
+    // Apply spelling correction
+    const correctedTerm = correctSpelling(trimmed);
+    if (correctedTerm !== trimmed) {
+        console.log(`📝 Spelling corrected: "${trimmed}" -> "${correctedTerm}"`);
+    }
+
     // Must have locationId for caching (prices vary by location)
     const locationId = opts.locationId;
 
     // ─────────────────────────────────────────────────────────────────────────
     // Step 1: Check Firestore cache first
     // ─────────────────────────────────────────────────────────────────────────
-    if (!opts.skipCache && locationId) {
-        const cached = await getCachedProducts(locationId, trimmed);
+    // Temporary fix: Force bypass cache for "buttermilk" to fix improper biscuit mapping
+    if (!opts.skipCache && locationId && !correctedTerm.toLowerCase().includes("buttermilk")) {
+        const cached = await getCachedProducts(locationId, correctedTerm);
 
         if (cached) {
             // Empty products array means "not found" was cached
@@ -489,7 +497,7 @@ export async function searchKrogerProduct(
             // Score and pick best
             let best: { product: CachedKrogerProduct; score: number } | null = null;
             for (const p of availableProducts) {
-                const s = scoreProduct(p, trimmed);
+                const s = scoreProduct(p, correctedTerm);
                 if (!best || s > best.score) {
                     best = { product: p, score: s };
                 }
@@ -624,12 +632,12 @@ export async function searchKrogerProduct(
     }
 
     // Try full search term first
-    const firstTry = await runSearch(searchTerm);
+    const firstTry = await runSearch(correctedTerm);
 
     // Cache the results (even if no match, to avoid repeated API calls)
     if (locationId && firstTry.products.length > 0) {
         const cachedProducts = firstTry.products.map(krogerProductToCached);
-        await writeProductsCache(locationId, trimmed, cachedProducts, cachedProducts.length);
+        await writeProductsCache(locationId, correctedTerm, cachedProducts, cachedProducts.length);
     }
 
     if (firstTry.match) {
@@ -637,11 +645,11 @@ export async function searchKrogerProduct(
     }
 
     // Try fallback search term
-    const fallback = buildFallbackSearchTerm(searchTerm);
+    const fallback = buildFallbackSearchTerm(correctedTerm);
     if (!fallback) {
         // Cache as "not found"
         if (locationId) {
-            await cacheNotFound(locationId, trimmed);
+            await cacheNotFound(locationId, correctedTerm);
         }
         return null;
     }
@@ -652,7 +660,7 @@ export async function searchKrogerProduct(
     // Cache fallback results under original term
     if (locationId && fallbackTry.products.length > 0) {
         const cachedProducts = fallbackTry.products.map(krogerProductToCached);
-        await writeProductsCache(locationId, trimmed, cachedProducts, cachedProducts.length);
+        await writeProductsCache(locationId, correctedTerm, cachedProducts, cachedProducts.length);
     }
 
     if (fallbackTry.match) {
@@ -661,7 +669,7 @@ export async function searchKrogerProduct(
 
     // Cache as "not found"
     if (locationId) {
-        await cacheNotFound(locationId, trimmed);
+        await cacheNotFound(locationId, correctedTerm);
     }
     return null;
 }
@@ -676,8 +684,11 @@ export async function searchAlternativeProduct(
     const trimmed = searchTerm.trim();
     if (!trimmed) return null;
 
+    // Apply spelling correction
+    const correctedTerm = correctSpelling(trimmed);
+
     const locationId = opts.locationId;
-    const simplifiedTerm = buildFallbackSearchTerm(trimmed) || trimmed;
+    const simplifiedTerm = buildFallbackSearchTerm(correctedTerm) || correctedTerm;
 
     // ─────────────────────────────────────────────────────────────────────────
     // Check cache first
@@ -1003,9 +1014,162 @@ export type KrogerLocationResult = {
     zipCode: string;
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Product Details (with Nutrition)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type KrogerNutritionInfo = {
+    servingSize: string | null;
+    calories: number | null;
+    totalFat: number | null;
+    saturatedFat: number | null;
+    transFat: number | null;
+    cholesterol: number | null;
+    sodium: number | null;
+    totalCarbohydrates: number | null;
+    dietaryFiber: number | null;
+    sugars: number | null;
+    protein: number | null;
+};
+
+export type KrogerProductDetails = {
+    productId: string;
+    upc: string | null;
+    brand: string | null;
+    description: string;
+    ingredients: string | null;
+    nutrition: KrogerNutritionInfo | null;
+    imageUrl: string | null;
+    price: number | null;
+    size: string | null;
+};
+
 /**
- * Search Kroger locations near a ZIP code.
+ * Fetch detailed product information including nutrition data.
+ * Requires fetching individual product by ID.
  */
+export async function getKrogerProductDetails(
+    productId: string,
+    opts: { locationId?: string } = {},
+): Promise<KrogerProductDetails | null> {
+    if (!productId) return null;
+
+    const token = await getKrogerToken();
+
+    if (!API_BASE_URL) {
+        console.error("Missing KROGER_API_BASE_URL env var.");
+        throw new Error("Missing Kroger API base URL");
+    }
+
+    const params = new URLSearchParams();
+    if (opts.locationId) {
+        params.append("filter.locationId", opts.locationId);
+    }
+
+    const url = `${API_BASE_URL}/products/${productId}${params.toString() ? `?${params.toString()}` : ""}`;
+
+    let res: Response;
+    try {
+        res = await protectedKrogerFetch(
+            url,
+            {
+                method: "GET",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    Accept: "application/json",
+                },
+            },
+            QUEUE_PRIORITY.ENRICH
+        );
+    } catch (error) {
+        console.error("Kroger product details error (protected):", error);
+        return null;
+    }
+
+    if (!res.ok) {
+        console.error("Kroger product details error:", res.status);
+        return null;
+    }
+
+    type ProductDetailResponse = {
+        data?: {
+            productId: string;
+            upc?: string;
+            brand?: string;
+            description: string;
+            images?: KrogerProduct["images"];
+            items?: {
+                size?: string;
+                price?: { regular?: number; promo?: number } | number;
+                ingredients?: string;
+                nutrition?: {
+                    servingSize?: string;
+                    calories?: number;
+                    totalFat?: number;
+                    saturatedFat?: number;
+                    transFat?: number;
+                    cholesterol?: number;
+                    sodium?: number;
+                    totalCarbohydrates?: number;
+                    dietaryFiber?: number;
+                    sugars?: number;
+                    protein?: number;
+                };
+            }[];
+        };
+    };
+
+    const json = (await res.json()) as ProductDetailResponse;
+    const product = json.data;
+
+    if (!product) {
+        return null;
+    }
+
+    const item = product.items?.[0];
+    const nutrition = item?.nutrition;
+
+    // Extract price
+    let price: number | null = null;
+    if (item?.price) {
+        if (typeof item.price === "number") {
+            price = item.price;
+        } else if (typeof item.price === "object") {
+            price = item.price.promo ?? item.price.regular ?? null;
+        }
+    }
+
+    const imageUrl = selectBestImageUrl(product.images);
+
+    return {
+        productId: product.productId,
+        upc: product.upc ?? null,
+        brand: product.brand ?? null,
+        description: product.description,
+        ingredients: item?.ingredients ?? null,
+        nutrition: nutrition ? {
+            servingSize: nutrition.servingSize ?? null,
+            calories: nutrition.calories ?? null,
+            totalFat: nutrition.totalFat ?? null,
+            saturatedFat: nutrition.saturatedFat ?? null,
+            transFat: nutrition.transFat ?? null,
+            cholesterol: nutrition.cholesterol ?? null,
+            sodium: nutrition.sodium ?? null,
+            totalCarbohydrates: nutrition.totalCarbohydrates ?? null,
+            dietaryFiber: nutrition.dietaryFiber ?? null,
+            sugars: nutrition.sugars ?? null,
+            protein: nutrition.protein ?? null,
+        } : null,
+        imageUrl,
+        price,
+        size: item?.size ?? null,
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Location Search
+// ─────────────────────────────────────────────────────────────────────────────
+
 export async function searchKrogerLocationsByZip(
     zip: string,
     limit = 10,

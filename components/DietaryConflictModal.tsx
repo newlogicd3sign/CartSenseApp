@@ -26,13 +26,14 @@ export function DietaryConflictModal({
     if (!isOpen) return null;
 
     const allergyConflicts = conflicts.filter(c => c.type === "allergy");
-    const doctorConflicts = conflicts.filter(c => c.type === "doctor_blocked");
+    const customRestrictionConflicts = conflicts.filter(c => c.type === "diet_restricted");
     const sensitivityConflicts = conflicts.filter(c => c.type === "sensitivity");
     const dietConflicts = conflicts.filter(c => c.type === "diet");
+    const dislikeConflicts = conflicts.filter(c => c.type === "dislike");
 
     const hasAllergies = allergyConflicts.length > 0;
-    const hasDoctorRestrictions = doctorConflicts.length > 0;
-    const hasCritical = hasAllergies || hasDoctorRestrictions;
+    const hasCustomRestrictions = customRestrictionConflicts.length > 0;
+    const hasCritical = hasAllergies || hasCustomRestrictions;
 
     // Check if any family members are affected
     const hasFamilyMemberConflicts = conflicts.some(c => c.person !== undefined);
@@ -96,15 +97,15 @@ export function DietaryConflictModal({
                         </div>
                     )}
 
-                    {/* Doctor Restrictions */}
-                    {doctorConflicts.length > 0 && (
+                    {/* Custom Diet Restrictions */}
+                    {customRestrictionConflicts.length > 0 && (
                         <div className="bg-red-50 border border-red-200 rounded-xl p-3">
                             <div className="flex items-center gap-2 mb-2">
                                 <HeartPulse className="w-4 h-4 text-red-600" />
-                                <span className="text-sm font-medium text-red-800">Doctor-Prescribed Restriction</span>
+                                <span className="text-sm font-medium text-red-800">Diet Restriction</span>
                             </div>
                             <ul className="space-y-1">
-                                {doctorConflicts.map((conflict, i) => (
+                                {customRestrictionConflicts.map((conflict, i) => (
                                     <li key={i} className="text-sm text-red-700">
                                         <span className="font-medium">&ldquo;{conflict.matchedKeyword}&rdquo;</span>
                                         {" "}is restricted by {formatPerson(conflict.person)} diet instructions
@@ -151,6 +152,24 @@ export function DietaryConflictModal({
                             </ul>
                         </div>
                     )}
+
+                    {/* Dislike Conflicts */}
+                    {dislikeConflicts.length > 0 && (
+                        <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
+                            <div className="flex items-center gap-2 mb-2">
+                                <AlertTriangle className="w-4 h-4 text-gray-600" />
+                                <span className="text-sm font-medium text-gray-800">Disliked Food</span>
+                            </div>
+                            <ul className="space-y-1">
+                                {dislikeConflicts.map((conflict, i) => (
+                                    <li key={i} className="text-sm text-gray-700">
+                                        <span className="font-medium">&ldquo;{conflict.matchedKeyword}&rdquo;</span>
+                                        {" "}is on {formatPerson(conflict.person)} dislike list
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
                 </div>
 
                 {/* Action Buttons */}
@@ -163,11 +182,10 @@ export function DietaryConflictModal({
                     </button>
                     <button
                         onClick={onProceed}
-                        className={`flex-1 py-3 rounded-xl font-medium transition-colors ${
-                            hasCritical
-                                ? "bg-red-500 hover:bg-red-600 text-white"
-                                : "bg-amber-500 hover:bg-amber-600 text-white"
-                        }`}
+                        className={`flex-1 py-3 rounded-xl font-medium transition-colors ${hasCritical
+                            ? "bg-red-500 hover:bg-red-600 text-white"
+                            : "bg-amber-500 hover:bg-amber-600 text-white"
+                            }`}
                     >
                         Proceed Anyway
                     </button>

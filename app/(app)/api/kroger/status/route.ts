@@ -1,18 +1,14 @@
 // app/(app)/api/kroger/status/route.ts
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
+import { verifyAuth } from "@/lib/authHelper";
 
 export async function GET(request: Request) {
     try {
-        const { searchParams } = new URL(request.url);
-        const userId = searchParams.get("userId");
-
-        if (!userId) {
-            return NextResponse.json(
-                { error: "USER_ID_REQUIRED", message: "User ID is required." },
-                { status: 400 }
-            );
-        }
+        // Verify authentication
+        const auth = await verifyAuth(request);
+        if (!auth.success) return auth.error;
+        const userId = auth.userId;
 
         // Get user document
         const userDocSnap = await adminDb.collection("users").doc(userId).get();

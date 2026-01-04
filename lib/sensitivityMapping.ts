@@ -75,12 +75,17 @@ export const sensitivityKeywords: Record<string, string[]> = {
         "cajun", "curry", "chili", "pepper", "wasabi", "horseradish"
     ],
     "red meat": [
-        "steak", "beef", "burger", "hamburger", "lamb", "pork", "bacon",
-        "ham", "sausage", "ribs", "brisket", "roast beef", "meatball",
-        "meatloaf", "veal", "venison", "bison", "ground beef", "ribeye",
-        "sirloin", "tenderloin", "filet", "t-bone", "prime rib", "pot roast",
-        "pulled pork", "carnitas", "chorizo", "pepperoni", "salami", "prosciutto",
-        "pastrami", "corned beef", "bratwurst", "kielbasa", "hot dog"
+        // Beef
+        "beef", "steak", "ground beef", "beef burger", "ribeye", "sirloin",
+        "tenderloin", "filet", "t-bone", "prime rib", "brisket", "roast beef",
+        "pot roast", "corned beef", "pastrami",
+        // Pork
+        "pork", "bacon", "ham", "pulled pork", "pork chop", "pork belly",
+        "carnitas", "spare ribs", "pork ribs",
+        // Lamb/Other
+        "lamb", "veal", "venison", "bison", "goat",
+        // Processed (specifically red meat)
+        "pepperoni", "salami", "prosciutto", "chorizo", "bratwurst", "kielbasa"
     ],
     "corn syrup": [
         "corn syrup", "high fructose"
@@ -93,35 +98,135 @@ export const sensitivityKeywords: Record<string, string[]> = {
 // Diet type restrictions - what ingredients conflict with each diet
 export const dietTypeConflicts: Record<string, string[]> = {
     "vegetarian": [
-        "chicken", "beef", "pork", "lamb", "fish", "salmon", "tuna", "shrimp",
-        "bacon", "ham", "sausage", "steak", "burger", "meat", "turkey", "duck"
+        // Poultry
+        "chicken", "turkey", "duck", "goose", "quail", "pheasant",
+        // Red meat
+        "beef", "pork", "lamb", "veal", "venison", "bison", "goat",
+        "steak", "burger", "hamburger", "meatball", "meatloaf", "meat",
+        "bacon", "ham", "sausage", "hot dog", "pepperoni", "salami",
+        "prosciutto", "chorizo", "bratwurst", "kielbasa", "jerky",
+        "ribs", "brisket", "roast", "tenderloin", "sirloin", "ribeye",
+        // Fish (all types)
+        "fish", "salmon", "tuna", "cod", "tilapia", "halibut", "trout",
+        "sardine", "anchovy", "mackerel", "snapper", "bass", "catfish",
+        "flounder", "sole", "haddock", "swordfish", "mahi", "grouper",
+        "herring", "perch", "pollock", "rockfish", "whitefish",
+        // Shellfish
+        "shrimp", "crab", "lobster", "clam", "mussel", "oyster", "scallop",
+        "crawfish", "crayfish", "prawn", "calamari", "squid", "octopus"
     ],
     "vegan": [
-        "chicken", "beef", "pork", "lamb", "fish", "salmon", "tuna", "shrimp",
-        "bacon", "ham", "sausage", "steak", "burger", "meat", "turkey", "duck",
-        "egg", "eggs", "cheese", "milk", "cream", "butter", "yogurt", "honey"
+        // Poultry
+        "chicken", "turkey", "duck", "goose", "quail", "pheasant",
+        // Red meat
+        "beef", "pork", "lamb", "veal", "venison", "bison", "goat",
+        "steak", "burger", "hamburger", "meatball", "meatloaf", "meat",
+        "bacon", "ham", "sausage", "hot dog", "pepperoni", "salami",
+        "prosciutto", "chorizo", "bratwurst", "kielbasa", "jerky",
+        "ribs", "brisket", "roast", "tenderloin", "sirloin", "ribeye",
+        // Fish (all types)
+        "fish", "salmon", "tuna", "cod", "tilapia", "halibut", "trout",
+        "sardine", "anchovy", "mackerel", "snapper", "bass", "catfish",
+        "flounder", "sole", "haddock", "swordfish", "mahi", "grouper",
+        "herring", "perch", "pollock", "rockfish", "whitefish",
+        // Shellfish
+        "shrimp", "crab", "lobster", "clam", "mussel", "oyster", "scallop",
+        "crawfish", "crayfish", "prawn", "calamari", "squid", "octopus",
+        // Dairy
+        "cheese", "milk", "cream", "butter", "yogurt", "ice cream", "whey",
+        "casein", "ghee", "paneer", "ricotta", "mozzarella", "cheddar",
+        "parmesan", "brie", "feta", "gouda", "swiss", "provolone",
+        "cream cheese", "sour cream", "cottage cheese", "custard",
+        // Eggs
+        "egg", "eggs", "omelette", "omelet", "frittata", "quiche",
+        "meringue", "mayonnaise", "mayo",
+        // Other animal products
+        "honey", "gelatin", "lard"
     ],
     "pescatarian": [
-        "chicken", "beef", "pork", "lamb", "bacon", "ham", "sausage", "steak",
-        "burger", "meat", "turkey", "duck", "veal", "venison"
+        // Poultry
+        "chicken", "turkey", "duck", "goose", "quail", "pheasant",
+        // Red meat
+        "beef", "pork", "lamb", "veal", "venison", "bison", "goat",
+        "steak", "burger", "hamburger", "meatball", "meatloaf", "meat",
+        "bacon", "ham", "sausage", "hot dog", "pepperoni", "salami",
+        "prosciutto", "chorizo", "bratwurst", "kielbasa", "jerky",
+        "ribs", "brisket", "roast", "tenderloin", "sirloin", "ribeye"
     ],
     "keto": [
-        "bread", "pasta", "rice", "potato", "corn", "beans", "sugar", "fruit",
-        "banana", "apple", "orange", "oatmeal", "cereal"
+        // Grains and starches
+        "bread", "pasta", "rice", "potato", "potatoes", "corn", "oatmeal", "cereal",
+        "noodle", "noodles", "tortilla", "pita", "naan", "bagel", "muffin",
+        "pancake", "waffle", "croissant", "biscuit", "roll", "bun",
+        "couscous", "quinoa", "barley", "farro",
+        // Legumes
+        "beans", "lentils", "chickpeas", "hummus",
+        // High-sugar fruits
+        "banana", "apple", "orange", "grape", "grapes", "mango", "pineapple",
+        // Sugars
+        "sugar", "honey", "syrup", "candy", "chocolate", "cake", "cookie",
+        "ice cream", "soda", "juice"
     ],
     "gluten free": [
-        "bread", "pasta", "noodle", "pizza", "sandwich", "wrap", "flour",
-        "cake", "pastry", "cracker", "pretzel", "ramen", "couscous"
+        // Wheat-based products
+        "bread", "pasta", "noodle", "pizza", "sandwich", "wrap", "tortilla",
+        "flour", "cake", "pastry", "croissant", "bagel", "muffin",
+        "pancake", "waffle", "cracker", "pretzel", "pita", "naan", "ramen",
+        "spaghetti", "linguine", "fettuccine", "lasagna", "ravioli", "gnocchi",
+        "couscous", "bulgur", "seitan", "breaded", "crusted", "battered",
+        // Grains with gluten
+        "wheat", "barley", "rye", "spelt", "farro"
     ],
     "dairy free": [
-        "cheese", "milk", "cream", "butter", "yogurt", "ice cream", "whey"
+        "cheese", "milk", "cream", "butter", "yogurt", "ice cream", "whey",
+        "casein", "ghee", "paneer", "ricotta", "mozzarella", "cheddar",
+        "parmesan", "brie", "feta", "gouda", "swiss", "provolone",
+        "cream cheese", "sour cream", "cottage cheese", "custard",
+        "buttermilk", "half and half", "heavy cream"
     ]
+};
+
+// Smart keyword expansion for dislikes
+// Maps disliked foods to related search terms, with exclusion patterns for false positives
+export const dislikeKeywordExpansions: Record<string, { keywords: string[], exclude?: string[] }> = {
+    "bell pepper": {
+        keywords: ["bell pepper", "bell peppers", "stuffed pepper", "stuffed peppers"],
+        exclude: ["black pepper", "white pepper", "red pepper flakes", "pepper seasoning", "peppercorn", "cayenne pepper"]
+    },
+    "bell peppers": {
+        keywords: ["bell pepper", "bell peppers", "stuffed pepper", "stuffed peppers"],
+        exclude: ["black pepper", "white pepper", "red pepper flakes", "pepper seasoning", "peppercorn", "cayenne pepper"]
+    },
+    "mushroom": {
+        keywords: ["mushroom", "mushrooms", "portobello", "shiitake", "cremini"],
+        exclude: ["mushroom powder", "mushroom extract", "mushroom broth"]
+    },
+    "mushrooms": {
+        keywords: ["mushroom", "mushrooms", "portobello", "shiitake", "cremini"],
+        exclude: ["mushroom powder", "mushroom extract", "mushroom broth"]
+    },
+    "onion": {
+        keywords: ["onion", "onions", "yellow onion", "white onion", "red onion", "sweet onion"],
+        exclude: ["onion powder", "onion salt", "onion seasoning"]
+    },
+    "onions": {
+        keywords: ["onion", "onions", "yellow onion", "white onion", "red onion", "sweet onion"],
+        exclude: ["onion powder", "onion salt", "onion seasoning"]
+    },
+    "tomato": {
+        keywords: ["tomato", "tomatoes", "fresh tomato", "sliced tomato", "diced tomato", "cherry tomato"],
+        exclude: ["tomato sauce", "tomato paste", "ketchup", "marinara", "tomato powder"]
+    },
+    "tomatoes": {
+        keywords: ["tomato", "tomatoes", "fresh tomato", "sliced tomato", "diced tomato", "cherry tomato"],
+        exclude: ["tomato sauce", "tomato paste", "ketchup", "marinara", "tomato powder"]
+    }
 };
 
 export type ConflictResult = {
     hasConflict: boolean;
     conflicts: {
-        type: "allergy" | "sensitivity" | "diet" | "doctor_blocked";
+        type: "allergy" | "sensitivity" | "diet" | "diet_restricted" | "dislike";
         restriction: string;
         matchedKeyword: string;
         person?: string; // Name of the person (undefined = primary user, string = family member name)
@@ -136,6 +241,7 @@ export type FamilyMemberRestrictions = {
     dietType?: string;
     blockedIngredients: string[];
     blockedGroups: string[];
+    dislikes: string[];
 };
 
 // Words that negate or exclude ingredients
@@ -281,8 +387,9 @@ function checkPersonRestrictions(
     allergies: string[],
     sensitivities: string[],
     dietType: string | undefined,
-    blockedIngredients: string[],
-    blockedGroups: string[],
+    customBlockedIngredients: string[],
+    customBlockedGroups: string[],
+    dislikes: string[],
     personName?: string // undefined = primary user
 ): ConflictResult["conflicts"] {
     const conflicts: ConflictResult["conflicts"] = [];
@@ -371,27 +478,71 @@ function checkPersonRestrictions(
         }
     }
 
-    // Check doctor-blocked ingredients
-    for (const blocked of blockedIngredients) {
+    // Check custom blocked ingredients
+    for (const blocked of customBlockedIngredients) {
         if (keywordPresentAndNotNegated(promptLower, blocked)) {
             conflicts.push({
-                type: "doctor_blocked",
-                restriction: `Doctor-restricted: ${blocked}`,
+                type: "diet_restricted",
+                restriction: `Restricted: ${blocked}`,
                 matchedKeyword: blocked,
                 person: personName
             });
         }
     }
 
-    // Check doctor-blocked groups
-    for (const group of blockedGroups) {
+    // Check custom blocked groups
+    for (const group of customBlockedGroups) {
         if (keywordPresentAndNotNegated(promptLower, group)) {
             conflicts.push({
-                type: "doctor_blocked",
-                restriction: `Doctor-restricted group: ${group}`,
+                type: "diet_restricted",
+                restriction: `Restricted group: ${group}`,
                 matchedKeyword: group,
                 person: personName
             });
+        }
+    }
+
+    // Check dislikes with smart keyword expansion
+    for (const dislike of dislikes) {
+        const dislikeLower = dislike.toLowerCase();
+        const expansion = dislikeKeywordExpansions[dislikeLower];
+
+        if (expansion) {
+            // Use expanded keywords with exclusion patterns
+            const { keywords, exclude = [] } = expansion;
+
+            for (const keyword of keywords) {
+                if (keywordPresentAndNotNegated(promptLower, keyword)) {
+                    // Check if this match should be excluded (e.g., "black pepper" when dislike is "bell pepper")
+                    let shouldExclude = false;
+                    for (const excludePattern of exclude) {
+                        if (promptLower.includes(excludePattern.toLowerCase())) {
+                            shouldExclude = true;
+                            break;
+                        }
+                    }
+
+                    if (!shouldExclude) {
+                        conflicts.push({
+                            type: "dislike",
+                            restriction: `Disliked food: ${dislike}`,
+                            matchedKeyword: keyword,
+                            person: personName
+                        });
+                        break; // Only report first match per dislike
+                    }
+                }
+            }
+        } else {
+            // No expansion defined, use direct matching
+            if (keywordPresentAndNotNegated(promptLower, dislike)) {
+                conflicts.push({
+                    type: "dislike",
+                    restriction: `Disliked food: ${dislike}`,
+                    matchedKeyword: dislike,
+                    person: personName
+                });
+            }
         }
     }
 
@@ -407,8 +558,9 @@ export function checkPromptForConflicts(
     allergies: string[],
     sensitivities: string[],
     dietType?: string,
-    doctorBlockedIngredients?: string[],
-    doctorBlockedGroups?: string[],
+    customBlockedIngredients?: string[],
+    customBlockedGroups?: string[],
+    dislikes?: string[],
     familyMembers?: FamilyMemberRestrictions[]
 ): ConflictResult {
     const promptLower = prompt.toLowerCase();
@@ -420,8 +572,9 @@ export function checkPromptForConflicts(
         allergies,
         sensitivities,
         dietType,
-        doctorBlockedIngredients || [],
-        doctorBlockedGroups || [],
+        customBlockedIngredients || [],
+        customBlockedGroups || [],
+        dislikes || [],
         undefined // primary user has no name attribution
     );
     conflicts.push(...primaryUserConflicts);
@@ -436,6 +589,7 @@ export function checkPromptForConflicts(
                 member.dietType,
                 member.blockedIngredients,
                 member.blockedGroups,
+                member.dislikes,
                 member.name
             );
             conflicts.push(...memberConflicts);
@@ -457,7 +611,7 @@ export function formatConflictMessage(conflicts: ConflictResult["conflicts"]): s
     const allergyConflicts = conflicts.filter(c => c.type === "allergy");
     const sensitivityConflicts = conflicts.filter(c => c.type === "sensitivity");
     const dietConflicts = conflicts.filter(c => c.type === "diet");
-    const doctorConflicts = conflicts.filter(c => c.type === "doctor_blocked");
+    const customRestrictionConflicts = conflicts.filter(c => c.type === "diet_restricted");
 
     const parts: string[] = [];
 
@@ -466,9 +620,9 @@ export function formatConflictMessage(conflicts: ConflictResult["conflicts"]): s
         parts.push(`Allergy warning: ${items.join(", ")}`);
     }
 
-    if (doctorConflicts.length > 0) {
-        const items = doctorConflicts.map(c => `"${c.matchedKeyword}"`);
-        parts.push(`Doctor-restricted: ${items.join(", ")}`);
+    if (customRestrictionConflicts.length > 0) {
+        const items = customRestrictionConflicts.map(c => `"${c.matchedKeyword}"`);
+        parts.push(`Restricted: ${items.join(", ")}`);
     }
 
     if (sensitivityConflicts.length > 0) {
@@ -482,4 +636,44 @@ export function formatConflictMessage(conflicts: ConflictResult["conflicts"]): s
     }
 
     return parts.join("\n");
+}
+
+/**
+ * Check which diets a list of ingredients complies with
+ * Returns a list of diet names (e.g. "vegan", "keto")
+ */
+export function getCompliantDiets(ingredients: { name: string }[]): string[] {
+    const compliantDiets: string[] = [];
+
+    // Get all defined diets
+    const diets = Object.keys(dietTypeConflicts);
+
+    for (const diet of diets) {
+        let isCompliant = true;
+        const conflicts = dietTypeConflicts[diet] || [];
+
+        // Check if any ingredient conflicts with this diet
+        for (const ingredient of ingredients) {
+            const ingredientLower = ingredient.name.toLowerCase();
+
+            // Check against each conflict keyword for this diet
+            for (const conflictKeyword of conflicts) {
+                // We use simple inclusion checking here
+                // Ideally this would reuse the more robust keyword matching from checkPersonRestrictions
+                // but we want to be conservative for auto-badging
+                if (ingredientLower.includes(conflictKeyword.toLowerCase())) {
+                    isCompliant = false;
+                    break;
+                }
+            }
+
+            if (!isCompliant) break;
+        }
+
+        if (isCompliant) {
+            compliantDiets.push(diet);
+        }
+    }
+
+    return compliantDiets;
 }

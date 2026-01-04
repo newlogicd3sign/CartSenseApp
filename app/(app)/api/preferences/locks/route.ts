@@ -2,19 +2,15 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
+import { verifyAuth } from "@/lib/authHelper";
 import type { PreferenceLockRule, PreferenceLockScope } from "@/types/preferences";
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get("userId");
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: "USER_ID_REQUIRED", message: "User ID is required." },
-        { status: 400 }
-      );
-    }
+    // Verify authentication
+    const auth = await verifyAuth(request);
+    if (!auth.success) return auth.error;
+    const userId = auth.userId;
 
     const locksRef = adminDb
       .collection("preferenceLocks")
@@ -40,9 +36,13 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    // Verify authentication
+    const auth = await verifyAuth(request);
+    if (!auth.success) return auth.error;
+    const userId = auth.userId;
+
     const body = await request.json();
-    const { userId, scope, key, rule, context, note } = body as {
-      userId?: string;
+    const { scope, key, rule, context, note } = body as {
       scope?: PreferenceLockScope;
       key?: string;
       rule?: PreferenceLockRule;
@@ -53,13 +53,6 @@ export async function POST(request: Request) {
       };
       note?: string;
     };
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: "USER_ID_REQUIRED", message: "User ID is required." },
-        { status: 400 }
-      );
-    }
 
     if (!scope || !key || !rule) {
       return NextResponse.json(
@@ -187,16 +180,13 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get("userId");
-    const lockId = searchParams.get("lockId");
+    // Verify authentication
+    const auth = await verifyAuth(request);
+    if (!auth.success) return auth.error;
+    const userId = auth.userId;
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: "USER_ID_REQUIRED", message: "User ID is required." },
-        { status: 400 }
-      );
-    }
+    const { searchParams } = new URL(request.url);
+    const lockId = searchParams.get("lockId");
 
     if (!lockId) {
       return NextResponse.json(

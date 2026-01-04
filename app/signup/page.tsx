@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { auth, db } from "@/lib/firebaseClient";
 import { createUserWithEmailAndPassword, sendEmailVerification } from "firebase/auth";
 import { doc, setDoc, getDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { Mail, Lock, ArrowRight, CheckCircle, Eye, EyeOff } from "lucide-react";
@@ -32,6 +32,15 @@ export default function SignupPage() {
         hasNumber: /[0-9]/.test(password),
     };
     const isPasswordValid = Object.values(passwordRules).every(Boolean);
+
+    // Persist shareId if present
+    const searchParams = useSearchParams();
+    useEffect(() => {
+        const shareId = searchParams.get("shareId");
+        if (shareId) {
+            localStorage.setItem("pendingShareId", shareId);
+        }
+    }, [searchParams]);
 
     const handleSignup = async (e: React.FormEvent) => {
         e.preventDefault();

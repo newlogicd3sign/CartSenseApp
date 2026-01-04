@@ -22,25 +22,35 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json();
-        const { imageDataUrl } = body as { imageDataUrl?: string };
+        // Support both single image (legacy) and multiple images
+        let imageDataUrls: string[] = [];
 
-        if (!imageDataUrl || typeof imageDataUrl !== "string") {
+        if (body.imageDataUrls && Array.isArray(body.imageDataUrls)) {
+            imageDataUrls = body.imageDataUrls.filter((url: unknown) => typeof url === "string");
+        } else if (body.imageDataUrl && typeof body.imageDataUrl === "string") {
+            // Legacy single image support
+            imageDataUrls = [body.imageDataUrl];
+        }
+
+        if (imageDataUrls.length === 0) {
             return NextResponse.json(
-                { error: "imageDataUrl (data URL) is required" },
+                { error: "At least one image is required" },
                 { status: 400 }
             );
         }
 
+        const pageCount = imageDataUrls.length;
         const systemPrompt = `
 You are a diet instruction parser.
 
-You will be given a PHOTO of diet instructions
+You will be given ${pageCount === 1 ? "a PHOTO" : `${pageCount} PHOTOS (multiple pages)`} of diet instructions
 (e.g., "no red meat", "limit sodium", "avoid grapefruit", "no added sugar", etc.).
 
 Your job is to:
-1. Extract specific ingredients, foods, or common packaged items that should be *avoided*.
+1. Extract specific ingredients, foods, or common packaged items that should be *avoided* from ALL provided images.
 2. Group any broader patterns (e.g., "fried foods", "fast food", "high sodium", "red meat").
 3. Produce a short summary of the diet instructions in plain language.
+${pageCount > 1 ? "4. Combine and deduplicate information from all pages into a single cohesive result." : ""}
 
 Return ONLY valid JSON with this shape (no extra keys):
 
@@ -58,10 +68,19 @@ If there are no clear blocked ingredients, use an empty array.
 If there are no clear blocked groups, use an empty array.
 `;
 
-        const userPrompt = `
-Extract the diet restrictions and blocked foods from this diet instruction image.
-Return ONLY JSON in the exact format specified in the system message.
-`;
+        const userPrompt = pageCount === 1
+            ? `Extract the diet restrictions and blocked foods from this diet instruction image.
+Return ONLY JSON in the exact format specified in the system message.`
+            : `Extract the diet restrictions and blocked foods from these ${pageCount} diet instruction images.
+Combine all information from all pages into a single result. Remove any duplicates.
+Return ONLY JSON in the exact format specified in the system message.`;
+
+        // Build image content array
+        const imageContent = imageDataUrls.map((url) => ({
+            type: "input_image" as const,
+            image_url: url,
+            detail: "auto" as const,
+        }));
 
         const response = await openai.responses.create({
             model: "gpt-4o-mini",
@@ -82,11 +101,7 @@ Return ONLY JSON in the exact format specified in the system message.
                             type: "input_text",
                             text: userPrompt,
                         },
-                        {
-                            type: "input_image",
-                            image_url: imageDataUrl,
-                            detail: "auto",
-                        },
+                        ...imageContent,
                     ],
                 },
             ],

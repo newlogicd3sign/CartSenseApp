@@ -32,7 +32,7 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
         const timer = setTimeout(() => {
             setIsExiting(true);
             setTimeout(() => onRemove(toast.id), 300);
-        }, 4000);
+        }, 2000);
 
         return () => clearTimeout(timer);
     }, [toast.id, onRemove]);
@@ -68,9 +68,8 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
 
     return (
         <div
-            className={`flex items-start gap-3 p-4 rounded-xl border shadow-lg backdrop-blur-sm ${bgColor} ${
-                isExiting ? "animate-toast-exit" : "animate-toast-enter"
-            }`}
+            className={`flex items-start gap-3 p-4 rounded-xl border shadow-lg backdrop-blur-sm ${bgColor} ${isExiting ? "animate-toast-exit" : "animate-toast-enter"
+                }`}
         >
             <Icon className={`w-5 h-5 flex-shrink-0 ${iconColor}`} />
             <p className={`text-sm font-medium flex-1 ${textColor}`}>{toast.message}</p>

@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState, FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
+import { authFetch } from "@/lib/authFetch";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, setDoc, getDoc, collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
 import { ArrowRight, AlertCircle, ShoppingCart, MapPin, CheckCircle, ExternalLink, Search } from "lucide-react";
@@ -514,6 +515,29 @@ function SetupPageContent() {
 
             // Clear the saved form data from localStorage
             localStorage.removeItem("setupFormData");
+
+            // Check for pending share claim
+            const pendingShareId = localStorage.getItem("pendingShareId");
+            if (pendingShareId) {
+                try {
+                    const claimRes = await authFetch("/api/share/claim", {
+                        method: "POST",
+                        body: JSON.stringify({ shareId: pendingShareId }),
+                    });
+
+                    if (claimRes.ok) {
+                        localStorage.removeItem("pendingShareId");
+                        showToast("Preferences saved & shared meal added!", "success");
+                        sessionStorage.setItem("animateEntry", "true");
+                        router.push("/saved-meals");
+                        return;
+                    } else {
+                        console.error("Failed to claim shared meal");
+                    }
+                } catch (e) {
+                    console.error("Error claiming shared meal:", e);
+                }
+            }
 
             showToast("Your preferences have been saved!", "success");
             sessionStorage.setItem("animateEntry", "true");

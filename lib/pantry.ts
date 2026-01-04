@@ -227,3 +227,29 @@ export async function cleanupExpiredPantryItems(userId: string): Promise<number>
 
   return expired.size;
 }
+
+/**
+ * Clear all pantry items for a user
+ */
+export async function clearPantry(userId: string): Promise<number> {
+  if (!userId) return 0;
+
+  const pantryRef = adminDb
+    .collection("pantryItems")
+    .doc(userId)
+    .collection("items");
+
+  const snapshot = await pantryRef.get();
+
+  if (snapshot.empty) return 0;
+
+  const batch = adminDb.batch();
+  snapshot.docs.forEach((doc) => {
+    batch.delete(doc.ref);
+  });
+
+  await batch.commit();
+  console.log(`[Pantry] Cleared ${snapshot.size} items for user ${userId}`);
+
+  return snapshot.size;
+}

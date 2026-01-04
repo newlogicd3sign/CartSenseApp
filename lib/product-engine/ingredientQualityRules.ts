@@ -196,6 +196,19 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
     }
   },
   {
+    id: "buttermilk",
+    canonicalName: "Buttermilk",
+    category: "dairy",
+    krogerDeptHint: "Dairy & Eggs",
+    matchKeywords: ["buttermilk", "cultured buttermilk"],
+    avoidKeywords: ["biscuit", "mix", "pancake", "waffle", "ranch", "dressing", "powder", "fried chicken", "breading", "cornbread"],
+    preferAttributes: ["grade a", "cultured", "whole", "low fat"],
+    nutritionTargets: {
+      minProteinPer100g: 3,
+      maxSugarPer100g: 12
+    }
+  },
+  {
     id: "chicken_thighs",
     canonicalName: "Chicken Thighs, Boneless Skinless",
     category: "protein",
@@ -219,6 +232,21 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
       minProteinPer100g: 20,
       maxSaturatedFatPer100g: 3
     }
+  },
+  {
+    id: "flank_steak",
+    canonicalName: "Flank Steak",
+    category: "protein",
+    krogerDeptHint: "Meat & Seafood",
+    matchKeywords: ["flank steak"],
+    avoidKeywords: [
+      "thin", "thinly sliced", "thin sliced", "sliced", "shaved",
+      "stir fry", "stir-fry", "fajita", "fajitas",
+      "carne asada", "strips", "strip", "skirt",
+      "marinated", "seasoned"
+    ],
+    preferAttributes: ["whole", "steak", "flank", "usda choice", "fresh"],
+    notes: "Prefer whole flank steak (not sliced/strips/fajita/stir-fry)."
   },
 
   // ========= PRODUCE =========
@@ -474,9 +502,9 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
     canonicalName: "Brown Rice",
     category: "carb",
     krogerDeptHint: "Grains & Pasta",
-    matchKeywords: ["brown rice"],
-    avoidKeywords: ["seasoned rice", "rice mix", "pilaf", "boxed mix", "fried rice", "spanish rice"],
-    preferAttributes: ["long grain", "whole grain", "organic"],
+    matchKeywords: ["brown rice", "whole grain rice"],
+    avoidKeywords: ["fried rice", "spanish rice", "white rice", "white"],
+    preferAttributes: ["long grain", "whole grain", "organic", "instant", "boil-in-bag", "basmati", "jasmine"],
     nutritionTargets: {
       minFiberPer100g: 3
     }
@@ -953,7 +981,7 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
     category: "pantry",
     krogerDeptHint: "Spices",
     matchKeywords: ["black pepper", "ground black pepper", "cracked black pepper"],
-    avoidKeywords: ["lemon pepper", "garlic pepper", "seasoned pepper", "pepper blend", "steak seasoning", "and spices"],
+    avoidKeywords: ["lemon pepper", "garlic pepper", "seasoned pepper", "pepper blend", "steak seasoning", "and spices", "bell pepper", "fresh", "jalapeno", "chili"],
     preferAttributes: ["ground", "pure", "whole peppercorns"],
     notes: "Pure black pepper, not seasoning blends"
   },
@@ -1022,10 +1050,30 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
     canonicalName: "Chili Powder",
     category: "pantry",
     krogerDeptHint: "Spices",
-    matchKeywords: ["chili powder"],
+    matchKeywords: ["chili powder", "chile powder"],
     avoidKeywords: ["chili seasoning packet", "taco seasoning", "chili starter"],
     preferAttributes: ["pure", "dark"],
     notes: "Pure chili powder"
+  },
+  {
+    id: "cayenne",
+    canonicalName: "Cayenne Pepper",
+    category: "pantry",
+    krogerDeptHint: "Spices",
+    matchKeywords: ["cayenne", "cayenne pepper", "ground cayenne"],
+    avoidKeywords: ["hot sauce", "wing sauce"],
+    preferAttributes: ["ground", "pure"],
+    notes: "Pure cayenne pepper"
+  },
+  {
+    id: "red_pepper_flakes",
+    canonicalName: "Red Pepper Flakes",
+    category: "pantry",
+    krogerDeptHint: "Spices",
+    matchKeywords: ["red pepper flakes", "crushed red pepper", "pepper flakes"],
+    avoidKeywords: ["pizza topping mix"],
+    preferAttributes: ["crushed", "dried"],
+    notes: "Dried crushed red pepper"
   },
   {
     id: "cinnamon",
@@ -1036,6 +1084,26 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
     avoidKeywords: ["cinnamon sugar", "cinnamon roll", "cinnamon toast"],
     preferAttributes: ["ground", "ceylon", "sticks"],
     notes: "Pure cinnamon"
+  },
+  {
+    id: "dried_thyme",
+    canonicalName: "Dried Thyme",
+    category: "pantry",
+    krogerDeptHint: "Spices",
+    matchKeywords: ["dried thyme", "ground thyme", "thyme"],
+    avoidKeywords: ["fresh", "live", "potato", "seasoned"],
+    preferAttributes: ["leaves", "ground", "dried"],
+    notes: "Dried thyme leaves or ground"
+  },
+  {
+    id: "lemon_juice",
+    canonicalName: "Lemon Juice",
+    category: "pantry",
+    krogerDeptHint: "Juice",
+    matchKeywords: ["lemon juice"],
+    avoidKeywords: ["lemonade", "drink", "sweetened", "mix"],
+    preferAttributes: ["100% juice", "pure", "organic", "bottle"],
+    notes: "Lemon juice for cooking"
   }
 ];
 
@@ -1051,10 +1119,20 @@ export function findIngredientRule(ingredientName: string): IngredientQualityRul
 
   for (const rule of INGREDIENT_QUALITY_RULES) {
     for (const keyword of rule.matchKeywords) {
-      // Check if ingredient contains keyword or exactly equals it
-      if (normalized.includes(keyword) || normalized === keyword) {
+      // Use word boundary to avoid partial matches (e.g. "pepperoni" matching "pepper", "pineapple" matching "apple")
+      const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`\\b${escapedKeyword}\\b`, 'i');
+
+      if (regex.test(normalized)) {
         // Prefer longer keyword matches (more specific)
         if (!bestMatch || keyword.length > bestMatch.keywordLength) {
+          // Fix #4: Check for avoid keywords immediately to prevent false positives
+          // This stops "fresh jalapeno pepper" from matching "pepper" rule (if it was allowed)
+          // or other rules that might have generic keywords but specific avoids
+          if (rule.avoidKeywords.some(avoid => normalized.includes(avoid.toLowerCase()))) {
+            continue;
+          }
+
           bestMatch = { rule, keywordLength: keyword.length };
         }
       }
@@ -1220,11 +1298,25 @@ export function getIngredientCategory(ingredientName: string): CategoryType {
     if (normalized.includes(keyword)) return 'pantry';
   }
 
+  // Fix #3: Force pantry precedence for spices BEFORE produce fallback
+  // If it's "pepper" but NOT "bell pepper", "jalapeno", "chili" -> Pantry
+  if (
+    normalized.includes('pepper') &&
+    !normalized.includes('bell') &&
+    !normalized.includes('jalapeno') &&
+    !normalized.includes('chili') &&
+    !normalized.includes('banana') && // banana peppers
+    !normalized.includes('serrano') &&
+    !normalized.includes('habanero')
+  ) {
+    return 'pantry';
+  }
+
   // Fallback keyword matching for common items not in rules
   const proteinKeywords = ['chicken', 'beef', 'pork', 'turkey', 'fish', 'salmon', 'tuna', 'shrimp', 'meat', 'steak', 'bacon', 'sausage', 'lamb', 'duck', 'tofu', 'tempeh', 'seitan'];
   const eggsKeywords = ['egg', 'eggs'];
   const dairyKeywords = ['milk', 'cheese', 'yogurt', 'cream', 'butter', 'sour cream', 'cottage', 'ricotta', 'mozzarella', 'cheddar', 'parmesan'];
-  const produceKeywords = ['lettuce', 'spinach', 'kale', 'tomato', 'onion', 'garlic', 'pepper', 'carrot', 'celery', 'broccoli', 'cauliflower', 'cucumber', 'zucchini', 'squash', 'potato', 'sweet potato', 'mushroom', 'avocado', 'cabbage', 'asparagus', 'corn', 'basil', 'cilantro', 'parsley', 'mint', 'ginger', 'jalapeno', 'salad', 'greens', 'arugula', 'chard'];
+  const produceKeywords = ['lettuce', 'spinach', 'kale', 'tomato', 'onion', 'garlic', 'carrot', 'celery', 'broccoli', 'cauliflower', 'cucumber', 'zucchini', 'squash', 'potato', 'sweet potato', 'mushroom', 'avocado', 'cabbage', 'asparagus', 'corn', 'basil', 'cilantro', 'parsley', 'mint', 'ginger', 'jalapeno', 'salad', 'greens', 'arugula', 'chard'];
   const fruitsKeywords = ['lemon', 'lime', 'orange', 'apple', 'banana', 'berry', 'berries', 'strawberry', 'blueberry', 'raspberry', 'grape', 'melon', 'watermelon', 'cantaloupe', 'mango', 'pineapple', 'peach', 'pear', 'plum', 'cherry', 'kiwi', 'papaya', 'fruit'];
   const carbKeywords = ['rice', 'pasta', 'bread', 'tortilla', 'noodle', 'oat', 'quinoa', 'couscous', 'barley', 'flour', 'cereal', 'cracker', 'bagel', 'roll', 'bun', 'pita', 'wrap', 'grain'];
   const fatsOilsKeywords = ['oil', 'olive oil', 'vegetable oil', 'coconut oil', 'sesame oil', 'vinegar', 'mayo', 'mayonnaise', 'dressing', 'sauce', 'mustard', 'ketchup', 'soy sauce', 'sriracha', 'hot sauce'];

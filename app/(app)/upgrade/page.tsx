@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { auth } from "@/lib/firebaseClient";
+import { authFetch } from "@/lib/authFetch";
 import { onAuthStateChanged } from "firebase/auth";
 import {
     Sparkles,
@@ -101,11 +102,9 @@ export default function UpgradePage() {
 
         setLoading(true);
         try {
-            const res = await fetch("/api/stripe/checkout", {
+            const res = await authFetch("/api/stripe/checkout", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    uid: user.uid,
                     email: user.email,
                     plan: selectedPlan,
                     billingCycle: billingCycle,
