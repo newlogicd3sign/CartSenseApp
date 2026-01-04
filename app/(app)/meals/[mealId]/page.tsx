@@ -1149,7 +1149,7 @@ function MealDetailPageContent() {
             setCurrentProductNutrition({ loading: true, productId: ing.krogerProductId, data: null });
 
             try {
-                const locationId = krogerLocation?.locationId;
+                const locationId = prefs?.defaultKrogerLocationId;
                 const url = locationId
                     ? `/api/kroger/product/${ing.krogerProductId}?locationId=${locationId}`
                     : `/api/kroger/product/${ing.krogerProductId}`;
@@ -1205,7 +1205,7 @@ function MealDetailPageContent() {
         }));
 
         try {
-            const locationId = krogerLocation?.locationId;
+            const locationId = prefs?.defaultKrogerLocationId;
             const url = locationId
                 ? `/api/kroger/product/${productId}?locationId=${locationId}`
                 : `/api/kroger/product/${productId}`;
