@@ -3,7 +3,7 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { applyActionCode, getAuth } from "firebase/auth";
+import { getAuth } from "firebase/auth";
 import { app } from "@/lib/firebaseClient";
 import { CheckCircle, Loader2, XCircle } from "lucide-react";
 import Image from "next/image";
@@ -29,8 +29,18 @@ function VerifyContent() {
 
         const verify = async () => {
             try {
-                // 1. Verify the code
-                await applyActionCode(auth, code);
+                // 1. Verify the code via server-side API (updates Firebase Admin)
+                const res = await fetch("/api/auth/verify-email", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ code }),
+                });
+
+                const data = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(data.error || "Verification failed");
+                }
 
                 // 2. Refresh the user's token so the app knows they are verified immediately
                 if (auth.currentUser) {
@@ -60,7 +70,7 @@ function VerifyContent() {
                 }
 
                 setStatus("error");
-                if (error.code === 'auth/invalid-action-code') {
+                if (error.message?.includes("INVALID_OOB_CODE") || error.message?.includes("expired")) {
                     setMessage("This verification link is invalid or has expired.");
                 } else {
                     setMessage(error.message || "Failed to verify email.");
