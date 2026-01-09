@@ -101,6 +101,7 @@ function MealsPageContent() {
     const [statusColor, setStatusColor] = useState<AccentColor>(ACCENT_COLORS[0]);
 
     const hasStartedStreaming = useRef<string | null>(null);
+    const isActivelyStreaming = useRef(false);
     const mealsMetaRef = useRef<MealsMeta | null>(null);
     const colorIndexRef = useRef(0);
 
@@ -145,6 +146,7 @@ function MealsPageContent() {
         // Prevent duplicate streams for the same prompt
         if (hasStartedStreaming.current === prompt) return;
         hasStartedStreaming.current = prompt;
+        isActivelyStreaming.current = true;
 
         setLoadingMeals(true);
         setStreamStatus("Connecting...");
@@ -160,6 +162,7 @@ function MealsPageContent() {
                 const data = await res.json().catch(() => ({}));
                 setStreamError(data.message || "Failed to generate meals");
                 setLoadingMeals(false);
+                isActivelyStreaming.current = false;
                 return;
             }
 
@@ -226,11 +229,13 @@ function MealsPageContent() {
                                 setStreamError(event.message);
                                 setStreamStatus("");
                                 setLoadingMeals(false);
+                                isActivelyStreaming.current = false;
                                 break;
 
                             case "done":
                                 setStreamComplete(true);
                                 setStreamStatus("");
+                                isActivelyStreaming.current = false;
                                 // Log event
                                 logUserEvent(uid, { type: "prompt_submitted", prompt }).catch(() => { });
                                 break;
@@ -246,6 +251,7 @@ function MealsPageContent() {
             console.error("Stream error:", err);
             setStreamError("Connection error. Please try again.");
             setLoadingMeals(false);
+            isActivelyStreaming.current = false;
         }
     }, []);
 
@@ -274,7 +280,21 @@ function MealsPageContent() {
         // If we should stream, start the stream and clear any previous "last viewed" state
         if (shouldStream && promptFromUrl) {
             clearLastViewedMeal();
+
+            // Immediately strip stream=true from URL to prevent re-streaming on back navigation
+            // This must happen BEFORE the user can navigate away
+            const params = new URLSearchParams(Array.from(searchParams.entries()));
+            params.delete("stream");
+            const query = params.toString();
+            router.replace(`/meals${query ? `?${query}` : ""}`, { scroll: false });
+
             streamMeals(user.uid, prefs, decodeURIComponent(promptFromUrl), pantryMode, ignoreConflicts);
+            return;
+        }
+
+        // Skip loading from storage if we're currently streaming (stream just removed the param)
+        // This prevents overwriting meals that are actively being streamed
+        if (isActivelyStreaming.current) {
             return;
         }
 
@@ -293,7 +313,7 @@ function MealsPageContent() {
         }
 
         setLoadingMeals(false);
-    }, [user, prefs, shouldStream, promptFromUrl, pantryMode, streamMeals]);
+    }, [user, prefs, shouldStream, promptFromUrl, pantryMode, streamMeals, searchParams, router]);
 
     // Reload meals from storage when page becomes visible (e.g., navigating back)
     useEffect(() => {

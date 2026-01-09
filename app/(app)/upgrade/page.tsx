@@ -235,12 +235,22 @@ export default function UpgradePage() {
                                 <div className="text-right flex-shrink-0 ml-4">
                                     <div className="flex items-baseline gap-0.5">
                                         <span className="text-2xl font-bold text-gray-900">
-                                            {billingCycle === "yearly" ? plan.yearlyPrice : plan.monthlyPrice}
+                                            {billingCycle === "yearly"
+                                                ? `$${(parseFloat(plan.yearlyPrice.replace("$", "")) / 12).toFixed(2)}`
+                                                : plan.monthlyPrice}
                                         </span>
-                                        <span className="text-gray-500 text-sm">
-                                            {billingCycle === "yearly" ? "/yr" : "/mo"}
-                                        </span>
+                                        <span className="text-gray-500 text-sm">/mo</span>
                                     </div>
+                                    {billingCycle === "yearly" && (
+                                        <div className="mt-0.5">
+                                            <p className="text-xs text-gray-500">
+                                                {plan.yearlyPrice}/yr
+                                            </p>
+                                            <p className="text-xs text-green-600 font-medium">
+                                                Save ${((parseFloat(plan.monthlyPrice.replace("$", "")) * 12) - parseFloat(plan.yearlyPrice.replace("$", ""))).toFixed(2)}
+                                            </p>
+                                        </div>
+                                    )}
                                     {selectedPlan === plan.id && (
                                         <div className="mt-1 flex justify-end">
                                             <div className="w-5 h-5 bg-violet-600 rounded-full flex items-center justify-center">
