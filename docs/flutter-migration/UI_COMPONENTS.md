@@ -528,274 +528,6 @@ class UpgradePrompt extends StatelessWidget {
 
 ---
 
-### ServingsAdjuster
-
-Controls serving count with -/+ buttons. Affects ingredient quantities and macros.
-
-```dart
-class ServingsAdjuster extends StatelessWidget {
-  final int currentServings;
-  final int baseServings;      // Original recipe servings
-  final int minServings;       // Default: 1
-  final int maxServings;       // Default: 20
-  final ValueChanged<int> onChanged;
-}
-```
-
-**Layout:**
-```
-┌─────────────────────────────────────────┐
-│ 👥 Servings                [-] 4 [+]    │
-└─────────────────────────────────────────┘
-```
-
-**Style:**
-- Container: White card with gray-100 border, rounded-2xl, p-5
-- Icon: Users, gray-400
-- Label: "Servings", font-medium, gray-900
-- Buttons: 32×32 circular, gray-100 bg, hover gray-200
-- Disabled state: opacity-40 when at min/max
-- Number: text-lg font-semibold, 24px width, centered
-
----
-
-### IngredientRow
-
-Displays a single ingredient with product info and selection checkbox.
-
-```dart
-class IngredientRow extends StatelessWidget {
-  final Ingredient ingredient;
-  final int index;
-  final bool isSelected;
-  final bool isInPantry;
-  final double servingMultiplier;
-  final bool showKrogerData;      // true if Kroger connected
-  final bool showInstacartPrices; // true if Instacart preference
-  final VoidCallback? onTap;      // Opens swap modal (Kroger only)
-  final VoidCallback onToggle;    // Toggle checkbox
-}
-```
-
-**Layout (Kroger connected):**
-```
-┌─────────────────────────────────────────────────┐
-│ [Product   ]  Chicken Breast           [✓]     │
-│ [ Image    ]  16 oz • Meat & Seafood           │
-│ [ 48×48    ]  $8.99                            │
-│              [In pantry] [Low Stock]            │
-└─────────────────────────────────────────────────┘
-```
-
-**Layout (Instacart / No Kroger):**
-```
-┌─────────────────────────────────────────────────┐
-│ [Ingredient]  Chicken Breast           [✓]     │
-│ [ Image    ]  Est. $6.99 - $9.99               │
-│ [ 48×48    ]                                   │
-└─────────────────────────────────────────────────┘
-```
-
-**States:**
-- Unselected: opacity-50, name has line-through
-- Selected: full opacity, blue checkbox filled
-- In Pantry: emerald-100 badge with "In pantry"
-- Low Stock: amber-100 badge with "Low Stock"
-- Out of Stock: red-100 badge with "Out of Stock"
-
-**Image Fallback:**
-If product image fails, show category icon:
-- Protein → Ham icon (red-400)
-- Eggs → Egg icon (amber-400)
-- Dairy → Milk icon (blue-400)
-- Produce → Leaf icon (green-500)
-- Carbs → Wheat icon (amber-500)
-- Fats/Oils → Droplet icon (yellow-500)
-- Snacks → Cookie icon (orange-400)
-- Beans → Bean icon (amber-600)
-- Pantry → Flask icon (stone-500)
-- Fruits → Apple icon (red-500)
-- Default → Package icon (gray-400)
-
----
-
-### RecipeQuantitiesCard
-
-Displays scaled ingredient quantities in 2-column grid.
-
-```dart
-class RecipeQuantitiesCard extends StatelessWidget {
-  final List<Ingredient> ingredients;
-  final double servingMultiplier;
-}
-```
-
-**Layout:**
-```
-┌─────────────────────────────────────────┐
-│ 📏 Recipe Quantities                    │
-│  ┌─────────────────┬─────────────────┐  │
-│  │ 2 lbs           │ 1/4 cup         │  │
-│  │ Chicken Breast  │ Olive Oil       │  │
-│  ├─────────────────┼─────────────────┤  │
-│  │ 3 cloves        │ 1 tsp           │  │
-│  │ Garlic          │ Salt            │  │
-│  └─────────────────┴─────────────────┘  │
-└─────────────────────────────────────────┘
-```
-
-**Quantity Scaling Logic:**
-```dart
-String scaleQuantity(String quantity, double multiplier) {
-  // Parse: "2 cups" → amount=2, unit="cups"
-  // Multiply amount by multiplier
-  // Format nicely with fractions: 0.5→"1/2", 0.25→"1/4", etc.
-  // Return: "4 cups"
-}
-```
-
-**Fraction Display:**
-| Value | Display |
-|-------|---------|
-| 0.25 | 1/4 |
-| 0.33 | 1/3 |
-| 0.5 | 1/2 |
-| 0.67 | 2/3 |
-| 0.75 | 3/4 |
-| 1.5 | 1 1/2 |
-
----
-
-### IngredientSwapModal
-
-Modal for swapping Kroger products for an ingredient.
-
-```dart
-class IngredientSwapModal extends StatelessWidget {
-  final Ingredient currentIngredient;
-  final List<SwapAlternative> alternatives;
-  final bool loading;
-  final ValueChanged<SwapAlternative> onSelect;
-  final VoidCallback onClose;
-}
-```
-
-**Layout:**
-```
-┌─────────────────────────────────────────┐
-│ Swap Product                        [X] │
-├─────────────────────────────────────────┤
-│ Current:                                │
-│ [IMG] Simple Truth Chicken Breast       │
-│       $8.99 • 16 oz                     │
-│       [Nutrition ▼]                     │
-├─────────────────────────────────────────┤
-│ Alternatives:                           │
-│ ┌─────────────────────────────────────┐ │
-│ │ [IMG] Kroger Chicken Breast         │ │
-│ │       $6.99 • 16 oz                 │ │
-│ │       [Nutrition ▼]        [Select] │ │
-│ └─────────────────────────────────────┘ │
-│ ┌─────────────────────────────────────┐ │
-│ │ [IMG] Heritage Farm Chicken         │ │
-│ │       $7.49 • 1 lb                  │ │
-│ │       ⚠️ You usually avoid this     │ │
-│ │       [Nutrition ▼]        [Select] │ │
-│ └─────────────────────────────────────┘ │
-└─────────────────────────────────────────┘
-```
-
-**Features:**
-- Current product shown at top with nutrition expandable
-- Alternatives list below
-- Warning badge if product matches user's avoid preferences
-- Nutrition panel expands inline showing calories, protein, carbs, fat, sodium
-
----
-
-### MacrosCard
-
-Displays 4 macro nutrients in a grid with icons.
-
-```dart
-class MacrosCard extends StatelessWidget {
-  final Macros macros;
-  final double servingMultiplier;  // Scales displayed values
-  final String? dietType;          // Controls protein icon
-}
-```
-
-**Layout:**
-```
-┌─────────────────────────────────────────┐
-│    🔥          🥩/🫘       🌾       💧   │
-│   420         32g       28g      18g   │
-│   kcal      Protein   Net Carbs   Fat  │
-└─────────────────────────────────────────┘
-```
-
-**Icon Backgrounds:**
-- Calories: orange-50 circle, Flame icon orange-500
-- Protein: blue-50 (Beef) or emerald-50 (Bean for veg/vegan)
-- Carbs: amber-50 circle, Wheat icon amber-500
-- Fat: purple-50 circle, Droplet icon purple-500
-
-**Net Carbs Calculation:**
-```dart
-netCarbs = max(0, carbs - fiber);
-// Tooltip shows: "28g total carbs - 5g fiber"
-```
-
----
-
-### AskAICard
-
-Chat interface for AI meal modifications.
-
-```dart
-class AskAICard extends StatelessWidget {
-  final List<ThreadMessage> messages;
-  final String inputValue;
-  final bool sending;
-  final bool isPremium;
-  final int chatCount;           // Current usage
-  final int chatLimit;           // 6 for free tier
-  final ValueChanged<String> onInputChanged;
-  final VoidCallback onSend;
-  final VoidCallback? onUpgrade;
-}
-```
-
-**Layout:**
-```
-┌─────────────────────────────────────────┐
-│ 💬 Ask AI                  [3/6 free]   │
-│ Swap ingredients, make it dairy-free,   │
-│ lower sodium, or create a variant.      │
-│ ┌─────────────────────────────────────┐ │
-│ │ User: make this spicier             │ │
-│ │ AI: I've added jalapeños and        │ │
-│ │     increased the cayenne...        │ │
-│ └─────────────────────────────────────┘ │
-│ ┌─────────────────────────┐ ┌─────────┐ │
-│ │ E.g. make it dairy-free │ │  Send   │ │
-│ └─────────────────────────┘ └─────────┘ │
-└─────────────────────────────────────────┘
-```
-
-**Usage Badge Colors:**
-| Remaining | Badge Color |
-|-----------|-------------|
-| 2+ | blue-100, blue text |
-| 1 | amber-100, amber text |
-| 0 | red-100, red text |
-
-**Message Bubbles:**
-- User: bg-[#4A90E2], white text, right-aligned
-- AI: bg-white, border gray-200, gray text, left-aligned
-
----
-
 ## Screen Layouts
 
 ### App Shell
@@ -814,7 +546,7 @@ class AskAICard extends StatelessWidget {
 │                                         │
 ├─────────────────────────────────────────┤
 │            BOTTOM NAVIGATION            │
-│  [Home] [Saved] [Cart] [Fresh] [More]   │
+│ [Home] [Saved] [list] [Fresh] [Account] │
 │         (96px height with safe area)    │
 └─────────────────────────────────────────┘
 ```
@@ -877,377 +609,68 @@ class AskAICard extends StatelessWidget {
 │ ┌─────────────────────────────────────┐ │
 │ │                                     │ │
 │ │           HERO IMAGE                │ │
-│ │         (full width, ~200px)        │ │
+│ │           (16:9 ratio)              │ │
 │ │                                     │ │
 │ └─────────────────────────────────────┘ │
 ├─────────────────────────────────────────┤
-│ [breakfast] [15-20m] [$25] [keto]       │
-│ [Diet Compliant] [Pantry Mode]          │
 │ Meal Name                               │
+│ [breakfast] [15-20m] [$25]              │
 │ Description text here...                │
+│                                         │
+│ ┌─────────────────────────────────────┐ │
+│ │ 🔥420cal  🥩32g  🌾28g net  💧18g   │ │
+│ └─────────────────────────────────────┘ │
 ├─────────────────────────────────────────┤
-│ ┌─ Macros Card ─────────────────────┐   │
-│ │   🔥        🥩        🌾       💧  │   │
-│ │  420       32g     28g net   18g  │   │
-│ │  kcal    Protein  Net Carbs  Fat  │   │
-│ └───────────────────────────────────┘   │
+│ Ingredients                             │
+│ ┌─────────────────────────────────────┐ │
+│ │ [IMG] Chicken Breast     2 lbs      │ │
+│ │       $8.99 • In Stock              │ │
+│ │ [IMG] Olive Oil          2 tbsp     │ │
+│ │       (staple item)                 │ │
+│ │ ...                                 │ │
+│ └─────────────────────────────────────┘ │
 ├─────────────────────────────────────────┤
-│ ┌─ Servings Card ───────────────────┐   │
-│ │ 👥 Servings           [-] 4 [+]   │   │
-│ └───────────────────────────────────┘   │
+│ Instructions                            │
+│ 1. Preheat oven to 400°F...            │
+│ 2. Season chicken with...              │
+│ ...                                     │
 ├─────────────────────────────────────────┤
-│ ┌─ Ask AI Card ─────────────────────┐   │
-│ │ 💬 Ask AI            [3/6 free]   │   │
-│ │ Swap ingredients, make dairy-free │   │
-│ │ ┌─────────────────────────────┐   │   │
-│ │ │ [chat messages if any]      │   │   │
-│ │ └─────────────────────────────┘   │   │
-│ │ [Type message...         ] [Send] │   │
-│ └───────────────────────────────────┘   │
-├─────────────────────────────────────────┤
-│ ┌─ Ingredients Card ────────────────┐   │
-│ │ Ingredients (5 of 8)  Cart: $32   │   │
-│ │                    [Select all]   │   │
-│ │ Tap ingredient to swap. Uncheck   │   │
-│ │ items you have.                   │   │
-│ │ ┌─────────────────────────────┐   │   │
-│ │ │ [IMG] Chicken Breast    (✓) │   │   │
-│ │ │       16 oz • Aisle 5       │   │   │
-│ │ │       $8.99                 │   │   │
-│ │ │       [In pantry] [Low stk] │   │   │
-│ │ ├─────────────────────────────┤   │   │
-│ │ │ [IMG] Olive Oil         (✓) │   │   │
-│ │ │       25.5 oz • Aisle 12    │   │   │
-│ │ │       $7.99                 │   │   │
-│ │ └─────────────────────────────┘   │   │
-│ └───────────────────────────────────┘   │
-├─────────────────────────────────────────┤
-│ ┌─ Recipe Quantities Card ──────────┐   │
-│ │ 📏 Recipe Quantities              │   │
-│ │  ┌──────────────┬──────────────┐  │   │
-│ │  │ 2 lbs        │ 1/4 cup      │  │   │
-│ │  │ Chicken      │ Olive Oil    │  │   │
-│ │  ├──────────────┼──────────────┤  │   │
-│ │  │ 3 cloves     │ 1 tsp        │  │   │
-│ │  │ Garlic       │ Salt         │  │   │
-│ │  └──────────────┴──────────────┘  │   │
-│ └───────────────────────────────────┘   │
-├─────────────────────────────────────────┤
-│ ┌─ Cooking Steps Card ──────────────┐   │
-│ │ 👨‍🍳 Cooking Steps                  │   │
-│ │  ① Preheat oven to 400°F...       │   │
-│ │  ② Season chicken with salt and   │   │
-│ │     pepper on both sides...       │   │
-│ │  ③ Heat olive oil in oven-safe    │   │
-│ │     skillet over medium-high...   │   │
-│ └───────────────────────────────────┘   │
-├─────────────────────────────────────────┤
-│ ┌───────────────────────────────────┐   │
-│ │ 🛒 Add 5 items to shopping list   │   │
-│ │      (Primary gradient button)    │   │
-│ └───────────────────────────────────┘   │
-│ ┌───────────────────────────────────┐   │
-│ │ 🥕 Get Recipe Ingredients         │   │
-│ │      (Instacart green button)     │   │
-│ └───────────────────────────────────┘   │
-│    -- OR --                             │
-│ ┌───────────────────────────────────┐   │
-│ │ 🔗 Add to Kroger Cart             │   │
-│ │      (Kroger blue gradient)       │   │
-│ └───────────────────────────────────┘   │
-│ ┌───────────────────────────────────┐   │
-│ │ 🔖 Save meal for later            │   │
-│ │      (Outline button)             │   │
-│ └───────────────────────────────────┘   │
+│ [Add to Cart] [Add to list]
 └─────────────────────────────────────────┘
 ```
-
-**Key Interactions:**
-- Servings -/+ adjusts quantities in Recipe Quantities card
-- Macros scale with serving multiplier
-- Tap ingredient row → opens swap modal (Kroger users)
-- Checkbox toggles ingredient selection for cart
-- "In pantry" badge shows items user recently purchased
-- Stock level badges: "Low Stock" (amber), "Out of Stock" (red)
 
 ---
 
 ### Shopping List Screen Layout
 
-Items are grouped by **date added**, then by **meal** within each date.
-
 ```
 ┌─────────────────────────────────────────┐
-│ 📋 Shopping List                        │
-│     8 items                             │
-│                    [Link Kroger] (if    │
-│                     not connected)      │
+│ Shopping List              [Clear All]  │
 ├─────────────────────────────────────────┤
-│ ⚠️ Tip: Items marked "In Pantry" may   │
-│    already be in your kitchen.     [X] │
+│ Store: Smith's - Downtown    [Change]   │
 ├─────────────────────────────────────────┤
-│ * Estimated prices may vary by store    │
+│ Unchecked Items (12)                    │
+│ ┌─────────────────────────────────────┐ │
+│ │ ☐ [IMG] Chicken Breast              │ │
+│ │         2 lbs • $8.99               │ │
+│ │         From: Honey Garlic Chicken  │ │
+│ │         [Swap] [Remove]             │ │
+│ ├─────────────────────────────────────┤ │
+│ │ ☐ [IMG] Olive Oil                   │ │
+│ │         1 bottle • $7.99            │ │
+│ │ ...                                 │ │
+│ └─────────────────────────────────────┘ │
 ├─────────────────────────────────────────┤
-│                                         │
-│ ┌─ Date Group Card ─────────────────┐   │
-│ │ ┌─ Date Header ─────────────────┐ │   │
-│ │ │ Monday, January 6 (5 items)   │ │   │
-│ │ │              [🥕 Instacart]   │ │   │
-│ │ │              [Add to Kroger]  │ │   │
-│ │ │                          [🗑] │ │   │
-│ │ └───────────────────────────────┘ │   │
-│ │                                   │   │
-│ │ ┌─ Meal Group ────────────────┐   │   │
-│ │ │ [Meal   ] Honey Garlic       │   │   │
-│ │ │ [Image  ] Chicken            │   │   │
-│ │ │ [48×48  ] 3 ingredients      │   │   │
-│ │ ├──────────────────────────────┤   │   │
-│ │ │ [IMG] Chicken Breast     [🗑]│   │   │
-│ │ │       Qty: 2                 │   │   │
-│ │ │       16 oz                  │   │   │
-│ │ │       📍 Meat • $8.99        │   │   │
-│ │ │       [In Pantry] [Low Stk]  │   │   │
-│ │ ├──────────────────────────────┤   │   │
-│ │ │ [IMG] Olive Oil          [🗑]│   │   │
-│ │ │       Qty: 1                 │   │   │
-│ │ │       25.5 oz               │   │   │
-│ │ │       📍 Oils • $7.99        │   │   │
-│ │ ├──────────────────────────────┤   │   │
-│ │ │ [IMG] Garlic             [🗑]│   │   │
-│ │ │       Qty: 1                 │   │   │
-│ │ │       Est. $0.50 - $1.00     │   │   │
-│ │ └──────────────────────────────┘   │   │
-│ │                                   │   │
-│ │ ┌─ Meal Group ────────────────┐   │   │
-│ │ │ [📦    ] Other Items         │   │   │
-│ │ │ [Icon  ] 2 ingredients       │   │   │
-│ │ ├──────────────────────────────┤   │   │
-│ │ │ [IMG] Salt               [🗑]│   │   │
-│ │ │       Qty: 1                 │   │   │
-│ │ └──────────────────────────────┘   │   │
-│ └───────────────────────────────────┘   │
-│                                         │
-│ ┌─ Another Date Group ──────────────┐   │
-│ │ Sunday, January 5 (3 items)       │   │
-│ │ ...                               │   │
-│ └───────────────────────────────────┘   │
+│ Checked Items (3)           [Collapse]  │
+│ ┌─────────────────────────────────────┐ │
+│ │ ☑ Salt                              │ │
+│ │ ☑ Pepper                            │ │
+│ └─────────────────────────────────────┘ │
+├─────────────────────────────────────────┤
+│ Estimated Total: $45.50                 │
+│ [   Add All to Kroger Cart   ]          │
 └─────────────────────────────────────────┘
 ```
-
-**Grouping Structure:**
-```
-Date Group (e.g., "Monday, January 6")
-  └── Meal Group (e.g., "Honey Garlic Chicken")
-       └── Item 1
-       └── Item 2
-  └── Meal Group (e.g., "Other Items")
-       └── Item 3
-```
-
-**Date Header:**
-- Date label + item count
-- Instacart button (green, rounded-full) - for Instacart preference
-- Kroger button (blue) - for Kroger preference when linked
-- Trash button (red) - removes all items for this date
-
-**Meal Group Header:**
-- Meal image (48×48) or Package icon for "Other Items"
-- Meal name
-- Ingredient count
-- Blue left border accent
-
-**Item Row:**
-- Product image (Kroger) or ingredient image (fallback)
-- Item name + badges (In Pantry, Low Stock, Out of Stock)
-- Qty count
-- Product size (if Kroger linked)
-- Aisle + price (if Kroger linked)
-- OR Estimated price range (if Instacart or no Kroger)
-- Trash button (red, per item)
-
-**Tap to Swap:** Tap item row → opens Item Detail Modal (Kroger users only)
-
----
-
-### ShoppingItemDetailModal
-
-Bottom sheet modal for viewing item details and swapping products (Kroger users only).
-
-```dart
-class ShoppingItemDetailModal extends StatelessWidget {
-  final ShoppingItem item;
-  final List<KrogerProduct>? swapAlternatives;
-  final bool loadingSwapSuggestions;
-  final bool showSwapOptions;
-  final SwapWarning? searchWarning;  // If ingredient is avoided/allergy
-  final VoidCallback onClose;
-  final VoidCallback onShowSwapOptions;
-  final ValueChanged<KrogerProduct> onSelectSwap;
-}
-```
-
-**Layout (Initial View):**
-```
-┌─────────────────────────────────────────┐
-│ Item Details                        [X] │
-├─────────────────────────────────────────┤
-│        ┌─────────────────────┐          │
-│        │                     │          │
-│        │    Product Image    │          │
-│        │      200×200        │          │
-│        │                     │          │
-│        └─────────────────────┘          │
-│                                         │
-│            Chicken Breast               │
-│    Simple Truth Organic Chicken         │
-│                                         │
-│ ┌─────────────────────────────────────┐ │
-│ │ Size          16 oz                 │ │
-│ │ Aisle         Meat & Seafood        │ │
-│ │ Price         $8.99                 │ │
-│ │ Stock         In Stock (green)      │ │
-│ └─────────────────────────────────────┘ │
-├─────────────────────────────────────────┤
-│ [      🔄 Swap Product      ]           │
-│ [          Close            ]           │
-└─────────────────────────────────────────┘
-```
-
-**Layout (Swap Options View):**
-```
-┌─────────────────────────────────────────┐
-│ Item Details                        [X] │
-├─────────────────────────────────────────┤
-│ Choose a different product:             │
-│                                         │
-│ ┌─ Warning Banner (if applicable) ───┐  │
-│ │ ⚠️ Allergy alert                   │  │
-│ │ You've marked "peanut" as allergy  │  │
-│ └────────────────────────────────────┘  │
-│                                         │
-│ ┌─────────────────────────────────────┐ │
-│ │ [IMG] Kroger Chicken Breast         │ │
-│ │       16 oz • Meat                  │ │
-│ │       $6.99                         │ │
-│ └─────────────────────────────────────┘ │
-│ ┌─────────────────────────────────────┐ │
-│ │ [IMG] Heritage Farm Chicken         │ │
-│ │       1 lb • Meat    [⚠️ Avoid]     │ │
-│ │       $7.49                         │ │
-│ └─────────────────────────────────────┘ │
-├─────────────────────────────────────────┤
-│ [          Cancel           ]           │
-└─────────────────────────────────────────┘
-```
-
-**Warning Badge Colors:**
-- `NEVER_INCLUDE` (Allergy): red-50 bg, red-200 border, red text
-- `AVOID`: amber-50 bg, amber-200 border, amber text
-
----
-
-### KrogerResultsModal
-
-Shows results after adding items to Kroger cart.
-
-```dart
-class KrogerResultsModal extends StatelessWidget {
-  final List<EnrichedItem> results;
-  final String storeName;
-  final String cartUrl;
-  final VoidCallback onClose;
-}
-```
-
-**Layout:**
-```
-┌─────────────────────────────────────────┐
-│ Kroger Cart Results                 [X] │
-│ 5 of 8 items added                      │
-├─────────────────────────────────────────┤
-│ ┌─────────────────────────────────────┐ │
-│ │ chicken breast                      │ │
-│ │ [IMG] Simple Truth Chicken Breast   │ │
-│ │       16 oz • $8.99 • Meat          │ │
-│ │                          [Added ✓]  │ │
-│ └─────────────────────────────────────┘ │
-│ ┌─────────────────────────────────────┐ │
-│ │ special spice blend                 │ │
-│ │ No matching product found           │ │
-│ │                       [Not found ✗] │ │
-│ └─────────────────────────────────────┘ │
-├─────────────────────────────────────────┤
-│ ┌─────────────────────────────────────┐ │
-│ │ Items are in your Kroger cart!      │ │
-│ │ Complete your purchase on the       │ │
-│ │ Kroger app or website.              │ │
-│ └─────────────────────────────────────┘ │
-│ [Close]              [Go to Kroger →]   │
-└─────────────────────────────────────────┘
-```
-
-**Item Status Badges:**
-- Found: emerald-50 bg, emerald-100 text "Added"
-- Not Found: red-50 bg, red-100 text "Not found"
-
----
-
-### KrogerLinkModal
-
-Modal for managing Kroger store selection and account linking.
-
-```dart
-class KrogerLinkModal extends StatelessWidget {
-  final List<UserLocation> savedLocations;
-  final bool krogerLinked;
-  final bool loadingLocations;
-  final VoidCallback onClose;
-  final VoidCallback onLinkAccount;
-  final ValueChanged<UserLocation> onSetDefault;
-  final ValueChanged<UserLocation> onRemoveLocation;
-  final ValueChanged<KrogerLocationSearchResult> onAddLocation;
-}
-```
-
-**Layout:**
-```
-┌─────────────────────────────────────────┐
-│ 🛒 Store & Account                  [X] │
-│    Connect to add items to your cart    │
-├─────────────────────────────────────────┤
-│ ┌─ Kroger Family Info ──────────────┐   │
-│ │ Kroger, Ralphs, Fred Meyer,       │   │
-│ │ King Soopers, Smith's, QFC...     │   │
-│ └───────────────────────────────────┘   │
-│                                         │
-│ ① Choose Your Store        (✓ if done)  │
-│   ┌─────────────────────────────────┐   │
-│   │ Smith's         [Default]       │   │
-│   │ Las Vegas, NV        [🗑]       │   │
-│   └─────────────────────────────────┘   │
-│                                         │
-│   Find a store by ZIP                   │
-│   [Enter ZIP code    ] [🔍]             │
-│                                         │
-│   ┌─ Search Results ────────────────┐   │
-│   │ Kroger - Downtown    [Use]      │   │
-│   │ 123 Main St                     │   │
-│   └─────────────────────────────────┘   │
-│                                         │
-│ ─────────────────────────────────────── │
-│                                         │
-│ ② Connect Your Account     (✓ if done)  │
-│   [Account linked ✓]                    │
-│   -- OR --                              │
-│   [🔗 Link Store Account]               │
-├─────────────────────────────────────────┤
-│ [           Close           ]           │
-└─────────────────────────────────────────┘
-```
-
-**Step Indicators:**
-- Incomplete: gray-200 circle with number
-- Complete: emerald-100 circle with checkmark
 
 ---
 
@@ -1259,9 +682,9 @@ class KrogerLinkModal extends StatelessWidget {
 |-----|------|-------|-------|
 | Home | `UtensilsCrossed` | Home | `/prompt` |
 | Saved | `Bookmark` | Saved | `/saved-meals` |
-| Cart | `ShoppingCart` | Cart | `/shopping-list` |
+| list | `ShoppingCart` | list | `/shopping-list` |
 | Fresh | `Sparkles` | Fresh | `/fresh-picks` |
-| More | `Menu` | More | `/account` |
+| Account | `user` | Account | `/account` |
 
 ### Active State
 - Icon: Filled version or primary blue color
@@ -1487,109 +910,6 @@ Key icons used:
 - `LucideIcons.alertCircle` - Error
 - `LucideIcons.x` - Close
 - `LucideIcons.chevronRight` - Navigate
-
-### Spoonacular Ingredient Images
-
-Used as fallback images when Kroger product images aren't available. Maps ingredient names to Spoonacular CDN URLs.
-
-**URL Format:**
-```
-https://img.spoonacular.com/ingredients_{size}/{normalized-name}.jpg
-```
-
-**Sizes:** `100x100`, `250x250`, `500x500`
-
-**Normalization Rules:**
-1. Check alias map first (e.g., "plain greek yogurt" → "plain-yogurt")
-2. Remove prefixes: fresh, dried, frozen, chopped, diced, minced, sliced, boneless, skinless, organic, etc.
-3. Remove trailing units: cloves, stalks, heads, bunches, sprigs, pieces, leaves, florets, etc.
-4. Remove quantities: "2 cups", "1/2 lb", etc.
-5. Replace spaces with hyphens, remove special characters
-
-**Common Aliases:**
-| Input | CDN Name |
-|-------|----------|
-| greek yogurt | plain-yogurt |
-| chicken broth | broth |
-| bell pepper | bell-pepper-orange |
-| ground beef | fresh-ground-beef |
-| soy sauce | soy-sauce |
-| sriracha / hot sauce | hot-sauce-or-tabasco |
-| all-purpose flour | flour |
-| brown sugar | dark-brown-sugar |
-
-**Flutter Implementation:**
-```dart
-class SpoonacularImages {
-  static const String baseUrl = 'https://img.spoonacular.com/ingredients_';
-
-  static String getUrl(String ingredientName, {String size = '250x250'}) {
-    final normalized = _normalize(ingredientName);
-    return '${baseUrl}${size}/$normalized.jpg';
-  }
-
-  static String _normalize(String name) {
-    var normalized = name.toLowerCase().trim();
-
-    // Check aliases first
-    if (_aliases.containsKey(normalized)) {
-      return _aliases[normalized]!;
-    }
-
-    // Remove prefixes
-    for (final prefix in _prefixes) {
-      normalized = normalized.replaceAll(RegExp('\\b$prefix\\b'), '');
-    }
-
-    // Remove trailing units
-    for (final unit in _trailingUnits) {
-      normalized = normalized.replaceAll(RegExp('\\s+$unit\$'), '');
-    }
-
-    // Clean up
-    return normalized
-        .replaceAll(RegExp('[^a-z0-9\\s-]'), '')
-        .replaceAll(RegExp('\\s+'), '-')
-        .replaceAll(RegExp('-+'), '-')
-        .replaceAll(RegExp('^-|-\$'), '')
-        .trim();
-  }
-
-  static const Map<String, String> _aliases = {
-    'plain greek yogurt': 'plain-yogurt',
-    'greek yogurt': 'plain-yogurt',
-    'chicken broth': 'broth',
-    'chicken breast': 'chicken-breasts',
-    'olive oil': 'olive-oil',
-    'soy sauce': 'soy-sauce',
-    'sriracha': 'hot-sauce-or-tabasco',
-    'hot sauce': 'hot-sauce-or-tabasco',
-    'ground beef': 'fresh-ground-beef',
-    'all-purpose flour': 'flour',
-    'brown sugar': 'dark-brown-sugar',
-    // ... add more from lib/ingredientImages.ts
-  };
-
-  static const List<String> _prefixes = [
-    'fresh', 'dried', 'frozen', 'chopped', 'diced', 'minced',
-    'sliced', 'boneless', 'skinless', 'organic', 'ground', 'grated',
-  ];
-
-  static const List<String> _trailingUnits = [
-    'cloves', 'clove', 'stalks', 'stalk', 'heads', 'head',
-    'bunches', 'bunch', 'sprigs', 'sprig', 'pieces', 'piece',
-  ];
-}
-```
-
-**Usage in IngredientRow:**
-```dart
-// If Kroger product image fails or not available
-final imageUrl = item.productImageUrl ??
-    SpoonacularImages.getUrl(item.name);
-```
-
----
 
 ### Recommended Packages
 

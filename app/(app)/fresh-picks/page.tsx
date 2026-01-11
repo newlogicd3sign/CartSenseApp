@@ -270,7 +270,7 @@ export default function FreshPicksPage() {
                                 cookTimeRange={freshMeals[0].cookTimeRange}
                                 dietType={dietType}
                                 dietBadges={getCompliantDiets(freshMeals[0].ingredients)}
-                                estimatedCost={freshMeals[0].estimatedCost}
+
                                 onClick={() => handleViewMeal(freshMeals[0])}
                                 bottomActions={
                                     <div className="flex flex-col gap-3 w-full mt-2">

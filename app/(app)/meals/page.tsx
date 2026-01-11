@@ -315,24 +315,6 @@ function MealsPageContent() {
         setLoadingMeals(false);
     }, [user, prefs, shouldStream, promptFromUrl, pantryMode, streamMeals, searchParams, router]);
 
-    // Reload meals from storage when page becomes visible (e.g., navigating back)
-    useEffect(() => {
-        const handleVisibilityChange = () => {
-            if (document.visibilityState === 'visible' && !shouldStream) {
-                // Reload from storage when page becomes visible
-                const stored = loadGeneratedMeals();
-                if (stored && stored.meals && stored.meals.length > 0) {
-                    setMeals(stored.meals);
-                    setMealsMeta(stored.meta ?? null);
-                    setStoredPrompt(stored.prompt ?? "");
-                }
-            }
-        };
-
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-        return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-    }, [shouldStream]);
-
     if (loadingUser) {
         return <LoadingScreen message="Loading your profile..." />;
     }
@@ -523,7 +505,7 @@ function MealsPageContent() {
                                     }
                                     dietType={prefs?.dietType as string | undefined}
                                     dietBadges={getCompliantDiets(meal.ingredients)}
-                                    estimatedCost={meal.estimatedCost}
+
                                 />
                             ))}
                         </div>

@@ -9,6 +9,7 @@ import {
 import {
     isPetFood as isPetFoodCheck,
     isNonFoodProduct as isNonFoodCheck,
+    isBabyFood as isBabyFoodCheck,
     findIngredientRule,
     calculateQualityScore,
     calculateRelevanceScore,
@@ -238,6 +239,13 @@ function isPetFood(product: KrogerProduct | CachedKrogerProduct): boolean {
  */
 function isNonFoodProduct(product: KrogerProduct | CachedKrogerProduct): boolean {
     return isNonFoodCheck(toProductCandidate(product));
+}
+
+/**
+ * Check if a product is baby food - delegates to selection service.
+ */
+function isBabyFood(product: KrogerProduct | CachedKrogerProduct): boolean {
+    return isBabyFoodCheck(toProductCandidate(product));
 }
 
 /**
@@ -876,6 +884,7 @@ export async function searchKrogerProducts(
                 if (excludeIds.has(p.productId)) return false;
                 if (isPetFood(p)) return false; // Never show pet food
                 if (isNonFoodProduct(p)) return false; // Never show non-grocery items
+                if (!trimmed.toLowerCase().includes("baby") && isBabyFood(p)) return false; // Filter baby food unless requested
                 const { available } = isProductAvailable(p);
                 return available;
             });
@@ -952,6 +961,7 @@ export async function searchKrogerProducts(
         if (excludeIds.has(p.productId)) return false;
         if (isPetFood(p)) return false; // Never show pet food
         if (isNonFoodProduct(p)) return false; // Never show non-grocery items
+        if (!trimmed.toLowerCase().includes("baby") && isBabyFood(p)) return false; // Filter baby food unless requested
         const { available } = isProductAvailable(p);
         return available;
     });

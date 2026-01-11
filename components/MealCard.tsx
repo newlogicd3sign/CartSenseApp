@@ -98,12 +98,6 @@ export function MealCard({
                                 <span className="text-[10px] font-medium text-sky-700">{cookTimeRange.min}-{cookTimeRange.max}m</span>
                             </div>
                         )}
-                        {/* Cost Estimate Badge */}
-                        {estimatedCost && (
-                            <div className="flex items-center gap-1 px-2 py-0.5 bg-green-50 border border-green-200 rounded-full flex-shrink-0">
-                                <span className="text-[10px] font-medium text-green-700 whitespace-nowrap">Est ${estimatedCost.toFixed(2)}</span>
-                            </div>
-                        )}
                         {badge && <div className="flex-shrink-0">{badge}</div>}
                     </div>
                     {/* Second row: Diet badges (limit to 2) */}

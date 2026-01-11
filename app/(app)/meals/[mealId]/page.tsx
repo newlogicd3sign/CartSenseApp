@@ -1177,7 +1177,7 @@ function MealDetailPageContent() {
         };
 
         fetchCurrentNutrition();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedIngredientIndex, displayIngredients]);
 
     const fetchProductNutrition = async (productId: string) => {
@@ -1274,9 +1274,10 @@ function MealDetailPageContent() {
         setEnrichedIngredients(updatedEnriched);
 
         // Also update the meal state (for sessionStorage persistence)
-        const updatedMealIngredients = [...meal.ingredients];
+        // Use currentIngredients (enriched data) to preserve all Kroger product info
+        const updatedMealIngredients = [...currentIngredients];
         updatedMealIngredients[selectedIngredientIndex] = {
-            ...meal.ingredients[selectedIngredientIndex],
+            ...currentIngredients[selectedIngredientIndex],
             krogerProductId: product.krogerProductId,
             productName: product.name,
             productImageUrl: product.imageUrl,
@@ -1773,11 +1774,6 @@ function MealDetailPageContent() {
                             <div className="flex items-center gap-2">
                                 <h3 className="font-medium text-gray-900">
                                     Ingredients ({selectedIngredients.size} of {displayIngredients.length})
-                                    {totalCalculatedCost.total > 0 && (
-                                        <span className="ml-2 text-[#4A90E2] text-sm">
-                                            Cart Total: ~${totalCalculatedCost.total.toFixed(2)}
-                                        </span>
-                                    )}
                                 </h3>
                                 {enrichingKroger && (
                                     <div className="flex items-center gap-1.5 text-xs text-gray-400">
@@ -1897,7 +1893,7 @@ function MealDetailPageContent() {
                                                 </div>
                                             )}
                                             {/* Estimated price range for Instacart users or Kroger users without linked account/store */}
-                                            {(prefs?.shoppingPreference === "instacart" || (prefs?.shoppingPreference === "kroger" && (!krogerConnected || !krogerStoreSet))) && (() => {
+                                            {(!krogerConnected || !krogerStoreSet || prefs?.shoppingPreference === "instacart") && (() => {
                                                 const hasKrogerPrice = typeof ing.price === "number";
                                                 const estimate = hasKrogerPrice
                                                     ? { min: ing.price!, max: ing.price! * 1.15, soldByWeight: ing.soldBy === "WEIGHT" }
@@ -1911,6 +1907,24 @@ function MealDetailPageContent() {
                                             })()}
                                         </div>
                                     </div>
+                                    {/* Swap button - only for Kroger users with connected accounts */}
+                                    {prefs?.shoppingPreference !== "instacart" && krogerConnected && (
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                // Clear previous swap state when selecting a new ingredient
+                                                setSwapAlternatives(null);
+                                                setShowSwapOptions(false);
+                                                setExpandedNutritionId(null);
+                                                setNutritionData({});
+                                                setSelectedIngredientIndex(idx);
+                                            }}
+                                            className="flex-shrink-0 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                                            title="Swap product"
+                                        >
+                                            <RefreshCw className="w-4 h-4 text-gray-400 hover:text-[#4A90E2]" />
+                                        </button>
+                                    )}
                                     {/* Checkbox for selection */}
                                     <div
                                         onClick={(e) => {

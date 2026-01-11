@@ -110,6 +110,17 @@ const NON_FOOD_CATEGORIES = [
   "pharmacy", "medicine", "first aid", "cosmetics", "hair care", "skin care",
 ];
 
+const BABY_FOOD_KEYWORDS = [
+  "baby food", "toddler", "pouch", "puree", "infant", "newborn",
+  "crawler", "sitter", "squeezy", "spout", "pedialyte", "gerber",
+  "beech-nut", "earth's best", "happy baby", "plum organics",
+  "cereal for baby", "teether", "puffs", "melts", "lil' bits",
+];
+
+const BABY_FOOD_CATEGORIES = [
+  "baby", "toddler", "diapers", "nursing", "feeding",
+];
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Core Filtering Functions
 // ─────────────────────────────────────────────────────────────────────────────
@@ -154,6 +165,26 @@ export function isNonFoodProduct(product: ProductCandidate): boolean {
   // Check categories
   const categories = getProductCategories(product);
   if (categories.some((c) => NON_FOOD_CATEGORIES.some((nf) => c.includes(nf)))) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Check if a product is intended for babies/toddlers.
+ */
+export function isBabyFood(product: ProductCandidate): boolean {
+  const desc = (product.description || "").toLowerCase();
+
+  // Check keywords
+  if (BABY_FOOD_KEYWORDS.some((keyword) => desc.includes(keyword))) {
+    return true;
+  }
+
+  // Check categories
+  const categories = getProductCategories(product);
+  if (categories.some((c) => BABY_FOOD_CATEGORIES.some((bc) => c.includes(bc)))) {
     return true;
   }
 
@@ -277,7 +308,8 @@ export function calculateQualityScore(
     "breaded", "battered", "fried", "crispy coating", "crunchy coating",
     "with sauce", "in sauce", "glazed", "candied", "sweetened",
     "flavored", "seasoned blend", "helper", "complete meal", "ready to eat",
-    "nuggets", "sticks", "patties", "popcorn",
+    "nuggets", "sticks", "patties", "popcorn", "ravioli", "pasta", "tortellini",
+    "dumpling", "potsticker", "wonton", "puree", "mashed", "whipped",
   ];
 
   for (const indicator of processedIndicators) {
@@ -435,6 +467,13 @@ export function filterValidProducts(
 
     // Never show non-food items
     if (isNonFoodProduct(product)) {
+      return false;
+    }
+
+    // Never show baby food unless user is specifically looking for it (handled by caller logic usually, but here strict)
+    // Note: If Ingredient Name contains "baby", we might allow it.
+    const searchTerm = (options.ingredientName || "").toLowerCase();
+    if (!searchTerm.includes("baby") && isBabyFood(product)) {
       return false;
     }
 

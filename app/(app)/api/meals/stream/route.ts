@@ -1166,12 +1166,7 @@ KEY RULES:
 - cookTimeRange = estimated cook time in minutes as a range (min to max) accounting for skill variance
   - Simple meals: range of 10-15 min (e.g., {"min":15,"max":25})
   - Complex meals: range of 20-30 min (e.g., {"min":45,"max":75})
-- estimatedCost: Calculate the SHOPPING CART TOTAL in USD - what you'd actually pay at checkout:
-  - Add up the price for EVERY ingredient using the PRICE REFERENCE above
-  - Each ingredient = one package purchase (chicken=$6, quinoa=$3, olive oil=$8, spinach=$4, spice=$4, etc.)
-  - ALWAYS include oils and EVERY spice/seasoning - these are $4-8 each!
-  - A typical 9-ingredient meal should total $35-45
-  - Example: chicken($6) + quinoa($3) + olive oil($8) + lemon juice($3) + garlic powder($4) + oregano($4) + salt($4) + pepper($4) + spinach($4) = $40
+- estimatedCost: Provide a rough ballpark estimate in USD (we'll calculate the exact total from ingredient prices later). Use the PRICE REFERENCE as a guide.
 - grocerySearchTerm: MUST be the RAW, UNCOOKED, WHOLE product. NEVER use "cooked", "grilled", "roasted", "baked", "sliced", "diced" here. "diced onion" -> "yellow onion", "cooked chicken" -> "boneless skinless chicken breast", "ground chicken" -> "ground chicken" (NOT "chicken breast"), "ground beef" -> "ground beef", "ground turkey" -> "ground turkey".
 - **INGREDIENTS**: List the main ingredients required *for 1 person*. The quantity should be appropriate for a single serving.
     - Be specific with ingredient names (e.g., use "black pepper" instead of just "pepper", "brown rice" instead of "rice").

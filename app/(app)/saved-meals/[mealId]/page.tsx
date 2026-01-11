@@ -888,7 +888,7 @@ export default function SavedMealDetailPage() {
         };
 
         fetchCurrentNutrition();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedIngredientIndex, meal]);
 
     const fetchProductNutrition = async (productId: string) => {
@@ -1389,7 +1389,7 @@ export default function SavedMealDetailPage() {
                                                 </div>
                                             )}
                                             {/* Estimated price range for Instacart users or Kroger users without linked account/store */}
-                                            {(prefs?.shoppingPreference === "instacart" || (prefs?.shoppingPreference === "kroger" && (!krogerConnected || !krogerStoreSet))) && (() => {
+                                            {(!krogerConnected || !krogerStoreSet || prefs?.shoppingPreference === "instacart") && (() => {
                                                 const hasKrogerPrice = typeof ing.price === "number";
                                                 const estimate = hasKrogerPrice
                                                     ? { min: ing.price!, max: ing.price! * 1.15, soldByWeight: ing.soldBy === "WEIGHT" }
@@ -1403,6 +1403,24 @@ export default function SavedMealDetailPage() {
                                             })()}
                                         </div>
                                     </div>
+                                    {/* Swap button - only for Kroger users with connected accounts */}
+                                    {prefs?.shoppingPreference !== "instacart" && krogerConnected && (
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                // Clear previous swap state when selecting a new ingredient
+                                                setSwapAlternatives(null);
+                                                setShowSwapOptions(false);
+                                                setExpandedNutritionId(null);
+                                                setNutritionData({});
+                                                setSelectedIngredientIndex(idx);
+                                            }}
+                                            className="flex-shrink-0 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                                            title="Swap product"
+                                        >
+                                            <RefreshCw className="w-4 h-4 text-gray-400 hover:text-[#4A90E2]" />
+                                        </button>
+                                    )}
                                     {/* Checkbox for selection */}
                                     <div
                                         onClick={(e) => {
