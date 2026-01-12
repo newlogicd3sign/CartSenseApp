@@ -121,6 +121,21 @@ const BABY_FOOD_CATEGORIES = [
   "baby", "toddler", "diapers", "nursing", "feeding",
 ];
 
+const STRICT_EXCLUDE_KEYWORDS = [
+  "ravioli", "soup", "bisque", "chowder",
+];
+
+const STORE_BRANDS = [
+  "kroger",
+  "simple truth",
+  "private selection",
+  "heritage farm",
+  "hemisfares",
+  "comforts",
+  "abound",
+  "smart way",
+];
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Core Filtering Functions
 // ─────────────────────────────────────────────────────────────────────────────
@@ -302,6 +317,15 @@ export function calculateQualityScore(
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Brand preference (Prioritize Store Brands)
+  // ─────────────────────────────────────────────────────────────────────────
+  const brandLower = (product.brand || "").toLowerCase();
+  if (STORE_BRANDS.some(b => brandLower.includes(b))) {
+    score += 5;
+    reasons.push("Store Brand Bonus");
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Processed food penalties
   // ─────────────────────────────────────────────────────────────────────────
   const processedIndicators = [
@@ -322,13 +346,36 @@ export function calculateQualityScore(
   // ─────────────────────────────────────────────────────────────────────────
   // Frozen penalties (unless it's frozen produce which can be acceptable)
   // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // Frozen penalties (unless it's frozen produce which can be acceptable)
+  // ─────────────────────────────────────────────────────────────────────────
   const frozenIndicators = ["frozen", "steamable", "steam-in-bag", "microwaveable"];
   const isFrozen = frozenIndicators.some((w) => desc.includes(w)) ||
     categories.some((c) => c.includes("frozen"));
 
-  if (isFrozen && !isInFreshCategory) {
-    score -= 12;
-    reasons.push("Frozen product");
+  if (isFrozen) {
+    // Allow frozen produce to skip penalty if checking for vegetables/fruit
+    const isFrozenProduce = categories.some(c =>
+      c.includes('frozen vegetable') ||
+      c.includes('frozen fruit') ||
+      c.includes('frozen produce')
+    );
+
+    if (isInFreshCategory || isFrozenProduce) {
+      // No penalty for frozen fruits/veggies
+    } else {
+      score -= 12;
+      reasons.push("Frozen product");
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Mixed/Blend penalties (prefer pure ingredients)
+  // ─────────────────────────────────────────────────────────────────────────
+  const mixIndicators = ["mix", "blend", "medley", "dinner", "meal", "kit", "assortment", " & ", " and "];
+  if (mixIndicators.some(w => desc.includes(w) && !desc.includes("mix without"))) {
+    score -= 5;
+    reasons.push("Mixed/Blend product");
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -480,6 +527,14 @@ export function filterValidProducts(
     // Only show available products
     if (!isProductAvailable(product)) {
       return false;
+    }
+
+    // Strict exclusion for specific keywords (like ravioli) unless explicitly searching for them
+    const descLower = (product.description || "").toLowerCase();
+    for (const keyword of STRICT_EXCLUDE_KEYWORDS) {
+      if (descLower.includes(keyword) && !searchTerm.includes(keyword)) {
+        return false;
+      }
     }
 
     // Fix #2 Implementation

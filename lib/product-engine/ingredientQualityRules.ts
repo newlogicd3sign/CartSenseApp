@@ -624,7 +624,10 @@ export const INGREDIENT_QUALITY_RULES: IngredientQualityRule[] = [
     category: "fats_oils",
     krogerDeptHint: "Dairy & Eggs",
     matchKeywords: ["butter", "unsalted butter", "salted butter"],
-    avoidKeywords: ["margarine", "spread", "light butter", "whipped butter", "garlic butter"],
+    avoidKeywords: [
+      "margarine", "spread", "light butter", "whipped butter", "garlic butter",
+      "peanut", "almond", "cashew", "apple", "pumpkin", "body", "shea", "cocoa", "cookie"
+    ],
     preferAttributes: ["grass fed", "unsalted"]
   },
   {
