@@ -753,15 +753,15 @@ function validateMealAgainstRestrictions(meal: Meal, restrictions: CombinedDieta
 
         // Check for common derivatives
         const derivatives: Record<string, string[]> = {
-            "dairy": ["milk", "cheese", "yogurt", "butter", "cream", "whey", "casein", "lactose"],
-            "eggs": ["egg", "mayonnaise"],
+            "dairy": ["milk", "cheese", "yogurt", "butter", "cream", "whey", "casein", "lactose", "mozzarella", "cheddar", "parmesan", "ricotta", "feta", "brie", "gouda", "swiss", "provolone", "gruyere", "manchego", "halloumi", "paneer", "mascarpone", "burrata", "queso", "cottage cheese", "cream cheese", "sour cream", "half and half", "ghee", "custard", "ice cream"],
+            "eggs": ["egg", "mayonnaise", "meringue", "aioli", "hollandaise"],
             "peanuts": ["peanut"],
-            "tree nuts": ["almond", "walnut", "cashew", "pecan", "pistachio", "hazelnut", "macadamia"],
-            "wheat": ["wheat", "flour", "bread", "pasta", "noodle"],
-            "gluten": ["wheat", "barley", "rye", "flour", "bread", "pasta"],
-            "soy": ["soy", "tofu", "edamame", "miso", "tempeh"],
-            "shellfish": ["shrimp", "crab", "lobster", "crawfish", "prawn"],
-            "fish": ["salmon", "tuna", "cod", "tilapia", "halibut", "mackerel"],
+            "tree nuts": ["almond", "walnut", "cashew", "pecan", "pistachio", "hazelnut", "macadamia", "pine nut", "brazil nut", "chestnut"],
+            "wheat": ["wheat", "flour", "bread", "pasta", "noodle", "couscous", "bulgur", "farro", "semolina"],
+            "gluten": ["wheat", "barley", "rye", "flour", "bread", "pasta", "seitan", "bulgur", "farro", "couscous"],
+            "soy": ["soy", "tofu", "edamame", "miso", "tempeh", "tamari"],
+            "shellfish": ["shrimp", "crab", "lobster", "crawfish", "prawn", "scallop", "clam", "mussel", "oyster"],
+            "fish": ["salmon", "tuna", "cod", "tilapia", "halibut", "mackerel", "sardine", "anchovy", "trout", "bass", "snapper"],
             "sesame": ["sesame", "tahini"],
         };
 
@@ -769,6 +769,36 @@ function validateMealAgainstRestrictions(meal: Meal, restrictions: CombinedDieta
         for (const derivative of derivativeList) {
             if (allMealText.includes(derivative)) {
                 violations.push(`Contains ${allergen} derivative: ${derivative}`);
+            }
+        }
+    }
+
+    // Check sensitivities (similar to allergies but logged as sensitivity violations)
+    // Sensitivities map - reuse allergy derivatives since the ingredients to avoid are the same
+    const sensitivityDerivatives: Record<string, string[]> = {
+        "dairy": ["milk", "cheese", "yogurt", "butter", "cream", "whey", "casein", "lactose", "mozzarella", "cheddar", "parmesan", "ricotta", "feta", "brie", "gouda", "swiss", "provolone", "gruyere", "manchego", "halloumi", "paneer", "mascarpone", "burrata", "queso", "cottage cheese", "cream cheese", "sour cream", "half and half", "ghee", "custard", "ice cream"],
+        "lactose": ["milk", "cream", "ice cream", "soft cheese", "ricotta", "cottage cheese", "yogurt", "whey", "buttermilk", "half and half", "custard"],
+        "gluten sensitivity": ["wheat", "barley", "rye", "flour", "bread", "pasta", "noodle", "seitan", "bulgur", "farro", "couscous", "semolina", "breaded", "crusted", "battered"],
+        "eggs": ["egg", "mayonnaise", "meringue", "aioli", "hollandaise"],
+        "soy": ["soy", "tofu", "edamame", "miso", "tempeh", "tamari"],
+        "corn": ["corn", "cornmeal", "polenta", "grits", "tortilla"],
+        "nightshades": ["tomato", "potato", "eggplant", "bell pepper", "paprika", "cayenne"],
+    };
+
+    for (const sensitivity of restrictions.combinedSensitivities) {
+        const sensitivityLower = sensitivity.toLowerCase();
+
+        // Check for direct mentions
+        if (allMealText.includes(sensitivityLower)) {
+            violations.push(`Contains sensitivity trigger: ${sensitivity}`);
+        }
+
+        // Check for derivatives
+        const derivativeList = sensitivityDerivatives[sensitivityLower] || [];
+        for (const derivative of derivativeList) {
+            if (allMealText.includes(derivative)) {
+                violations.push(`Contains ${sensitivity} derivative: ${derivative}`);
+                break; // Only report first derivative match per sensitivity to avoid spam
             }
         }
     }
@@ -890,6 +920,28 @@ function buildSystemPrompt(prompt: string, restrictions: CombinedDietaryRestrict
             : `\n⚠️ CRITICAL ALLERGIES - DO NOT USE THESE INGREDIENTS UNDER ANY CIRCUMSTANCES:\n${restrictions.combinedAllergies.map(a => `• ${a} (and all ${a}-derived ingredients)`).join("\n")}\nThese allergies are potentially life-threatening. NEVER suggest meals containing these allergens or their derivatives.\n`
         : "";
 
+    // Build sensitivity warning - similar to allergies but framed as causing discomfort rather than life-threatening
+    const sensitivityDerivativesPrompt: Record<string, string[]> = {
+        "dairy": ["milk", "cheese", "yogurt", "butter", "cream", "mozzarella", "cheddar", "parmesan", "ricotta", "feta", "brie", "gouda", "swiss", "provolone", "paneer", "mascarpone", "burrata", "queso", "cottage cheese", "cream cheese", "sour cream", "half and half", "ghee", "custard", "ice cream", "whey", "casein"],
+        "lactose": ["milk", "cream", "ice cream", "soft cheese", "ricotta", "cottage cheese", "yogurt", "buttermilk", "half and half", "custard"],
+        "gluten sensitivity": ["wheat", "barley", "rye", "flour", "bread", "pasta", "noodles", "seitan", "couscous", "breaded", "crusted", "battered"],
+        "eggs": ["egg", "eggs", "mayonnaise", "meringue", "aioli", "hollandaise"],
+        "soy": ["soy", "tofu", "edamame", "miso", "tempeh", "tamari", "soy sauce"],
+        "corn": ["corn", "cornmeal", "polenta", "grits", "tortilla"],
+        "nightshades": ["tomato", "potato", "eggplant", "bell pepper", "paprika", "cayenne"],
+    };
+
+    const sensitivityWarning = restrictions.combinedSensitivities.length > 0
+        ? ignoreConflicts
+            ? `\n🔶 USER OVERRIDE ACTIVE: User has explicitly authorized ingredients despite sensitivities: ${restrictions.combinedSensitivities.join(", ")}.\n`
+            : `\n🔶 SENSITIVITIES - AVOID THESE INGREDIENTS (cause discomfort/digestive issues):\n${restrictions.combinedSensitivities.map(s => {
+                const derivs = sensitivityDerivativesPrompt[s.toLowerCase()];
+                return derivs
+                    ? `• ${s} → AVOID: ${derivs.slice(0, 10).join(", ")}${derivs.length > 10 ? ", etc." : ""}`
+                    : `• ${s}`;
+            }).join("\n")}\nDo NOT include these ingredients or their derivatives in any meals. This includes hidden sources like cheese-stuffed meats, cream-based sauces, or breaded items.\n`
+        : "";
+
     // Build dislikes guidance for semantic understanding
     const dislikesGuidance = restrictions.combinedDislikes.length > 0
         ? `\n🔸 IMPORTANT - DISLIKES AND VARIANTS:\n
@@ -1007,25 +1059,103 @@ Before generating meals, determine if the user's request is related to food, coo
 ${topicValidation}
 
 ${rulesText}
-${allergyWarning}${dislikesGuidance}${cookingGuidance}
+${allergyWarning}${sensitivityWarning}${dislikesGuidance}${cookingGuidance}
 ${restrictionsText}
 ${preferencesSection}
 ${recentMealsSection}
 ${qualityRulesText}
 ${pantryModeText}
 
-PRICE REFERENCE (2024 US grocery averages - use these for estimatedCost calculation):
-- Protein (chicken, beef, pork): $5-10/lb
-- Seafood (fish, shrimp, salmon): $8-15/lb
-- Deli meats (bacon, sausage): $7-13/lb
-- Dairy (milk, cheese, yogurt): $3-6 each
-- Produce by weight (fruits, tomatoes, potatoes): $1.50-4/lb
-- Produce by unit (lettuce, broccoli, avocado): $1-3 each
-- Grains (bread, rice, pasta): $2-5 each
-- Pantry (canned goods, sauces): $2.50-6 each
-- Spices/seasonings: $3-7 each (full jar/bottle)
-- Cooking oils: $5-10 (full bottle)
-- Eggs: $3.50-6 per dozen
+PRICE REFERENCE (Kroger 2024 prices - use these for estimatedCost):
+- Protein (chicken, beef, pork): $6/lb
+- Seafood (salmon, shrimp): $10/lb
+- Deli meats (bacon, sausage): $8/lb
+- Dairy (milk, cheese, yogurt, butter): $4 each
+- Produce (spinach, tomatoes, cucumber, peppers, onion, garlic): $4 each
+- Grains (rice, pasta, quinoa, bread): $3 each
+- Pantry (canned goods, broth, sauces, lemon juice): $3 each
+- Spices/seasonings (salt, pepper, oregano, cumin, paprika, garlic powder): $4 each
+- Cooking oils (olive oil, vegetable oil): $8 each
+- Eggs: $5 per dozen
+
+NUTRITION REFERENCE (USDA values per 100g raw - use these for accurate macro calculation):
+PROTEIN SOURCES:
+- Chicken breast: 165cal, 31g protein, 0g carbs, 3.6g fat
+- Chicken thigh: 177cal, 24g protein, 0g carbs, 8g fat
+- Ground beef (85% lean): 215cal, 19g protein, 0g carbs, 15g fat
+- Ground turkey: 149cal, 20g protein, 0g carbs, 8g fat
+- Pork loin: 143cal, 26g protein, 0g carbs, 3.5g fat
+- Salmon: 208cal, 20g protein, 0g carbs, 13g fat
+- Shrimp: 85cal, 20g protein, 0g carbs, 0.5g fat
+- Eggs (1 large = 50g): 72cal, 6g protein, 0.4g carbs, 5g fat
+- Bacon (cooked): 541cal, 37g protein, 1.4g carbs, 42g fat
+- Tofu (firm): 144cal, 17g protein, 3g carbs, 9g fat
+
+DAIRY (per 100g unless noted):
+- Milk (whole): 61cal, 3.2g protein, 4.8g carbs, 3.3g fat
+- Greek yogurt: 97cal, 9g protein, 4g carbs, 5g fat
+- Cheddar cheese: 403cal, 23g protein, 3g carbs, 33g fat
+- Mozzarella: 280cal, 28g protein, 3g carbs, 17g fat
+- Feta cheese: 264cal, 14g protein, 4g carbs, 21g fat (1 tbsp = 15g = ~40cal)
+- Parmesan: 431cal, 38g protein, 4g carbs, 29g fat
+- Cream cheese: 342cal, 6g protein, 4g carbs, 34g fat
+- Butter (1 tbsp = 14g): 102cal, 0g protein, 0g carbs, 12g fat
+
+FATS & OILS:
+- Olive oil (1 tbsp = 14g): 119cal, 0g protein, 0g carbs, 14g fat
+- Vegetable oil (1 tbsp = 14g): 120cal, 0g protein, 0g carbs, 14g fat
+- Avocado oil (1 tbsp = 14g): 124cal, 0g protein, 0g carbs, 14g fat
+
+FRUITS:
+- Avocado (1 medium = 150g flesh): 240cal, 3g protein, 12g carbs, 22g fat (half = 120cal)
+- Banana (1 medium = 118g): 105cal, 1.3g protein, 27g carbs, 0.4g fat
+- Apple (1 medium = 182g): 95cal, 0.5g protein, 25g carbs, 0.3g fat
+- Berries (mixed): 57cal, 0.7g protein, 14g carbs, 0.3g fat
+
+GRAINS & STARCHES (cooked):
+- Rice (white, cooked): 130cal, 2.7g protein, 28g carbs, 0.3g fat
+- Pasta (cooked): 131cal, 5g protein, 25g carbs, 1.1g fat
+- Bread (1 slice = 30g): 79cal, 2.7g protein, 15g carbs, 1g fat
+- Quinoa (cooked): 120cal, 4.4g protein, 21g carbs, 1.9g fat
+- Oats (dry): 389cal, 17g protein, 66g carbs, 7g fat
+
+VEGETABLES:
+- Broccoli: 34cal, 2.8g protein, 7g carbs, 0.4g fat
+- Spinach: 23cal, 2.9g protein, 3.6g carbs, 0.4g fat
+- Bell pepper: 31cal, 1g protein, 6g carbs, 0.3g fat
+- Potato: 77cal, 2g protein, 17g carbs, 0.1g fat
+- Onion: 40cal, 1.1g protein, 9g carbs, 0.1g fat
+
+CONVERSIONS: 1 lb = 454g, 1 oz = 28g
+
+STANDARD SINGLE-SERVING PORTIONS (use these for ingredient quantities):
+- Chicken/beef/pork/fish: 4-6 oz (113-170g) per person
+- Ground meat: 4 oz (113g) per person
+- Shrimp: 4-5 oz (113-140g) per person
+- Rice/pasta (cooked): 1 cup per person
+- Vegetables: 1-2 cups per person
+- Cheese: 1-2 oz (28-56g) per person
+- Eggs: 2-3 per person for a main dish
+
+MACRO CALCULATION - FOLLOW THIS PROCESS:
+1. For each ingredient, calculate calories based on ACTUAL quantity used (not per 100g)
+2. Sum ALL ingredient calories for the TOTAL recipe
+3. DIVIDE total by number of servings to get PER-SERVING macros
+4. VERIFY: A typical breakfast/lunch should be 300-500cal, dinner 400-700cal, snack 150-300cal
+5. If your calculation exceeds these ranges significantly, RE-CHECK your math
+
+EXAMPLE (Avocado Toast, 2 servings):
+- 2 slices bread: 79cal × 2 = 158cal
+- 1 avocado: 240cal
+- 2 eggs: 72cal × 2 = 144cal
+- 4 tbsp feta: 40cal × 4 = 160cal
+- 2 tsp olive oil: 40cal × 2 = 80cal
+- TOTAL: 782cal ÷ 2 servings = ~390cal per serving
+
+COMMON MISTAKES TO AVOID:
+- Don't use per-100g values directly without converting to actual portion size
+- Don't forget to divide by servings at the end
+- Don't double-count (if recipe serves 2 and uses 1 avocado, each serving gets HALF the avocado calories)
 
 JSON output:
 {"meals":[{"mealType":"breakfast|lunch|dinner|snack","name":"","description":"","estimatedCost":N,"servings":N,"macros":{"calories":N,"protein":N,"carbs":N,"fiber":N,"fat":N},"cookTimeRange":{"min":N,"max":N},"ingredients":[{"name":"display name","quantity":"","grocerySearchTerm":"raw product","preparation":""}],"steps":[""]}]}
@@ -1036,12 +1166,7 @@ KEY RULES:
 - cookTimeRange = estimated cook time in minutes as a range (min to max) accounting for skill variance
   - Simple meals: range of 10-15 min (e.g., {"min":15,"max":25})
   - Complex meals: range of 20-30 min (e.g., {"min":45,"max":75})
-- estimatedCost: Calculate the SHOPPING CART TOTAL in USD using the PRICE REFERENCE above:
-  - Sum individual ingredient costs using the HIGH end of each price range
-  - Staples (oil, spices, seasonings) = full bottle/jar price, not just amount used
-  - Multiply by servings if recipe serves more than 1
-  - Round UP to nearest $5 (e.g., $23.40 -> $25)
-  - Minimum $15 for any meal
+- estimatedCost: Provide a rough ballpark estimate in USD (we'll calculate the exact total from ingredient prices later). Use the PRICE REFERENCE as a guide.
 - grocerySearchTerm: MUST be the RAW, UNCOOKED, WHOLE product. NEVER use "cooked", "grilled", "roasted", "baked", "sliced", "diced" here. "diced onion" -> "yellow onion", "cooked chicken" -> "boneless skinless chicken breast", "ground chicken" -> "ground chicken" (NOT "chicken breast"), "ground beef" -> "ground beef", "ground turkey" -> "ground turkey".
 - **INGREDIENTS**: List the main ingredients required *for 1 person*. The quantity should be appropriate for a single serving.
     - Be specific with ingredient names (e.g., use "black pepper" instead of just "pepper", "brown rice" instead of "rice").

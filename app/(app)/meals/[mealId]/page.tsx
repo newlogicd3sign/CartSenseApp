@@ -247,8 +247,8 @@ function MealDetailPageContent() {
 
     // Lazy loading Kroger enrichment state
     const [enrichingKroger, setEnrichingKroger] = useState(false);
-    const [hasEnrichedKroger, setHasEnrichedKroger] = useState(false);
     const [enrichedIngredients, setEnrichedIngredients] = useState<Ingredient[] | null>(null);
+    const lastEnrichedMealIdRef = useRef<string | null>(null);
 
     // Chat limit state
     const [monthlyChatCount, setMonthlyChatCount] = useState(0);
@@ -553,13 +553,19 @@ function MealDetailPageContent() {
     // Lazy load Kroger enrichment when viewing meal (for pricing data - used by both Kroger and Instacart users)
     useEffect(() => {
         // Skip enrichment in pantry mode - user is cooking with what they have
-        if (!user || !meal || !krogerConnected || !krogerStoreSet || hasEnrichedKroger || mealsMeta?.pantryMode) return;
+        if (!user || !meal || !krogerConnected || !krogerStoreSet || mealsMeta?.pantryMode) return;
 
-        // Check if any ingredient already has Kroger data (already enriched)
+        // Check if any ingredient already has Kroger data (already enriched from storage)
         const alreadyEnriched = meal.ingredients.some(ing => ing.krogerProductId);
         if (alreadyEnriched) {
-            setHasEnrichedKroger(true);
+            // Use enriched data from storage
             setEnrichedIngredients(meal.ingredients);
+            lastEnrichedMealIdRef.current = meal.id;
+            return;
+        }
+
+        // Skip if we already enriched this exact meal (to prevent duplicate API calls)
+        if (lastEnrichedMealIdRef.current === meal.id) {
             return;
         }
 
@@ -581,17 +587,24 @@ function MealDetailPageContent() {
                     // Store enriched ingredients separately - don't replace meal state
                     // This prevents a jarring full re-render when scrolling
                     setEnrichedIngredients(data.ingredients);
+
+                    // Persist enriched ingredients to storage so they're available on next visit
+                    const enrichedMeal: Meal = {
+                        ...meal,
+                        ingredients: data.ingredients,
+                    };
+                    updateMealInStorage(enrichedMeal);
                 }
             } catch (err) {
                 console.error("Error enriching ingredients with Kroger data:", err);
             } finally {
                 setEnrichingKroger(false);
-                setHasEnrichedKroger(true);
+                lastEnrichedMealIdRef.current = meal.id;
             }
         };
 
         enrichIngredients();
-    }, [user, meal, krogerConnected, krogerStoreSet, hasEnrichedKroger, mealsMeta?.pantryMode]);
+    }, [user, meal, krogerConnected, krogerStoreSet, mealsMeta?.pantryMode]);
 
     // Use enriched ingredients if available, otherwise fall back to meal ingredients
     const displayIngredients = useMemo(
@@ -663,42 +676,25 @@ function MealDetailPageContent() {
     }, [selectedIngredients, displayIngredients]);
 
     const applyUpdatedMeal = (updatedMeal: Meal) => {
-        setMeal(updatedMeal);
+        // Preserve imageUrl from current meal if the updated meal doesn't have one
+        // (AI chat responses don't include imageUrl)
+        const mealWithImage: Meal = {
+            ...updatedMeal,
+            imageUrl: updatedMeal.imageUrl || meal?.imageUrl,
+        };
+
+        setMeal(mealWithImage);
 
         // Reset enriched ingredients so the new ingredients are displayed
         // and can be re-enriched with Kroger data
         setEnrichedIngredients(null);
-        setHasEnrichedKroger(false);
+        lastEnrichedMealIdRef.current = null;
 
         // Reset saved state so user can save the modified meal
         setIsMealAlreadySaved(false);
 
-        try {
-            const stored = sessionStorage.getItem("generatedMeals");
-            if (!stored) return;
-
-            const parsed: StoredMealsPayload = JSON.parse(stored);
-
-            if (Array.isArray(parsed)) {
-                const list = [...parsed];
-                const idx = list.findIndex((m) => m.id === updatedMeal.id);
-                if (idx >= 0) {
-                    list[idx] = updatedMeal;
-                    sessionStorage.setItem("generatedMeals", JSON.stringify(list));
-                }
-                return;
-            }
-
-            const list = Array.isArray(parsed.meals) ? [...parsed.meals] : [];
-            const idx = list.findIndex((m) => m.id === updatedMeal.id);
-            if (idx >= 0) {
-                list[idx] = updatedMeal;
-                const newPayload = { ...parsed, meals: list };
-                sessionStorage.setItem("generatedMeals", JSON.stringify(newPayload));
-            }
-        } catch (err) {
-            console.error("Error updating generatedMeals in sessionStorage", err);
-        }
+        // Update storage using the helper function which handles both sessionStorage and localStorage
+        updateMealInStorage(mealWithImage);
     };
 
     const handleAddToShoppingList = async () => {
@@ -1181,7 +1177,7 @@ function MealDetailPageContent() {
         };
 
         fetchCurrentNutrition();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedIngredientIndex, displayIngredients]);
 
     const fetchProductNutrition = async (productId: string) => {
@@ -1278,9 +1274,10 @@ function MealDetailPageContent() {
         setEnrichedIngredients(updatedEnriched);
 
         // Also update the meal state (for sessionStorage persistence)
-        const updatedMealIngredients = [...meal.ingredients];
+        // Use currentIngredients (enriched data) to preserve all Kroger product info
+        const updatedMealIngredients = [...currentIngredients];
         updatedMealIngredients[selectedIngredientIndex] = {
-            ...meal.ingredients[selectedIngredientIndex],
+            ...currentIngredients[selectedIngredientIndex],
             krogerProductId: product.krogerProductId,
             productName: product.name,
             productImageUrl: product.imageUrl,
@@ -1294,32 +1291,9 @@ function MealDetailPageContent() {
             ingredients: updatedMealIngredients,
         };
 
-        // Update meal state and sessionStorage WITHOUT triggering re-enrichment
+        // Update meal state and storage WITHOUT triggering re-enrichment
         setMeal(updatedMeal);
-        try {
-            const stored = sessionStorage.getItem("generatedMeals");
-            if (stored) {
-                const parsed: StoredMealsPayload = JSON.parse(stored);
-                if (Array.isArray(parsed)) {
-                    const list = [...parsed];
-                    const idx = list.findIndex((m) => m.id === updatedMeal.id);
-                    if (idx >= 0) {
-                        list[idx] = updatedMeal;
-                        sessionStorage.setItem("generatedMeals", JSON.stringify(list));
-                    }
-                } else {
-                    const list = Array.isArray(parsed.meals) ? [...parsed.meals] : [];
-                    const idx = list.findIndex((m) => m.id === updatedMeal.id);
-                    if (idx >= 0) {
-                        list[idx] = updatedMeal;
-                        const newPayload = { ...parsed, meals: list };
-                        sessionStorage.setItem("generatedMeals", JSON.stringify(newPayload));
-                    }
-                }
-            }
-        } catch (err) {
-            console.error("Error updating generatedMeals in sessionStorage", err);
-        }
+        updateMealInStorage(updatedMeal);
 
         showToast(`Swapped to ${product.name}!`, "success");
 
@@ -1800,11 +1774,6 @@ function MealDetailPageContent() {
                             <div className="flex items-center gap-2">
                                 <h3 className="font-medium text-gray-900">
                                     Ingredients ({selectedIngredients.size} of {displayIngredients.length})
-                                    {totalCalculatedCost.total > 0 && (
-                                        <span className="ml-2 text-[#4A90E2] text-sm">
-                                            Cart Total: ~${totalCalculatedCost.total.toFixed(2)}
-                                        </span>
-                                    )}
                                 </h3>
                                 {enrichingKroger && (
                                     <div className="flex items-center gap-1.5 text-xs text-gray-400">
@@ -1924,7 +1893,7 @@ function MealDetailPageContent() {
                                                 </div>
                                             )}
                                             {/* Estimated price range for Instacart users or Kroger users without linked account/store */}
-                                            {(prefs?.shoppingPreference === "instacart" || (prefs?.shoppingPreference === "kroger" && (!krogerConnected || !krogerStoreSet))) && (() => {
+                                            {(!krogerConnected || !krogerStoreSet || prefs?.shoppingPreference === "instacart") && (() => {
                                                 const hasKrogerPrice = typeof ing.price === "number";
                                                 const estimate = hasKrogerPrice
                                                     ? { min: ing.price!, max: ing.price! * 1.15, soldByWeight: ing.soldBy === "WEIGHT" }
@@ -1938,6 +1907,24 @@ function MealDetailPageContent() {
                                             })()}
                                         </div>
                                     </div>
+                                    {/* Swap button - only for Kroger users with connected accounts */}
+                                    {prefs?.shoppingPreference !== "instacart" && krogerConnected && (
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                // Clear previous swap state when selecting a new ingredient
+                                                setSwapAlternatives(null);
+                                                setShowSwapOptions(false);
+                                                setExpandedNutritionId(null);
+                                                setNutritionData({});
+                                                setSelectedIngredientIndex(idx);
+                                            }}
+                                            className="flex-shrink-0 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                                            title="Swap product"
+                                        >
+                                            <RefreshCw className="w-4 h-4 text-gray-400 hover:text-[#4A90E2]" />
+                                        </button>
+                                    )}
                                     {/* Checkbox for selection */}
                                     <div
                                         onClick={(e) => {

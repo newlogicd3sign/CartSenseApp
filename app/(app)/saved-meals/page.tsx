@@ -276,7 +276,7 @@ export default function SavedMealsPage() {
                                     }
                                     dietType={dietType}
                                     dietBadges={getCompliantDiets(meal.ingredients)}
-                                    estimatedCost={meal.estimatedCost}
+
                                 />
                             ))}
                         </div>

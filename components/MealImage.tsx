@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface MealImageProps {
     src?: string | null;
@@ -13,11 +13,15 @@ interface MealImageProps {
 export function MealImage({ src, alt, className = "", iconClassName = "w-8 h-8", isPremium = false }: MealImageProps) {
     const [error, setError] = useState(false);
     const [loaded, setLoaded] = useState(false);
+    const prevSrcRef = useRef<string | null | undefined>(undefined);
 
     useEffect(() => {
-        // Reset state when src changes
-        setError(false);
-        setLoaded(false);
+        // Only reset state if src actually changed to a different value
+        if (prevSrcRef.current !== src) {
+            setError(false);
+            setLoaded(false);
+            prevSrcRef.current = src;
+        }
     }, [src]);
 
     // If no src provided or error occurred, show fallback immediately
@@ -56,6 +60,12 @@ export function MealImage({ src, alt, className = "", iconClassName = "w-8 h-8",
                 className={`w-full h-full object-cover transition-opacity duration-500 ${loaded ? "opacity-100" : "opacity-0"}`}
                 onLoad={() => setLoaded(true)}
                 onError={() => setError(true)}
+                ref={(img) => {
+                    // If image is already complete (cached), mark as loaded immediately
+                    if (img && img.complete && img.naturalHeight !== 0 && !loaded && !error) {
+                        setLoaded(true);
+                    }
+                }}
             />
         </div>
     );

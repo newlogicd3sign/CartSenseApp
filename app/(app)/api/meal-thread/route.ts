@@ -66,18 +66,20 @@ const FREE_CHAT_MONTHLY_LIMIT = 6;
 
 // Sensitivity keywords mapping for post-validation
 const SENSITIVITY_KEYWORDS: Record<string, string[]> = {
-    "dairy": ["milk", "cheese", "yogurt", "butter", "cream", "whey", "casein", "ghee", "ricotta", "mozzarella", "cheddar", "parmesan"],
-    "eggs": ["egg", "eggs", "mayonnaise", "mayo"],
-    "fish": ["fish", "salmon", "tuna", "cod", "tilapia", "halibut", "trout", "sardine", "anchovy"],
-    "shellfish": ["shrimp", "crab", "lobster", "clam", "mussel", "oyster", "scallop", "prawn", "calamari"],
+    "dairy": ["milk", "cheese", "yogurt", "butter", "cream", "whey", "casein", "lactose", "mozzarella", "cheddar", "parmesan", "ricotta", "feta", "brie", "gouda", "swiss", "provolone", "gruyere", "manchego", "halloumi", "paneer", "mascarpone", "burrata", "queso", "cottage cheese", "cream cheese", "sour cream", "half and half", "ghee", "custard", "ice cream"],
+    "eggs": ["egg", "eggs", "mayonnaise", "mayo", "meringue", "aioli", "hollandaise"],
+    "fish": ["fish", "salmon", "tuna", "cod", "tilapia", "halibut", "trout", "sardine", "anchovy", "mackerel", "bass", "snapper"],
+    "shellfish": ["shrimp", "crab", "lobster", "clam", "mussel", "oyster", "scallop", "prawn", "calamari", "crawfish"],
     "peanuts": ["peanut", "peanuts", "peanut butter"],
-    "tree nuts": ["almond", "walnut", "cashew", "pecan", "pistachio", "macadamia", "hazelnut"],
-    "wheat/gluten": ["bread", "pasta", "flour", "wheat", "gluten", "noodle", "couscous"],
-    "soy": ["soy", "tofu", "tempeh", "edamame", "miso"],
+    "tree nuts": ["almond", "walnut", "cashew", "pecan", "pistachio", "macadamia", "hazelnut", "pine nut", "brazil nut", "chestnut"],
+    "wheat/gluten": ["bread", "pasta", "flour", "wheat", "gluten", "noodle", "couscous", "bulgur", "farro", "semolina", "seitan", "breaded", "crusted", "battered"],
+    "soy": ["soy", "tofu", "tempeh", "edamame", "miso", "tamari", "soy sauce"],
     "sesame": ["sesame", "tahini"],
     "red meat": ["beef", "steak", "pork", "lamb", "bacon", "ham", "sausage", "ribs", "brisket", "veal", "venison"],
-    "lactose": ["milk", "cream", "ice cream", "soft cheese", "yogurt"],
-    "gluten sensitivity": ["bread", "pasta", "flour", "wheat", "noodle", "couscous"],
+    "lactose": ["milk", "cream", "ice cream", "soft cheese", "ricotta", "cottage cheese", "yogurt", "buttermilk", "half and half", "custard"],
+    "gluten sensitivity": ["bread", "pasta", "flour", "wheat", "noodle", "couscous", "semolina", "seitan", "bulgur", "farro", "breaded", "crusted", "battered"],
+    "corn": ["corn", "cornmeal", "polenta", "grits", "tortilla"],
+    "nightshades": ["tomato", "potato", "eggplant", "bell pepper", "paprika", "cayenne"],
 };
 
 type DietaryViolation = {
@@ -244,11 +246,18 @@ updatedMeal shape:
 
 KEY RULES:
 - servings: Default to \${householdSize} serving\${householdSize > 1 ? 's' : ''} (household size) unless the user specifically requests a different amount
-- macros = PER SERVING
+- macros = PER SERVING (calculate using NUTRITION REFERENCE below)
 - cookTimeRange = estimated cook time in minutes as a range (min to max) accounting for skill variance
 - grocerySearchTerm: MUST be the RAW, UNCOOKED, WHOLE product. NEVER use "cooked", "grilled", "roasted", "baked", "sliced", "diced" here. "diced onion" -> "yellow onion", "cooked chicken" -> "boneless skinless chicken breast", "ground chicken" -> "ground chicken" (NOT "chicken breast"), "ground beef" -> "ground beef".
 - Include all seasonings with measurements
-- Steps: detailed, food-blogger style`;
+- Steps: detailed, food-blogger style
+
+NUTRITION REFERENCE (USDA values per 100g raw - use for accurate macro calculation):
+PROTEIN: Chicken breast: 165cal/31g protein, Chicken thigh: 177cal/24g protein, Ground beef 85%: 215cal/19g protein, Ground turkey: 149cal/20g protein, Salmon: 208cal/20g protein, Shrimp: 85cal/20g protein, Eggs (1 large=50g): 72cal/6g protein, Tofu: 144cal/17g protein
+DAIRY: Greek yogurt: 97cal/9g protein, Cheddar: 403cal/23g protein, Mozzarella: 280cal/28g protein
+GRAINS (cooked): Rice: 130cal/2.7g protein/28g carbs, Pasta: 131cal/5g protein/25g carbs, Quinoa: 120cal/4.4g protein/21g carbs
+CONVERSIONS: 1 lb = 454g, 1 oz = 28g
+SINGLE-SERVING PORTIONS: Chicken/beef/pork/fish: 4-6 oz, Ground meat: 4 oz, Shrimp: 4-5 oz, Rice/pasta: 1 cup, Eggs: 2-3 for main dish`;
 
 export async function POST(request: Request) {
     try {
