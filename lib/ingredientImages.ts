@@ -203,7 +203,8 @@ export function normalizeIngredientName(name: string): string {
 
   // Check for alias match first
   for (const [key, value] of Object.entries(INGREDIENT_ALIASES)) {
-    if (normalized === key || normalized.includes(key)) {
+    // strict check or word boundary check to avoid "butternut" matching "butter"
+    if (normalized === key || new RegExp(`\\b${key}\\b`, 'i').test(normalized)) {
       return value;
     }
   }
