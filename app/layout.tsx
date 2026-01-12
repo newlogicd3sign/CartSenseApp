@@ -14,11 +14,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CartSense – AI Meal Planning That Adds Groceries to Your Cart",
-  description: "Tell CartSense what you're craving. Get personalized meals with recipes and ingredients, then add everything to your Kroger cart with one click. Free to start.",
+  title: "CartSense | Recipe Generator to your Cart",
+  description: "Turn AI-generated recipes into a full grocery cart in seconds.",
   manifest: "/manifest.json",
   themeColor: "#4A90E2",
-  keywords: ["meal planning", "grocery shopping", "AI meals", "Kroger", "recipe generator", "shopping list", "meal prep", "dinner ideas"],
+  keywords: ["meal planning", "grocery shopping", "AI meals", "recipe generator", "shopping list", "meal prep", "dinner ideas"],
   authors: [{ name: "CartSense" }],
   creator: "CartSense",
   publisher: "CartSense",
@@ -27,26 +27,27 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
     title: "CartSense",
   },
+  // Icons are automatically handled by app/icon.svg and app/apple-icon.png
   openGraph: {
     type: "website",
     locale: "en_US",
     url: "https://cartsense.app",
     siteName: "CartSense",
-    title: "CartSense – AI Meal Planning That Adds Groceries to Your Cart",
-    description: "Tell CartSense what you're craving. Get personalized meals with recipes, then add all ingredients to your Kroger cart with one click.",
+    title: "CartSense | Recipe Generator to your Cart",
+    description: "Turn AI-generated recipes into a full grocery cart in seconds.",
     images: [
       {
         url: "https://cartsense.app/og-image.png",
         width: 1200,
         height: 630,
-        alt: "CartSense - AI Meal Planning and Grocery Shopping",
+        alt: "CartSense - AI Recipe Generator",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "CartSense – AI Meal Planning That Adds Groceries to Your Cart",
-    description: "Tell CartSense what you're craving. Get personalized meals with recipes, then add all ingredients to your Kroger cart with one click.",
+    title: "CartSense | Recipe Generator to your Cart",
+    description: "Turn AI-generated recipes into a full grocery cart in seconds.",
     images: ["https://cartsense.app/og-image.png"],
   },
   robots: {
