@@ -153,6 +153,7 @@ type KrogerProduct = {
     price?: number;
     size?: string;
     aisle?: string;
+    soldBy?: "WEIGHT" | "UNIT";
 };
 
 type EnrichedItem = {
@@ -160,6 +161,8 @@ type EnrichedItem = {
     quantity: string;
     found: boolean;
     product?: KrogerProduct;
+    calculatedUnits?: number;
+    calculationDetails?: string;
 };
 
 type KrogerCartResponse = {
@@ -2135,7 +2138,18 @@ function MealDetailPageContent() {
                                             {item.product?.name || item.originalName}
                                         </div>
                                         <div className="text-xs text-gray-500">
-                                            {item.quantity}
+                                            {item.product ? (
+                                                <span>
+                                                    {/* Show purchased quantity (e.g., "1 x 16 oz" or "0.5 lb") */}
+                                                    {item.product.soldBy === "WEIGHT" ? (
+                                                        <>{item.calculatedUnits} lb</>
+                                                    ) : (
+                                                        <>{item.calculatedUnits || 1} &times; {item.product.size || "unit"}</>
+                                                    )}
+                                                </span>
+                                            ) : (
+                                                <>{item.quantity}</>
+                                            )}
                                             {item.product?.price && (
                                                 <span className="text-[#4A90E2]"> • ${item.product.price.toFixed(2)}</span>
                                             )}
