@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
 import InstacartCarrot from "@/app/🥕 Instacart Logos/Logos - Carrot/RGB/PNG/Instacart_Carrot.png";
+import { LiveStats } from "@/components/LiveStats";
 import {
   ShoppingCart,
   Target,
@@ -40,8 +41,8 @@ const jsonLd = {
   applicationCategory: "LifestyleApplication",
   operatingSystem: "Web",
   description: process.env.NEXT_PUBLIC_ENABLE_INSTACART === 'true'
-    ? "AI-powered meal planning app that generates personalized recipes and adds ingredients directly to your grocery cart via Instacart or Kroger."
-    : "AI-powered meal planning app that generates personalized recipes and adds ingredients directly to your grocery cart via Kroger.",
+    ? "Turn meal ideas into a full grocery cart. CartSense generates personalized meals and adds ingredients directly to Instacart or Kroger."
+    : "Turn meal ideas into a full grocery cart. CartSense generates personalized meals and adds ingredients directly to Kroger.",
   offers: {
     "@type": "Offer",
     price: "0",
@@ -59,7 +60,7 @@ const jsonLd = {
     ...(process.env.NEXT_PUBLIC_ENABLE_INSTACART === 'true' ? ["Instacart integration with delivery"] : []),
     "Kroger cart integration",
     "Diet restriction support",
-    "Family meal planning",
+    "Family meal generation",
   ],
 };
 
@@ -74,7 +75,7 @@ export default function Home() {
       {/* Header */}
       <header className="px-3 sm:px-6 py-3 sm:py-4 fixed top-0 left-0 right-0 bg-white/95 backdrop-blur-md z-50 border-b border-gray-200 shadow-sm">
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-2">
-          <Image src={CartSenseLogo} alt="CartSense - AI Meal Planning and Grocery Shopping" className="h-7 sm:h-10 w-auto flex-shrink-0" />
+          <Image src={CartSenseLogo} alt="CartSense - Turn Meal Ideas into a Full Grocery Cart" className="h-7 sm:h-10 w-auto flex-shrink-0" />
           <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-600">
             <a href="#how-it-works" className="hover:text-[#4A90E2] transition-colors">How It Works</a>
             <a href="#features" className="hover:text-[#4A90E2] transition-colors">Features</a>
@@ -109,7 +110,7 @@ export default function Home() {
               {/* Left: Text Content */}
               <div className="text-center lg:text-left">
                 <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-bold text-gray-900 mb-4 sm:mb-6 leading-tight">
-                  Meals planned. Groceries added.{" "}
+                  Meals generated. Groceries added.{" "}
                   <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#4A90E2] to-[#357ABD]">
                     Done.
                   </span>
@@ -236,6 +237,19 @@ export default function Home() {
                 </div>
               </div>
             </div>
+          </div>
+        </section>
+
+        {/* Live Stats Section */}
+        <section className="px-4 sm:px-6 pt-16 sm:pt-20 pb-12 sm:pb-16 bg-white border-b border-gray-100">
+          <div className="max-w-3xl mx-auto">
+            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 mb-3 sm:mb-4 text-center">
+              Meals generated. Carts filled.
+            </h2>
+            <p className="text-base sm:text-lg text-gray-600 text-center mb-8 sm:mb-10">
+              See what CartSense users are cooking up.
+            </p>
+            <LiveStats />
           </div>
         </section>
 
@@ -426,7 +440,7 @@ export default function Home() {
           <div className="max-w-6xl mx-auto">
             <div className="text-center mb-8 sm:mb-12">
               <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
-                Finally, meal planning that actually plans.
+                From idea to cart. Instantly.
               </h2>
               <p className="text-base sm:text-lg text-gray-600">
                 Most apps stop at recipes.<br />
@@ -632,7 +646,7 @@ export default function Home() {
               Less thinking. More eating.
             </h2>
             <p className="text-base sm:text-lg text-gray-600 text-center mb-8 sm:mb-12">
-              Meals planned. Groceries added. Done.
+              Meals generated. Groceries added. Done.
             </p>
 
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
@@ -1111,15 +1125,15 @@ export default function Home() {
               For anyone who wants meals handled.
             </h2>
             <p className="text-base sm:text-lg text-gray-600 text-center mb-8 sm:mb-12">
-              Meals planned. Groceries added. Done.
+              Meals generated. Groceries added. Done.
             </p>
 
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
               {[
-                { icon: Baby, title: "Busy parents", desc: "No time to plan, no energy to decide. CartSense handles it." },
+                { icon: Baby, title: "Busy parents", desc: "No time to think, no energy to decide. CartSense handles it." },
                 { icon: Users, title: "Couples", desc: "End the \"what do you want?\" \"I don't know, what do you want?\" loop." },
                 { icon: User, title: "Solo cooks", desc: "Escape the same 3 meals on rotation. Discover new favorites." },
-                { icon: Clock, title: "Meal preppers", desc: "Plan your week in minutes. Groceries ready when you are." },
+                { icon: Clock, title: "Meal preppers", desc: "Generate your week in minutes. Groceries ready when you are." },
                 { icon: Wallet, title: "Budget-conscious", desc: "See real prices before you buy. No surprises at checkout." },
                 { icon: Utensils, title: "Picky households", desc: "Different preferences, one organized list. Everyone wins." },
               ].map((item, i) => (
@@ -1234,7 +1248,7 @@ export default function Home() {
             </div>
 
             <p className="text-center text-gray-600 mt-8 sm:mt-10 text-sm sm:text-base">
-              Meals planned. Groceries added. Relief delivered.
+              Meals generated. Groceries added. Relief delivered.
             </p>
           </div>
         </section>

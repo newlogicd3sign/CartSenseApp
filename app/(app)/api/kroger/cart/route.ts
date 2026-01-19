@@ -5,6 +5,7 @@ import { searchKrogerProduct, searchAlternativeProduct, getKrogerApiStatus, type
 import { isExcludedIngredient, calculateUnitsNeeded } from "@/lib/utils";
 import { KROGER_RATE_LIMITS } from "@/lib/product-engine/krogerConfig";
 import { addToPantry } from "@/lib/pantry";
+import { incrementKrogerMetric, trackUniqueKrogerUser } from "@/lib/krogerMetrics";
 
 const TOKEN_URL = process.env.KROGER_TOKEN_URL ?? "https://api-ce.kroger.com/v1/connect/oauth2/token";
 const API_BASE_URL = process.env.KROGER_API_BASE_URL ?? "https://api-ce.kroger.com/v1";
@@ -392,6 +393,24 @@ export async function POST(request: Request) {
         } catch (pantryErr) {
             console.error("Error saving to pantry:", pantryErr);
             // Don't fail the request - items were added to cart successfully
+        }
+
+        // Track Kroger metrics for partnership reporting
+        try {
+            // Calculate total items added (sum of all quantities)
+            const totalItemsCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
+
+            await Promise.all([
+                // Increment total add-to-cart clicks (once per button click)
+                incrementKrogerMetric("totalAddToKrogerClicks"),
+                // Increment total items added
+                incrementKrogerMetric("totalItemsAddedToCart", totalItemsCount),
+                // Track unique user (only increments on first add)
+                trackUniqueKrogerUser(userId, "addedToCart"),
+            ]);
+        } catch (metricsErr) {
+            console.error("Error tracking Kroger metrics:", metricsErr);
+            // Don't fail the request - metrics should not break the main flow
         }
 
         const alternativesUsed = foundItems.filter((item) => item.usedAlternative).length;

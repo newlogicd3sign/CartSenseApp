@@ -465,6 +465,18 @@ export default function ShoppingListPage() {
         }
     };
 
+    const trackGoToKroger = async () => {
+        if (!user) return;
+        try {
+            await authFetch("/api/kroger/track-click", {
+                method: "POST",
+            });
+        } catch (err) {
+            // Silently fail - tracking should not block navigation
+            console.error("Error tracking Go to Kroger click:", err);
+        }
+    };
+
     const handleRemoveItem = async (itemId: string) => {
         if (!user) return;
 
@@ -1335,6 +1347,7 @@ export default function ShoppingListPage() {
                                         href={storeBrand.cartUrl}
                                         target="_blank"
                                         rel="noopener noreferrer"
+                                        onClick={trackGoToKroger}
                                         className="flex-1 py-3 bg-[#0056a3] text-white rounded-xl font-medium text-center hover:bg-[#004080] transition-colors flex items-center justify-center gap-2"
                                     >
                                         <span>Go to {storeBrand.displayName}</span>
