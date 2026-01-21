@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Capacitor } from "@capacitor/core";
 import { auth } from "@/lib/firebaseClient";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -12,6 +13,7 @@ import { useToast } from "@/components/Toast";
 import { Button } from "@/components/Button";
 import { FormInput } from "@/components/FormInput";
 import { Card } from "@/components/Card";
+import { MobileWelcome } from "@/components/MobileWelcome";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -20,15 +22,38 @@ export default function LoginPage() {
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
+    const [showMobileWelcome, setShowMobileWelcome] = useState(false);
+    const [isNativeApp, setIsNativeApp] = useState(false);
+
+    const searchParams = useSearchParams();
+    const mode = searchParams.get("mode");
+
+    // Check if we should show mobile welcome screen
+    useEffect(() => {
+        // Check for Capacitor native bridge directly on window
+        const windowCapacitor = (window as any).Capacitor;
+        const isNative = windowCapacitor?.isNativePlatform?.() ?? false;
+
+        setIsNativeApp(isNative);
+
+        // Show welcome on native app unless user tapped "Sign In"
+        if (isNative && mode !== "signin") {
+            setShowMobileWelcome(true);
+        }
+    }, [mode]);
 
     // Persist shareId if present
-    const searchParams = useSearchParams();
     useEffect(() => {
         const shareId = searchParams.get("shareId");
         if (shareId) {
             localStorage.setItem("pendingShareId", shareId);
         }
     }, [searchParams]);
+
+    // Show mobile welcome carousel on native apps
+    if (showMobileWelcome) {
+        return <MobileWelcome />;
+    }
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -53,7 +78,7 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="min-h-screen bg-[#f8fafb] flex flex-col">
+        <div className="min-h-screen bg-[#f8fafb] flex flex-col safe-area-top">
             {/* Main Content */}
             <div className="flex-1 px-6 pt-12 lg:pt-16">
                 <div className="max-w-[428px] mx-auto">

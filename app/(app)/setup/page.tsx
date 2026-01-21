@@ -2,7 +2,14 @@
 
 import { Suspense, useEffect, useState, FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Browser } from "@capacitor/browser";
 import { auth, db } from "@/lib/firebaseClient";
+
+// Check if running in Capacitor
+const isCapacitor = () => {
+    if (typeof window === "undefined") return false;
+    return (window as any).Capacitor?.isNativePlatform?.() ?? false;
+};
 import { authFetch } from "@/lib/authFetch";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, setDoc, getDoc, collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
@@ -392,7 +399,12 @@ function SetupPageContent() {
             localStorage.setItem("pendingStoreData", JSON.stringify(selectedStore));
         }
         // Redirect to Kroger OAuth with return URL to setup
-        window.location.href = `/api/kroger/auth?userId=${user.uid}&returnTo=setup&step=7`;
+        const authUrl = `/api/kroger/auth?userId=${user.uid}&returnTo=setup&step=7${isCapacitor() ? '&mobile=true' : ''}`;
+        if (isCapacitor()) {
+            await Browser.open({ url: `${window.location.origin}${authUrl}` });
+        } else {
+            window.location.href = authUrl;
+        }
     };
 
     const handleSearchStoresByZip = async () => {

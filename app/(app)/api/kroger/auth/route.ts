@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
         const userId = searchParams.get("userId");
         const returnTo = searchParams.get("returnTo"); // Optional: "setup" or "account"
         const step = searchParams.get("step"); // Optional: step number for setup wizard
+        const mobile = searchParams.get("mobile"); // Optional: "true" for mobile app OAuth
 
         if (!userId) {
             return NextResponse.json(
@@ -45,12 +46,13 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // Build state payload with optional returnTo and step
+        // Build state payload with optional returnTo, step, and mobile flag
         const statePayload: {
             userId: string;
             nonce: string;
             returnTo?: string;
             step?: string;
+            mobile?: boolean;
         } = {
             userId,
             nonce: crypto.randomUUID(),
@@ -61,6 +63,9 @@ export async function GET(request: NextRequest) {
         }
         if (step) {
             statePayload.step = step;
+        }
+        if (mobile === "true") {
+            statePayload.mobile = true;
         }
 
         const state = Buffer.from(

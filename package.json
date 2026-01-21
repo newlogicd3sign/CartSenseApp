@@ -9,6 +9,13 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@capacitor/android": "^8.0.1",
+    "@capacitor/app": "^8.0.0",
+    "@capacitor/browser": "^8.0.0",
+    "@capacitor/cli": "^7.4.5",
+    "@capacitor/core": "^8.0.1",
+    "@capacitor/ios": "^8.0.1",
+    "@capacitor/status-bar": "^8.0.0",
     "@ducanh2912/next-pwa": "^10.2.9",
     "@react-email/components": "^1.0.2",
     "@react-email/render": "^1.4.0",

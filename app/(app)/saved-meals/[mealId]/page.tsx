@@ -1049,7 +1049,7 @@ export default function SavedMealDetailPage() {
     return (
         <div className="min-h-screen bg-[#f8fafb]">
             {/* Header with Back Button */}
-            <div className="bg-white border-b border-gray-100 px-6 py-4 sticky top-0 z-20">
+            <div className="bg-white border-b border-gray-100 px-6 pt-safe-4 pb-4 sticky sticky-safe z-20">
                 <div className="max-w-3xl mx-auto">
                     <button
                         onClick={() => router.push("/saved-meals")}

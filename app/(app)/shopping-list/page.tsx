@@ -2,8 +2,15 @@
 
 import Image from "next/image";
 import InstacartCarrot from "@/app/🥕 Instacart Logos/Logos - Carrot/RGB/PNG/Instacart_Carrot.png";
+import { Browser } from "@capacitor/browser";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+
+// Check if running in Capacitor
+const isCapacitor = () => {
+    if (typeof window === "undefined") return false;
+    return (window as any).Capacitor?.isNativePlatform?.() ?? false;
+};
 import { auth, db } from "@/lib/firebaseClient";
 import { authFetch } from "@/lib/authFetch";
 import { onAuthStateChanged, type User } from "firebase/auth";
@@ -865,8 +872,8 @@ export default function ShoppingListPage() {
 
     return (
         <div className="min-h-screen bg-[#f8fafb]">
-            {/* Header */}
-            <div className="bg-white border-b border-gray-100 px-6 py-6">
+            {/* Header - Sticky */}
+            <div className="bg-white border-b border-gray-100 px-6 pt-safe-6 pb-6 sticky sticky-safe z-20">
                 <div className="max-w-3xl mx-auto">
                     <div className="flex items-start justify-between gap-4">
                         <div className="flex items-center gap-3">
@@ -1798,9 +1805,14 @@ export default function ShoppingListPage() {
                                                 Link your account to add items directly to your cart and see real prices.
                                             </p>
                                             <button
-                                                onClick={() => {
+                                                onClick={async () => {
                                                     if (user) {
-                                                        window.location.href = `/api/kroger/auth?userId=${user.uid}`;
+                                                        const authUrl = `/api/kroger/auth?userId=${user.uid}${isCapacitor() ? '&mobile=true' : ''}`;
+                                                        if (isCapacitor()) {
+                                                            await Browser.open({ url: `${window.location.origin}${authUrl}` });
+                                                        } else {
+                                                            window.location.href = authUrl;
+                                                        }
                                                     }
                                                 }}
                                                 className="flex items-center gap-2 px-4 py-2.5 bg-[#0056a3] text-white rounded-xl text-sm font-medium hover:bg-[#004080] transition-colors"

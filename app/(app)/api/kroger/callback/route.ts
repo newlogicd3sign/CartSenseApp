@@ -39,10 +39,11 @@ export async function GET(request: Request) {
         );
     }
 
-    // Decode state to get userId and optional returnTo/step
+    // Decode state to get userId and optional returnTo/step/mobile
     let userId: string;
     let returnTo: string | undefined;
     let step: string | undefined;
+    let isMobile: boolean = false;
     try {
         const decoded = JSON.parse(
             Buffer.from(state, "base64url").toString("utf-8")
@@ -50,6 +51,7 @@ export async function GET(request: Request) {
         userId = decoded.userId;
         returnTo = decoded.returnTo;
         step = decoded.step;
+        isMobile = decoded.mobile === true;
     } catch (err) {
         console.error("Failed to decode state:", err);
         return NextResponse.redirect(
@@ -57,8 +59,17 @@ export async function GET(request: Request) {
         );
     }
 
-    // Helper to build redirect URL based on returnTo
+    // Helper to build redirect URL based on returnTo and mobile context
     const buildRedirectUrl = (params: string) => {
+        if (isMobile) {
+            // For mobile apps, use custom URL scheme to redirect back to the app
+            if (returnTo === "setup") {
+                const stepParam = step ? `&step=${step}` : "";
+                return new URL(`cartsense://setup?${params}${stepParam}`);
+            }
+            return new URL(`cartsense://account?${params}`);
+        }
+        // Web redirects
         if (returnTo === "setup") {
             const stepParam = step ? `&step=${step}` : "";
             return new URL(`/setup?${params}${stepParam}`, request.url);

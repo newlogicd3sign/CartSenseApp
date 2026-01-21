@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { App as CapApp, type URLOpenListenerEvent } from "@capacitor/app";
+import { Browser } from "@capacitor/browser";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
@@ -15,6 +17,12 @@ import CartSenseLogo from "@/app/CartSenseLogo.svg";
 import CartSenseProLogo from "@/app/CartSenseProLogo.svg";
 import { LoadingScreen } from "@/components/LoadingScreen";
 
+// Check if running in Capacitor
+const isCapacitor = () => {
+    if (typeof window === "undefined") return false;
+    return (window as any).Capacitor?.isNativePlatform?.() ?? false;
+};
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const router = useRouter();
@@ -25,6 +33,59 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const previousPathRef = useRef<string | null>(null);
     const [authChecked, setAuthChecked] = useState(false);
     const [isPremiumUser, setIsPremiumUser] = useState(false);
+    const [isNativeApp, setIsNativeApp] = useState(false);
+
+    // Check if running in Capacitor
+    useEffect(() => {
+        setIsNativeApp(isCapacitor());
+    }, []);
+
+    // Handle deep links (Universal Links and custom URL scheme) for Capacitor
+    useEffect(() => {
+        if (!isCapacitor()) return;
+
+        const handleAppUrlOpen = (event: URLOpenListenerEvent) => {
+            try {
+                const url = new URL(event.url);
+
+                // Handle custom URL scheme (cartsense://path?params)
+                if (url.protocol === "cartsense:") {
+                    // For custom scheme, host is the path (e.g., cartsense://account becomes host=account)
+                    const path = `/${url.host}${url.pathname}${url.search}`;
+
+                    // Close the browser that was opened for OAuth
+                    Browser.close().catch(() => {});
+
+                    // Navigate to the path
+                    router.push(path);
+                    return;
+                }
+
+                // Handle Universal Links (https://cartsenseapp.com/...)
+                const path = url.pathname + url.search;
+
+                // Handle Kroger OAuth callback
+                if (path.startsWith("/api/kroger/callback")) {
+                    const params = url.searchParams;
+                    if (params.get("kroger_linked") === "success") {
+                        router.push("/account?kroger_linked=success");
+                    } else if (params.has("kroger_error")) {
+                        router.push(`/account?kroger_error=${params.get("kroger_error")}`);
+                    }
+                } else {
+                    router.push(path);
+                }
+            } catch (err) {
+                console.error("Error handling deep link:", err);
+            }
+        };
+
+        CapApp.addListener("appUrlOpen", handleAppUrlOpen);
+
+        return () => {
+            CapApp.removeAllListeners();
+        };
+    }, [router]);
 
     // Check for authentication and email verification
     useEffect(() => {
@@ -169,10 +230,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         return <LoadingScreen />;
     }
 
+    const bgColor = isSetupPage ? "bg-white" : "bg-[#f8fafb]";
+
     return (
-        <div className={`relative w-full min-h-screen ${isSetupPage ? "bg-white" : "bg-[#f8fafb]"}`}>
+        <div className={`relative w-full min-h-screen ${bgColor}`}>
             {/* Mobile-first container with max-width for larger screens */}
-            <div className={`w-full max-w-[428px] mx-auto lg:max-w-4xl xl:max-w-5xl ${isSetupPage ? "bg-white" : "bg-[#f8fafb]"} min-h-screen relative`}>
+            <div className={`w-full max-w-[428px] mx-auto lg:max-w-4xl xl:max-w-5xl ${bgColor} min-h-screen relative`}>
                 {/* Desktop Header - Hidden on mobile and setup page */}
                 {navVisible && (
                     <header

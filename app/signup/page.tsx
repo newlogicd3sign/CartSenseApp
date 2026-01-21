@@ -23,6 +23,13 @@ export default function SignupPage() {
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const [showTermsReminder, setShowTermsReminder] = useState(false);
+    const [isNativeApp, setIsNativeApp] = useState(false);
+
+    // Check if running in Capacitor
+    useEffect(() => {
+        const windowCapacitor = (window as any).Capacitor;
+        setIsNativeApp(windowCapacitor?.isNativePlatform?.() ?? false);
+    }, []);
 
     // Password validation
     const passwordRules = {
@@ -102,7 +109,7 @@ export default function SignupPage() {
     };
 
     return (
-        <div className="min-h-screen bg-[#f8fafb] flex flex-col">
+        <div className="min-h-screen bg-[#f8fafb] flex flex-col safe-area-top">
             {/* Main Content */}
             <div className="flex-1 px-6 pt-12 lg:pt-16">
                 <div className="max-w-[428px] mx-auto">

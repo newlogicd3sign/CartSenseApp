@@ -15,6 +15,21 @@ const withPWA = withPWAInit({
 const nextConfig: NextConfig = {
   // Use webpack for build to support PWA service worker generation
   turbopack: {},
+
+  // Headers for Apple Universal Links
+  async headers() {
+    return [
+      {
+        source: '/.well-known/apple-app-site-association',
+        headers: [
+          {
+            key: 'Content-Type',
+            value: 'application/json',
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default withPWA(nextConfig);

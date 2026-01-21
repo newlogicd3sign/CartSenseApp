@@ -193,8 +193,8 @@ export default function FreshPicksPage() {
 
     return (
         <div className="min-h-screen bg-[#f8fafb]">
-            {/* Header */}
-            <div className="bg-white border-b border-gray-100 px-6 py-8">
+            {/* Header - Sticky */}
+            <div className="bg-white border-b border-gray-100 px-6 pt-safe-8 pb-8 sticky sticky-safe z-20">
                 <div className="max-w-3xl mx-auto">
                     <div className="flex items-center gap-3 mb-2">
                         <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-orange-500 rounded-xl flex items-center justify-center shadow-sm">
