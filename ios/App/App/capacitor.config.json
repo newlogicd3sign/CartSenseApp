@@ -1,0 +1,22 @@
+{
+	"appId": "com.cartsense.app",
+	"appName": "CartSense",
+	"webDir": "out",
+	"server": {
+		"url": "http://192.168.1.150:3000",
+		"cleartext": true
+	},
+	"ios": {
+		"contentInset": "automatic",
+		"allowsLinkPreview": false,
+		"scrollEnabled": true
+	},
+	"android": {
+		"allowMixedContent": false
+	},
+	"packageClassList": [
+		"AppPlugin",
+		"CAPBrowserPlugin",
+		"StatusBarPlugin"
+	]
+}

@@ -1,0 +1,17 @@
+{
+	"appId": "com.cartsense.app",
+	"appName": "CartSense",
+	"webDir": "out",
+	"server": {
+		"url": "https://cartsenseapp.com",
+		"cleartext": false
+	},
+	"ios": {
+		"contentInset": "automatic",
+		"allowsLinkPreview": false,
+		"scrollEnabled": true
+	},
+	"android": {
+		"allowMixedContent": false
+	}
+}
