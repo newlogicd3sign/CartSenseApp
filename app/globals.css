@@ -53,6 +53,9 @@
 
 html {
   -webkit-tap-highlight-color: transparent;
+  height: 100%;
+  overscroll-behavior: none;
+  background: var(--app-bg, #f8fafb);
 }
 
 body {
@@ -62,6 +65,16 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  height: 100%;
+  overflow-x: hidden;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Fixed height container for iOS - prevents viewport resize on scroll */
+.app-container {
+  min-height: 100dvh;
+  min-height: -webkit-fill-available;
 }
 
 /* Typography - DO NOT OVERRIDE */

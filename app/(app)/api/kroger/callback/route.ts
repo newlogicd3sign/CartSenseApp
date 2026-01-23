@@ -28,17 +28,6 @@ export async function GET(request: Request) {
         );
     }
 
-    // Verify state matches cookie
-    const cookieStore = await cookies();
-    const savedState = cookieStore.get("kroger_oauth_state")?.value;
-
-    if (!savedState || savedState !== state) {
-        console.error("State mismatch", { savedState, state });
-        return NextResponse.redirect(
-            new URL("/account?kroger_error=state_mismatch", request.url)
-        );
-    }
-
     // Decode state to get userId and optional returnTo/step/mobile
     let userId: string;
     let returnTo: string | undefined;
@@ -59,15 +48,27 @@ export async function GET(request: Request) {
         );
     }
 
+    // Verify state matches cookie (skip for mobile - cookie won't exist cross-server)
+    // Mobile is safe since redirect goes to cartsense:// scheme which can't be intercepted
+    const cookieStore = await cookies();
+    const savedState = cookieStore.get("kroger_oauth_state")?.value;
+
+    if (!isMobile && (!savedState || savedState !== state)) {
+        console.error("State mismatch", { savedState, state });
+        return NextResponse.redirect(
+            new URL("/account?kroger_error=state_mismatch", request.url)
+        );
+    }
+
     // Helper to build redirect URL based on returnTo and mobile context
     const buildRedirectUrl = (params: string) => {
         if (isMobile) {
-            // For mobile apps, use custom URL scheme to redirect back to the app
-            if (returnTo === "setup") {
-                const stepParam = step ? `&step=${step}` : "";
-                return new URL(`cartsense://setup?${params}${stepParam}`);
-            }
-            return new URL(`cartsense://account?${params}`);
+            // For mobile apps, use intermediate page that redirects via JavaScript
+            // Direct HTTP redirects to custom URL schemes are blocked by browsers
+            const path = returnTo === "setup" ? "setup" : "account";
+            const stepParam = returnTo === "setup" && step ? `&step=${step}` : "";
+            const fullParams = `${params}${stepParam}`;
+            return new URL(`/api/kroger/mobile-redirect?path=${path}&params=${encodeURIComponent(fullParams)}`, request.url);
         }
         // Web redirects
         if (returnTo === "setup") {

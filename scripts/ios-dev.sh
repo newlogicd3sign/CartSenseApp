@@ -1,3 +1,10 @@
+#!/bin/bash
+# Switch to LOCAL DEVELOPMENT mode
+
+echo "Switching to DEVELOPMENT mode..."
+
+# Update capacitor.config.ts
+cat > capacitor.config.ts << 'EOF'
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
@@ -22,3 +29,10 @@ const config: CapacitorConfig = {
 };
 
 export default config;
+EOF
+
+# Update Info.plist - enable local networking
+plutil -replace NSAppTransportSecurity -json '{"NSAllowsArbitraryLoads":true,"NSAllowsLocalNetworking":true}' ios/App/App/Info.plist
+
+echo "✅ Switched to DEV mode"
+echo "Run: npx cap sync ios && npx cap open ios"

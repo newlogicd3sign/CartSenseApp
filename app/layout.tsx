@@ -18,13 +18,13 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   viewportFit: "cover",
+  themeColor: "#4A90E2",
 };
 
 export const metadata: Metadata = {
   title: "CartSense | Recipe Generator to your Cart",
   description: "Turn AI-generated recipes into a full grocery cart in seconds.",
   manifest: "/manifest.json",
-  themeColor: "#4A90E2",
   keywords: ["meal planning", "grocery shopping", "AI meals", "recipe generator", "shopping list", "meal prep", "dinner ideas"],
   authors: [{ name: "CartSense" }],
   creator: "CartSense",

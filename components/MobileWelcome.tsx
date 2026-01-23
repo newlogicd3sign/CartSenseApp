@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ShoppingCart, Clock, Bookmark, Search, Check, Package } from "lucide-react";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
 import { Button } from "@/components/Button";
@@ -160,6 +160,7 @@ function PantryMockup() {
 }
 
 export function MobileWelcome() {
+  const router = useRouter();
   const [activeSlide, setActiveSlide] = useState(0);
   const [touchStart, setTouchStart] = useState(0);
   const [touchEnd, setTouchEnd] = useState(0);
@@ -273,16 +274,20 @@ export function MobileWelcome() {
 
       {/* Buttons */}
       <div className="px-6 pb-8 space-y-3 safe-area-bottom">
-        <Link href="/login?mode=signin" className="block">
-          <Button fullWidth size="lg" className="rounded-2xl py-4">
-            Sign In
-          </Button>
-        </Link>
-        <Link href="/signup" className="block">
-          <button className="w-full py-4 bg-white border-2 border-[#4A90E2] text-[#4A90E2] rounded-2xl font-medium hover:bg-[#4A90E2]/5 active:scale-[0.98] transition-all">
-            Create Account
-          </button>
-        </Link>
+        <Button
+          fullWidth
+          size="lg"
+          className="rounded-2xl py-4"
+          onClick={() => router.push("/login?mode=signin")}
+        >
+          Sign In
+        </Button>
+        <button
+          onClick={() => router.push("/signup")}
+          className="w-full py-4 bg-white border-2 border-[#4A90E2] text-[#4A90E2] rounded-2xl font-medium hover:bg-[#4A90E2]/5 active:scale-[0.98] transition-all"
+        >
+          Create Account
+        </button>
       </div>
     </div>
   );

@@ -61,6 +61,7 @@ import { normalizeIngredientKey } from "@/lib/ingredientNormalization";
 import { getEstimatedPrice } from "@/lib/priceEstimates";
 import { useToast } from "@/components/Toast";
 import { logCartRemoved, logCartAdded } from "@/lib/logFoodEvent";
+import { hapticSuccess, hapticError } from "@/lib/haptics";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { ConfirmationModal } from "@/components/ConfirmationModal";
@@ -394,14 +395,18 @@ export default function ShoppingListPage() {
                 if (data.error === "NOT_LINKED" || data.error === "TOKEN_EXPIRED") {
                     setKrogerLinkStatus("not_linked");
                     showToast(data.message || "Please link your Kroger account first.", "error");
+                    hapticError();
                 } else if (data.error === "NO_STORE") {
                     setKrogerLinkStatus("no_store");
                     showToast(data.message || "Please select a Kroger store first.", "error");
+                    hapticError();
                 } else {
                     showToast(data.message || "Failed to add items to Kroger cart.", "error");
+                    hapticError();
                 }
             } else {
                 showToast(data.message || "Items added to your Kroger cart!", "success");
+                hapticSuccess();
 
                 // Log food event for preference learning
                 logCartAdded(user.uid, "kroger").catch((err) => {
@@ -416,6 +421,7 @@ export default function ShoppingListPage() {
         } catch (err) {
             console.error("Error adding to Kroger cart:", err);
             showToast("Something went wrong. Please try again.", "error");
+            hapticError();
         } finally {
             setAddingToKroger(false);
         }
@@ -449,6 +455,7 @@ export default function ShoppingListPage() {
 
             if (!res.ok || !data.success) {
                 showToast(data.error || "Failed to generate Instacart link.", "error");
+                hapticError();
                 return;
             }
 
@@ -456,6 +463,7 @@ export default function ShoppingListPage() {
             if (data.url) {
                 window.open(data.url, "_blank", "noopener,noreferrer");
                 showToast(`Opening Instacart with ${data.itemCount} items...`, "success");
+                hapticSuccess();
 
                 // Log food event for preference learning
                 if (user) {
@@ -467,6 +475,7 @@ export default function ShoppingListPage() {
         } catch (err) {
             console.error("Error generating Instacart link:", err);
             showToast("Something went wrong. Please try again.", "error");
+            hapticError();
         } finally {
             setAddingToInstacart(false);
         }

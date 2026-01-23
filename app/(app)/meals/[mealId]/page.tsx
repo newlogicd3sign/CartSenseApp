@@ -26,6 +26,7 @@ import {
     logCartAdded,
     logProductSwapped,
 } from "@/lib/logFoodEvent";
+import { hapticSuccess, hapticMedium, hapticError } from "@/lib/haptics";
 import {
     loadGeneratedMeals,
     updateMealInStorage,
@@ -823,6 +824,7 @@ function MealDetailPageContent() {
             }
 
             showToast(toastMessage, "success");
+            hapticSuccess();
 
             // Log both events (legacy)
             logUserEvent(user.uid, {
@@ -853,6 +855,7 @@ function MealDetailPageContent() {
         } catch (err) {
             console.error("Error adding to shopping list", err);
             showToast("Something went wrong adding items to your list.", "error");
+            hapticError();
         } finally {
             setAddingToList(false);
         }
@@ -937,14 +940,18 @@ function MealDetailPageContent() {
                 if (data.error === "NOT_LINKED" || data.error === "TOKEN_EXPIRED") {
                     setKrogerConnected(false);
                     showToast(data.message || "Please link your Kroger account first.", "error");
+                    hapticError();
                 } else if (data.error === "NO_STORE") {
                     setKrogerStoreSet(false);
                     showToast(data.message || "Please select a Kroger store first.", "error");
+                    hapticError();
                 } else {
                     showToast(data.message || "Failed to add items to Kroger cart.", "error");
+                    hapticError();
                 }
             } else {
                 showToast(data.message || "Items added to your Kroger cart!", "success");
+                hapticSuccess();
 
                 // Also save the meal when adding to Kroger cart
                 if (!isMealAlreadySaved) {
@@ -984,6 +991,7 @@ function MealDetailPageContent() {
         } catch (err) {
             console.error("Error adding to Kroger cart:", err);
             showToast("Something went wrong. Please try again.", "error");
+            hapticError();
         } finally {
             setAddingToKrogerCart(false);
         }
@@ -1023,6 +1031,7 @@ function MealDetailPageContent() {
 
             if (!res.ok || !data.success) {
                 showToast(data.error || "Failed to generate Instacart link.", "error");
+                hapticError();
                 return;
             }
 
@@ -1030,6 +1039,7 @@ function MealDetailPageContent() {
             if (data.url) {
                 window.open(data.url, "_blank");
                 showToast("Opening Instacart...", "success");
+                hapticSuccess();
 
                 // Also save the meal when shopping with Instacart
                 if (!isMealAlreadySaved) {
@@ -1064,6 +1074,7 @@ function MealDetailPageContent() {
         } catch (err) {
             console.error("Error adding to Instacart:", err);
             showToast("Something went wrong. Please try again.", "error");
+            hapticError();
         } finally {
             setAddingToInstacart(false);
         }

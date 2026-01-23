@@ -5,7 +5,6 @@ import { Capacitor } from "@capacitor/core";
 import { auth } from "@/lib/firebaseClient";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import Image from "next/image";
 import { Mail, Lock, ArrowRight, Eye, EyeOff } from "lucide-react";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
@@ -37,9 +36,7 @@ export default function LoginPage() {
         setIsNativeApp(isNative);
 
         // Show welcome on native app unless user tapped "Sign In"
-        if (isNative && mode !== "signin") {
-            setShowMobileWelcome(true);
-        }
+        setShowMobileWelcome(isNative && mode !== "signin");
     }, [mode]);
 
     // Persist shareId if present
@@ -111,12 +108,12 @@ export default function LoginPage() {
                                     <label className="block text-sm font-medium text-gray-700">
                                         Password
                                     </label>
-                                    <Link
-                                        href="/forgot-password"
+                                    <button
+                                        onClick={() => router.push("/forgot-password")}
                                         className="text-sm text-[#4A90E2] hover:underline"
                                     >
                                         Forgot password?
-                                    </Link>
+                                    </button>
                                 </div>
                                 <div className="relative">
                                     <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">
@@ -163,24 +160,24 @@ export default function LoginPage() {
                         </div>
 
                         {/* Sign Up Link */}
-                        <Link
-                            href="/signup"
+                        <button
+                            onClick={() => router.push("/signup")}
                             className="w-full py-3 bg-white border-2 border-[#4A90E2] text-[#4A90E2] rounded-xl flex items-center justify-center gap-2 hover:bg-[#4A90E2]/5 active:scale-[0.98] transition-all"
                         >
                             <span className="font-medium">Create an Account</span>
-                        </Link>
+                        </button>
                     </Card>
 
                     {/* Footer Text */}
                     <p className="text-center text-sm text-gray-400 mt-6 px-4">
                         By signing in, you agree to our{" "}
-                        <Link href="/terms" className="text-[#4A90E2] hover:underline">
+                        <button onClick={() => router.push("/terms")} className="text-[#4A90E2] hover:underline">
                             Terms & Conditions
-                        </Link>{" "}
+                        </button>{" "}
                         and{" "}
-                        <Link href="/privacy-policy" className="text-[#4A90E2] hover:underline">
+                        <button onClick={() => router.push("/privacy-policy")} className="text-[#4A90E2] hover:underline">
                             Privacy Policy
-                        </Link>
+                        </button>
                     </p>
                 </div>
             </div>

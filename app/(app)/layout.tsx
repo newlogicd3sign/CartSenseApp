@@ -35,7 +35,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const [isPremiumUser, setIsPremiumUser] = useState(false);
     const [isNativeApp, setIsNativeApp] = useState(false);
 
-    // Check if running in Capacitor
+    // Detect Capacitor on mount
     useEffect(() => {
         setIsNativeApp(isCapacitor());
     }, []);
@@ -232,10 +232,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     const bgColor = isSetupPage ? "bg-white" : "bg-[#f8fafb]";
 
+    const containerClass = isNativeApp ? "app-container" : "min-h-screen";
+
     return (
-        <div className={`relative w-full min-h-screen ${bgColor}`}>
+        <div className={`relative w-full ${containerClass} ${bgColor}`}>
             {/* Mobile-first container with max-width for larger screens */}
-            <div className={`w-full max-w-[428px] mx-auto lg:max-w-4xl xl:max-w-5xl ${bgColor} min-h-screen relative`}>
+            <div className={`w-full max-w-[428px] mx-auto lg:max-w-4xl xl:max-w-5xl ${bgColor} ${containerClass} relative`}>
                 {/* Desktop Header - Hidden on mobile and setup page */}
                 {navVisible && (
                     <header
@@ -305,21 +307,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                             }`}
                     >
                         <div className="max-w-[428px] mx-auto bg-white border-t border-gray-100 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] safe-area-bottom">
-                            <div className="grid grid-cols-5 gap-2 px-4 py-2">
+                            <div className={`grid grid-cols-5 ${isNativeApp ? "gap-0 px-1 py-1" : "gap-1 px-2 py-2"}`}>
                                 {navItems.map((item) => {
                                     const Icon = item.icon;
                                     const active = isActive(item.href);
                                     const itemColor = navColors[item.href]?.primary || accentColor.primary;
                                     const isSearchItem = item.href === "/prompt";
+                                    const navItemClass = isNativeApp ? "flex flex-col items-center gap-0.5 py-1" : "flex flex-col items-center gap-1 py-2";
+                                    const iconContainerClass = isNativeApp ? "w-8 h-8 flex items-center justify-center rounded-lg transition-colors" : "w-9 h-9 flex items-center justify-center rounded-xl transition-colors";
 
                                     return isSearchItem ? (
                                         <button
                                             key={item.href}
                                             onClick={handleSearchNav}
-                                            className="flex flex-col items-center gap-1 py-2"
+                                            className={navItemClass}
                                         >
                                             <div
-                                                className="w-10 h-10 flex items-center justify-center rounded-xl transition-colors"
+                                                className={iconContainerClass}
                                                 style={active ? { backgroundColor: `${itemColor}15` } : undefined}
                                             >
                                                 <Icon
@@ -328,7 +332,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                                 />
                                             </div>
                                             <span
-                                                className={`text-xs transition-colors ${active ? "font-medium" : ""}`}
+                                                className={`text-[10px] transition-colors truncate max-w-full ${active ? "font-medium" : ""}`}
                                                 style={{ color: active ? itemColor : "#6b7280" }}
                                             >
                                                 {item.label}
@@ -338,10 +342,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                         <Link
                                             key={item.href}
                                             href={item.href}
-                                            className="flex flex-col items-center gap-1 py-2"
+                                            className={navItemClass}
                                         >
                                             <div
-                                                className="w-10 h-10 flex items-center justify-center rounded-xl transition-colors"
+                                                className={iconContainerClass}
                                                 style={active ? { backgroundColor: `${itemColor}15` } : undefined}
                                             >
                                                 <Icon
@@ -350,7 +354,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                                 />
                                             </div>
                                             <span
-                                                className={`text-xs transition-colors ${active ? "font-medium" : ""}`}
+                                                className={`text-[10px] transition-colors truncate max-w-full ${active ? "font-medium" : ""}`}
                                                 style={{ color: active ? itemColor : "#6b7280" }}
                                             >
                                                 {item.label}
