@@ -20,7 +20,6 @@ const config: CapacitorConfig = {
     allowsLinkPreview: false,
     scrollEnabled: true,
     backgroundColor: '#f8fafb',
-    overrideUserInterfaceStyle: 'light',
   },
   android: {
     allowMixedContent: false,
