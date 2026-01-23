@@ -220,6 +220,22 @@ export const dislikeKeywordExpansions: Record<string, { keywords: string[], excl
     "tomatoes": {
         keywords: ["tomato", "tomatoes", "fresh tomato", "sliced tomato", "diced tomato", "cherry tomato"],
         exclude: ["tomato sauce", "tomato paste", "ketchup", "marinara", "tomato powder"]
+    },
+    "olive": {
+        keywords: ["olive", "olives", "kalamata", "kalamata olive", "kalamata olives", "black olive", "black olives", "green olive", "green olives", "stuffed olive", "stuffed olives", "olive tapenade", "tapenade"],
+        exclude: ["olive oil", "extra virgin olive oil"]
+    },
+    "olives": {
+        keywords: ["olive", "olives", "kalamata", "kalamata olive", "kalamata olives", "black olive", "black olives", "green olive", "green olives", "stuffed olive", "stuffed olives", "olive tapenade", "tapenade"],
+        exclude: ["olive oil", "extra virgin olive oil"]
+    },
+    "pickle": {
+        keywords: ["pickle", "pickles", "dill pickle", "dill pickles", "cornichon", "cornichons", "gherkin", "gherkins", "bread and butter pickle"],
+        exclude: ["pickle juice", "pickling spice"]
+    },
+    "pickles": {
+        keywords: ["pickle", "pickles", "dill pickle", "dill pickles", "cornichon", "cornichons", "gherkin", "gherkins", "bread and butter pickle"],
+        exclude: ["pickle juice", "pickling spice"]
     }
 };
 

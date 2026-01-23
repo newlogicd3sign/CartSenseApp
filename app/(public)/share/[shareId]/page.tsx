@@ -13,12 +13,17 @@ import { Metadata } from "next";
 
 async function getSharedMeal(shareId: string) {
     try {
+        console.log("[Share] Fetching shared meal:", shareId);
         const docSnap = await adminDb.collection("sharedMeals").doc(shareId).get();
+        console.log("[Share] Doc exists:", docSnap.exists);
         if (!docSnap.exists) return null;
-        return { id: docSnap.id, ...docSnap.data() };
+        const data = docSnap.data();
+        console.log("[Share] Doc data keys:", data ? Object.keys(data) : "no data");
+        return { id: docSnap.id, ...data };
     } catch (e) {
-        console.error("Error fetching shared meal:", e);
-        return null;
+        console.error("[Share] Error fetching shared meal:", e);
+        // Re-throw so we can see the actual error
+        throw e;
     }
 }
 

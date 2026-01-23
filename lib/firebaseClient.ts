@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, indexedDBLocalPersistence, browserLocalPersistence, setPersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getFunctions } from "firebase/functions";
 
@@ -15,6 +15,16 @@ const firebaseConfig = {
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
 export const auth = getAuth(app);
+
+// Explicitly set persistence for Capacitor WebView compatibility
+// Try indexedDB first (most reliable), fall back to localStorage
+if (typeof window !== "undefined") {
+    setPersistence(auth, indexedDBLocalPersistence).catch(() => {
+        // Fallback to browserLocalPersistence if indexedDB fails
+        setPersistence(auth, browserLocalPersistence).catch(console.error);
+    });
+}
+
 export const db = getFirestore(app);
 export const functions = getFunctions(app);
 export { app };

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Browser } from "@capacitor/browser";
 import { auth } from "@/lib/firebaseClient";
 import { authFetch } from "@/lib/authFetch";
 import { onAuthStateChanged } from "firebase/auth";
@@ -15,8 +16,15 @@ import {
     Zap,
     ArrowLeft,
     Users,
+    ExternalLink,
 } from "lucide-react";
 import { getRandomAccentColor } from "@/lib/utils";
+
+// Check if running in Capacitor native app
+const isCapacitor = () => {
+    if (typeof window === "undefined") return false;
+    return (window as any).Capacitor?.isNativePlatform?.() ?? false;
+};
 
 type PlanType = "individual" | "family";
 type BillingCycle = "yearly" | "monthly";
@@ -80,13 +88,23 @@ export default function UpgradePage() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [loading, setLoading] = useState(false);
-    const [selectedPlan, setSelectedPlan] = useState<PlanType>("individual");
-    const [billingCycle, setBillingCycle] = useState<BillingCycle>("yearly");
+    // Read query params (set when redirected from native app)
+    const planParam = searchParams.get("plan") as PlanType | null;
+    const cycleParam = searchParams.get("cycle") as BillingCycle | null;
+
+    const [selectedPlan, setSelectedPlan] = useState<PlanType>(planParam || "individual");
+    const [billingCycle, setBillingCycle] = useState<BillingCycle>(cycleParam || "yearly");
     const [user, setUser] = useState<{ uid: string; email: string | null } | null>(null);
+    const [isNativeApp, setIsNativeApp] = useState(false);
     const canceled = searchParams.get("canceled") === "true";
 
     // Random color for back button
     const backButtonColor = useMemo(() => getRandomAccentColor(), []);
+
+    // Detect native app on mount
+    useEffect(() => {
+        setIsNativeApp(isCapacitor());
+    }, []);
 
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, (firebaseUser) => {
@@ -99,6 +117,20 @@ export default function UpgradePage() {
 
     const handleUpgrade = async () => {
         if (!user?.email) return;
+
+        // For native iOS app, open website in external browser to handle payment
+        // This avoids Apple's 30% IAP fee for subscriptions
+        if (isNativeApp) {
+            try {
+                await Browser.open({
+                    url: `https://cartsenseapp.com/upgrade?email=${encodeURIComponent(user.email)}&plan=${selectedPlan}&cycle=${billingCycle}`,
+                    presentationStyle: 'popover'
+                });
+            } catch (error) {
+                console.error("Failed to open browser:", error);
+            }
+            return;
+        }
 
         setLoading(true);
         try {
@@ -303,6 +335,11 @@ export default function UpgradePage() {
                             <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                             <span>Loading...</span>
                         </>
+                    ) : isNativeApp ? (
+                        <>
+                            <ExternalLink className="w-5 h-5" />
+                            <span>Continue on Web</span>
+                        </>
                     ) : (
                         <>
                             <Sparkles className="w-5 h-5" />
@@ -313,9 +350,15 @@ export default function UpgradePage() {
 
                 {/* Trust signals */}
                 <div className="mt-6 text-center">
-                    <p className="text-xs text-gray-400">
-                        Secure payment powered by Stripe
-                    </p>
+                    {isNativeApp ? (
+                        <p className="text-xs text-gray-400">
+                            You&apos;ll be redirected to our website to complete your purchase securely
+                        </p>
+                    ) : (
+                        <p className="text-xs text-gray-400">
+                            Secure payment powered by Stripe
+                        </p>
+                    )}
                 </div>
             </div>
         </div>

@@ -63,5 +63,11 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>CartSense needs camera access to scan receipts and take photos of ingredients.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>CartSense needs photo library access to select images of recipes or ingredients.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>CartSense needs permission to save images to your photo library.</string>
 </dict>
 </plist>
