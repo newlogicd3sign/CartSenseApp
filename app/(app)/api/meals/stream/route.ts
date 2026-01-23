@@ -946,14 +946,18 @@ function buildSystemPrompt(prompt: string, restrictions: CombinedDietaryRestrict
     const dislikesGuidance = restrictions.combinedDislikes.length > 0
         ? `\n🔸 IMPORTANT - DISLIKES AND VARIANTS:\n
 The user has dislike restrictions for: ${restrictions.combinedDislikes.join(", ")}.
-You must STRICTLY AVOID all whole, raw, chopped, slices, or chunky forms of these ingredients, INCLUDING ALL VARIANTS.
+You must STRICTLY AVOID all whole, raw, chopped, slices, or chunky forms of these ingredients, INCLUDING ALL VARIANTS AND TYPES.
 - "Tomatoes" disliked → AVOID cherry tomatoes, grape tomatoes, roma tomatoes, diced tomatoes, sun-dried tomatoes. (Smooth tomato sauce/paste is OK).
 - "Mushrooms" disliked → AVOID all varieties (cremini, shiitake, portobello). (Mushroom powder/broth is OK).
 - "Onions" disliked → AVOID red onion, white onion, shallots, scallions, leeks. (Onion powder is OK).
 - "Peppers" disliked → AVOID bell peppers, jalapeños, habaneros, chili peppers. (Paprika/chili powder/hot sauce is OK).
 - "Potatoes" disliked → AVOID sweet potatoes, russet potatoes, red potatoes.
+- "Olives" disliked → AVOID kalamata olives, black olives, green olives, stuffed olives, olive tapenade. (Olive oil is OK).
+- "Pickles" disliked → AVOID dill pickles, bread and butter pickles, cornichons, pickled vegetables.
 
-RULE: If the disliked item introduces TEXTURE or VISIBLE PIECES, it is BANNED. Only smooth, indistinguishable processed forms (sauces, powders) are allowed.\n`
+CRITICAL: For ANY disliked food, you must avoid ALL varieties, types, colors, and preparations of that food. If someone dislikes "olives", that means ALL olives including kalamata, black, green, etc.
+
+RULE: If the disliked item introduces TEXTURE or VISIBLE PIECES, it is BANNED. Only smooth, indistinguishable processed forms (sauces, powders, oils) are allowed.\n`
         : "";
 
     const restrictionsText = restrictionParts.length > 0

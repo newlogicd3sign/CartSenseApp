@@ -5,11 +5,21 @@ import admin from "firebase-admin";
 if (!admin.apps.length) {
     const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
     const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-    // Handle various formats of the private key from different environments
+
+    // Handle private key - support both direct and Base64-encoded formats
     let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+    const privateKeyBase64 = process.env.FIREBASE_PRIVATE_KEY_BASE64;
+
+    if (privateKeyBase64) {
+        // Decode Base64-encoded key (avoids Vercel escaping issues)
+        privateKey = Buffer.from(privateKeyBase64, 'base64').toString('utf-8');
+    }
+
     if (privateKey) {
         // Replace literal \n strings with actual newlines
         privateKey = privateKey.split(String.raw`\n`).join('\n');
+        // Remove surrounding quotes if present
+        privateKey = privateKey.replace(/^["']|["']$/g, '');
     }
 
     if (clientEmail && privateKey && projectId) {

@@ -1,3 +1,5 @@
+"use client";
+
 import { type ReactNode } from "react";
 import { Flame, Beef, Wheat, Droplet, ChevronRight, Clock, Bean } from "lucide-react";
 import { MealImage } from "./MealImage";
