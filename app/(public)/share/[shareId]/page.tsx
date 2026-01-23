@@ -104,8 +104,6 @@ export default async function SharedMealPage({ params }: { params: Promise<{ sha
                                     id="preview"
                                     {...mealData}
                                     dietBadges={getCompliantDiets(mealData.ingredients)}
-                                    // Disable interactions for preview
-                                    onClick={() => { }}
                                     actionButton={null}
                                 />
                                 <div className="mt-4 p-4 bg-gray-50 rounded-2xl flex items-start gap-3">

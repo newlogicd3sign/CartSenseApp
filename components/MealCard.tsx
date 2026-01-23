@@ -23,7 +23,7 @@ interface MealCardProps {
         min: number;
         max: number;
     };
-    onClick: () => void;
+    onClick?: () => void;
     badge?: ReactNode;
     actionButton?: ReactNode;
     bottomActions?: ReactNode;
@@ -77,7 +77,7 @@ export function MealCard({
                 {/* Thumbnail - Left */}
                 <div
                     onClick={onClick}
-                    className="w-20 h-20 rounded-xl overflow-hidden cursor-pointer flex-shrink-0"
+                    className={`w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 ${onClick ? 'cursor-pointer' : ''}`}
                 >
                     <MealImage
                         src={imageUrl}
@@ -120,7 +120,7 @@ export function MealCard({
                     )}
                     <h2
                         onClick={onClick}
-                        className="text-base font-medium text-gray-900 mb-1 cursor-pointer hover:text-[#4A90E2] transition-colors"
+                        className={`text-base font-medium text-gray-900 mb-1 ${onClick ? 'cursor-pointer hover:text-[#4A90E2]' : ''} transition-colors`}
                     >
                         {name}
                     </h2>
@@ -152,16 +152,18 @@ export function MealCard({
                         </div>
                     </div>
 
-                    {/* Default View Button (Only if no bottom actions) */}
-                    {!bottomActions && (
+                    {/* Default View Button (Only if no bottom actions and onClick provided) */}
+                    {!bottomActions && (onClick || inlineActions) && (
                         <div className="mt-3 flex items-center gap-2">
-                            <button
-                                onClick={onClick}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#4A90E2]/10 text-[#4A90E2] text-xs font-medium rounded-lg hover:bg-[#4A90E2]/20 transition-colors w-fit whitespace-nowrap"
-                            >
-                                <span>View</span>
-                                <ChevronRight className="w-4 h-4" />
-                            </button>
+                            {onClick && (
+                                <button
+                                    onClick={onClick}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#4A90E2]/10 text-[#4A90E2] text-xs font-medium rounded-lg hover:bg-[#4A90E2]/20 transition-colors w-fit whitespace-nowrap"
+                                >
+                                    <span>View</span>
+                                    <ChevronRight className="w-4 h-4" />
+                                </button>
+                            )}
                             {inlineActions}
                         </div>
                     )}
