@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { Browser } from "@capacitor/browser";
 import InstacartCarrot from "@/app/🥕 Instacart Logos/Logos - Carrot/RGB/PNG/Instacart_Carrot.png";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -169,6 +170,12 @@ type KrogerLocationSearchResult = {
     city: string;
     state: string;
     zipCode: string;
+};
+
+// Check if running in Capacitor
+const isCapacitor = () => {
+    if (typeof window === "undefined") return false;
+    return (window as any).Capacitor?.isNativePlatform?.() ?? false;
 };
 
 function AccountPageContent() {
@@ -1186,8 +1193,8 @@ function AccountPageContent() {
 
     return (
         <div className="min-h-screen bg-[#f8fafb]">
-            {/* Header */}
-            <div className="bg-white border-b border-gray-100 px-6 py-6">
+            {/* Header - Sticky */}
+            <div className="bg-white border-b border-gray-100 px-6 pt-safe-6 pb-6 sticky sticky-safe z-20">
                 <div className="max-w-3xl mx-auto">
                     <div className="flex items-center gap-3">
                         <div className="w-12 h-12 bg-gradient-to-br from-[#4A90E2] to-[#357ABD] rounded-full flex items-center justify-center shadow-sm">
@@ -2060,9 +2067,15 @@ function AccountPageContent() {
                                             </button>
                                         ) : (
                                             <button
-                                                onClick={() => {
+                                                onClick={async () => {
                                                     if (user) {
-                                                        window.location.href = `/api/kroger/auth?userId=${user.uid}`;
+                                                        const authUrl = `/api/kroger/auth?userId=${user.uid}${isCapacitor() ? '&mobile=true' : ''}`;
+                                                        if (isCapacitor()) {
+                                                            // On mobile, open in system browser so OAuth redirect works
+                                                            await Browser.open({ url: `${window.location.origin}${authUrl}` });
+                                                        } else {
+                                                            window.location.href = authUrl;
+                                                        }
                                                     }
                                                 }}
                                                 className="px-3 py-1.5 bg-[#0056a3] text-white rounded-lg text-xs font-medium hover:bg-[#004080] transition-colors"

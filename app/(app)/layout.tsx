@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { App as CapApp, type URLOpenListenerEvent } from "@capacitor/app";
+import { Browser } from "@capacitor/browser";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
@@ -15,6 +17,12 @@ import CartSenseLogo from "@/app/CartSenseLogo.svg";
 import CartSenseProLogo from "@/app/CartSenseProLogo.svg";
 import { LoadingScreen } from "@/components/LoadingScreen";
 
+// Check if running in Capacitor
+const isCapacitor = () => {
+    if (typeof window === "undefined") return false;
+    return (window as any).Capacitor?.isNativePlatform?.() ?? false;
+};
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const router = useRouter();
@@ -25,6 +33,59 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const previousPathRef = useRef<string | null>(null);
     const [authChecked, setAuthChecked] = useState(false);
     const [isPremiumUser, setIsPremiumUser] = useState(false);
+    const [isNativeApp, setIsNativeApp] = useState(false);
+
+    // Detect Capacitor on mount
+    useEffect(() => {
+        setIsNativeApp(isCapacitor());
+    }, []);
+
+    // Handle deep links (Universal Links and custom URL scheme) for Capacitor
+    useEffect(() => {
+        if (!isCapacitor()) return;
+
+        const handleAppUrlOpen = (event: URLOpenListenerEvent) => {
+            try {
+                const url = new URL(event.url);
+
+                // Handle custom URL scheme (cartsense://path?params)
+                if (url.protocol === "cartsense:") {
+                    // For custom scheme, host is the path (e.g., cartsense://account becomes host=account)
+                    const path = `/${url.host}${url.pathname}${url.search}`;
+
+                    // Close the browser that was opened for OAuth
+                    Browser.close().catch(() => {});
+
+                    // Navigate to the path
+                    router.push(path);
+                    return;
+                }
+
+                // Handle Universal Links (https://cartsenseapp.com/...)
+                const path = url.pathname + url.search;
+
+                // Handle Kroger OAuth callback
+                if (path.startsWith("/api/kroger/callback")) {
+                    const params = url.searchParams;
+                    if (params.get("kroger_linked") === "success") {
+                        router.push("/account?kroger_linked=success");
+                    } else if (params.has("kroger_error")) {
+                        router.push(`/account?kroger_error=${params.get("kroger_error")}`);
+                    }
+                } else {
+                    router.push(path);
+                }
+            } catch (err) {
+                console.error("Error handling deep link:", err);
+            }
+        };
+
+        CapApp.addListener("appUrlOpen", handleAppUrlOpen);
+
+        return () => {
+            CapApp.removeAllListeners();
+        };
+    }, [router]);
 
     // Check for authentication and email verification
     useEffect(() => {
@@ -169,10 +230,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         return <LoadingScreen />;
     }
 
+    const bgColor = isSetupPage ? "bg-white" : "bg-[#f8fafb]";
+
+    const containerClass = isNativeApp ? "app-container" : "min-h-screen";
+
     return (
-        <div className={`relative w-full min-h-screen ${isSetupPage ? "bg-white" : "bg-[#f8fafb]"}`}>
+        <div className={`relative w-full ${containerClass} ${bgColor}`}>
             {/* Mobile-first container with max-width for larger screens */}
-            <div className={`w-full max-w-[428px] mx-auto lg:max-w-4xl xl:max-w-5xl ${isSetupPage ? "bg-white" : "bg-[#f8fafb]"} min-h-screen relative`}>
+            <div className={`w-full max-w-[428px] mx-auto lg:max-w-4xl xl:max-w-5xl ${bgColor} ${containerClass} relative`}>
                 {/* Desktop Header - Hidden on mobile and setup page */}
                 {navVisible && (
                     <header
@@ -242,21 +307,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                             }`}
                     >
                         <div className="max-w-[428px] mx-auto bg-white border-t border-gray-100 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] safe-area-bottom">
-                            <div className="grid grid-cols-5 gap-2 px-4 py-2">
+                            <div className={`grid grid-cols-5 ${isNativeApp ? "gap-0 px-1 py-1" : "gap-1 px-2 py-2"}`}>
                                 {navItems.map((item) => {
                                     const Icon = item.icon;
                                     const active = isActive(item.href);
                                     const itemColor = navColors[item.href]?.primary || accentColor.primary;
                                     const isSearchItem = item.href === "/prompt";
+                                    const navItemClass = isNativeApp ? "flex flex-col items-center gap-0.5 py-1" : "flex flex-col items-center gap-1 py-2";
+                                    const iconContainerClass = isNativeApp ? "w-8 h-8 flex items-center justify-center rounded-lg transition-colors" : "w-9 h-9 flex items-center justify-center rounded-xl transition-colors";
 
                                     return isSearchItem ? (
                                         <button
                                             key={item.href}
                                             onClick={handleSearchNav}
-                                            className="flex flex-col items-center gap-1 py-2"
+                                            className={navItemClass}
                                         >
                                             <div
-                                                className="w-10 h-10 flex items-center justify-center rounded-xl transition-colors"
+                                                className={iconContainerClass}
                                                 style={active ? { backgroundColor: `${itemColor}15` } : undefined}
                                             >
                                                 <Icon
@@ -265,7 +332,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                                 />
                                             </div>
                                             <span
-                                                className={`text-xs transition-colors ${active ? "font-medium" : ""}`}
+                                                className={`text-[10px] transition-colors truncate max-w-full ${active ? "font-medium" : ""}`}
                                                 style={{ color: active ? itemColor : "#6b7280" }}
                                             >
                                                 {item.label}
@@ -275,10 +342,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                         <Link
                                             key={item.href}
                                             href={item.href}
-                                            className="flex flex-col items-center gap-1 py-2"
+                                            className={navItemClass}
                                         >
                                             <div
-                                                className="w-10 h-10 flex items-center justify-center rounded-xl transition-colors"
+                                                className={iconContainerClass}
                                                 style={active ? { backgroundColor: `${itemColor}15` } : undefined}
                                             >
                                                 <Icon
@@ -287,7 +354,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                                 />
                                             </div>
                                             <span
-                                                className={`text-xs transition-colors ${active ? "font-medium" : ""}`}
+                                                className={`text-[10px] transition-colors truncate max-w-full ${active ? "font-medium" : ""}`}
                                                 style={{ color: active ? itemColor : "#6b7280" }}
                                             >
                                                 {item.label}

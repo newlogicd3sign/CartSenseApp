@@ -53,6 +53,9 @@
 
 html {
   -webkit-tap-highlight-color: transparent;
+  height: 100%;
+  overscroll-behavior: none;
+  background: var(--app-bg, #f8fafb);
 }
 
 body {
@@ -62,6 +65,16 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  height: 100%;
+  overflow-x: hidden;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Fixed height container for iOS - prevents viewport resize on scroll */
+.app-container {
+  min-height: 100dvh;
+  min-height: -webkit-fill-available;
 }
 
 /* Typography - DO NOT OVERRIDE */
@@ -326,11 +339,55 @@ input, textarea, select {
   font-size: 1rem;
 }
 
-/* Safe area padding for iOS */
-@supports (padding-bottom: env(safe-area-inset-bottom)) {
-  .safe-area-bottom {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
+/* Safe area padding for iOS / Capacitor */
+.safe-area-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Sticky header that accounts for safe area */
+/* Use: sticky sticky-safe z-20 pt-[calc(env(safe-area-inset-top)+1.5rem)] */
+.sticky-safe {
+  top: 0;
+}
+
+/* Utility classes for headers with safe area */
+.pt-safe-6 {
+  padding-top: calc(env(safe-area-inset-top, 0px) + 1.5rem);
+}
+.pt-safe-4 {
+  padding-top: calc(env(safe-area-inset-top, 0px) + 1rem);
+}
+.pt-safe-8 {
+  padding-top: calc(env(safe-area-inset-top, 0px) + 2rem);
+}
+
+.safe-area-inset {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* Fixed status bar background for Capacitor - prevents content scrolling under notch */
+.capacitor-status-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: env(safe-area-inset-top);
+  background: inherit;
+  z-index: 9999;
+}
+
+/* Main content wrapper that accounts for status bar */
+.capacitor-content {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  min-height: 100vh;
 }
 
 /* Utility classes */

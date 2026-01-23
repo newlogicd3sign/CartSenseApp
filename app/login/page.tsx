@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Capacitor } from "@capacitor/core";
 import { auth } from "@/lib/firebaseClient";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import Image from "next/image";
 import { Mail, Lock, ArrowRight, Eye, EyeOff } from "lucide-react";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
@@ -12,6 +12,7 @@ import { useToast } from "@/components/Toast";
 import { Button } from "@/components/Button";
 import { FormInput } from "@/components/FormInput";
 import { Card } from "@/components/Card";
+import { MobileWelcome } from "@/components/MobileWelcome";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -20,15 +21,36 @@ export default function LoginPage() {
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
+    const [showMobileWelcome, setShowMobileWelcome] = useState(false);
+    const [isNativeApp, setIsNativeApp] = useState(false);
+
+    const searchParams = useSearchParams();
+    const mode = searchParams.get("mode");
+
+    // Check if we should show mobile welcome screen
+    useEffect(() => {
+        // Check for Capacitor native bridge directly on window
+        const windowCapacitor = (window as any).Capacitor;
+        const isNative = windowCapacitor?.isNativePlatform?.() ?? false;
+
+        setIsNativeApp(isNative);
+
+        // Show welcome on native app unless user tapped "Sign In"
+        setShowMobileWelcome(isNative && mode !== "signin");
+    }, [mode]);
 
     // Persist shareId if present
-    const searchParams = useSearchParams();
     useEffect(() => {
         const shareId = searchParams.get("shareId");
         if (shareId) {
             localStorage.setItem("pendingShareId", shareId);
         }
     }, [searchParams]);
+
+    // Show mobile welcome carousel on native apps
+    if (showMobileWelcome) {
+        return <MobileWelcome />;
+    }
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -53,7 +75,7 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="min-h-screen bg-[#f8fafb] flex flex-col">
+        <div className="min-h-screen bg-[#f8fafb] flex flex-col safe-area-top">
             {/* Main Content */}
             <div className="flex-1 px-6 pt-12 lg:pt-16">
                 <div className="max-w-[428px] mx-auto">
@@ -86,12 +108,12 @@ export default function LoginPage() {
                                     <label className="block text-sm font-medium text-gray-700">
                                         Password
                                     </label>
-                                    <Link
-                                        href="/forgot-password"
+                                    <button
+                                        onClick={() => router.push("/forgot-password")}
                                         className="text-sm text-[#4A90E2] hover:underline"
                                     >
                                         Forgot password?
-                                    </Link>
+                                    </button>
                                 </div>
                                 <div className="relative">
                                     <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">
@@ -138,24 +160,24 @@ export default function LoginPage() {
                         </div>
 
                         {/* Sign Up Link */}
-                        <Link
-                            href="/signup"
+                        <button
+                            onClick={() => router.push("/signup")}
                             className="w-full py-3 bg-white border-2 border-[#4A90E2] text-[#4A90E2] rounded-xl flex items-center justify-center gap-2 hover:bg-[#4A90E2]/5 active:scale-[0.98] transition-all"
                         >
                             <span className="font-medium">Create an Account</span>
-                        </Link>
+                        </button>
                     </Card>
 
                     {/* Footer Text */}
                     <p className="text-center text-sm text-gray-400 mt-6 px-4">
                         By signing in, you agree to our{" "}
-                        <Link href="/terms" className="text-[#4A90E2] hover:underline">
+                        <button onClick={() => router.push("/terms")} className="text-[#4A90E2] hover:underline">
                             Terms & Conditions
-                        </Link>{" "}
+                        </button>{" "}
                         and{" "}
-                        <Link href="/privacy-policy" className="text-[#4A90E2] hover:underline">
+                        <button onClick={() => router.push("/privacy-policy")} className="text-[#4A90E2] hover:underline">
                             Privacy Policy
-                        </Link>
+                        </button>
                     </p>
                 </div>
             </div>

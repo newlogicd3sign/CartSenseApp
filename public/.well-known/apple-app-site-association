@@ -1,0 +1,15 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "TEAM_ID.com.cartsense.app",
+        "paths": [
+          "/api/kroger/callback*",
+          "/account*",
+          "/setup*"
+        ]
+      }
+    ]
+  }
+}

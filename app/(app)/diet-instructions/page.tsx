@@ -234,8 +234,8 @@ function DietRestrictionsContent() {
 
     return (
         <div className="min-h-screen bg-[#f8fafb]">
-            {/* Header */}
-            <div className="bg-white border-b border-gray-100 px-6 py-6">
+            {/* Header - Sticky */}
+            <div className="bg-white border-b border-gray-100 px-6 pt-safe-6 pb-6 sticky sticky-safe z-20">
                 <div className="max-w-2xl mx-auto">
                     <div className="flex items-center gap-3">
                         <button

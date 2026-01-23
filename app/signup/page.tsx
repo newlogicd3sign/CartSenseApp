@@ -5,7 +5,6 @@ import { auth, db } from "@/lib/firebaseClient";
 import { createUserWithEmailAndPassword, sendEmailVerification } from "firebase/auth";
 import { doc, setDoc, getDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import Image from "next/image";
 import { Mail, Lock, ArrowRight, CheckCircle, Eye, EyeOff } from "lucide-react";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
@@ -23,6 +22,13 @@ export default function SignupPage() {
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const [showTermsReminder, setShowTermsReminder] = useState(false);
+    const [isNativeApp, setIsNativeApp] = useState(false);
+
+    // Check if running in Capacitor
+    useEffect(() => {
+        const windowCapacitor = (window as any).Capacitor;
+        setIsNativeApp(windowCapacitor?.isNativePlatform?.() ?? false);
+    }, []);
 
     // Password validation
     const passwordRules = {
@@ -102,7 +108,7 @@ export default function SignupPage() {
     };
 
     return (
-        <div className="min-h-screen bg-[#f8fafb] flex flex-col">
+        <div className="min-h-screen bg-[#f8fafb] flex flex-col safe-area-top">
             {/* Main Content */}
             <div className="flex-1 px-6 pt-12 lg:pt-16">
                 <div className="max-w-[428px] mx-auto">
@@ -209,13 +215,13 @@ export default function SignupPage() {
                                     />
                                     <label htmlFor="terms" className="text-sm text-gray-600 cursor-pointer">
                                         I agree to the{" "}
-                                        <Link href="/terms" className="text-[#4A90E2] hover:underline">
+                                        <button type="button" onClick={() => router.push("/terms")} className="text-[#4A90E2] hover:underline">
                                             Terms & Conditions
-                                        </Link>{" "}
+                                        </button>{" "}
                                         and{" "}
-                                        <Link href="/privacy-policy" className="text-[#4A90E2] hover:underline">
+                                        <button type="button" onClick={() => router.push("/privacy-policy")} className="text-[#4A90E2] hover:underline">
                                             Privacy Policy
-                                        </Link>
+                                        </button>
                                     </label>
                                 </div>
                                 {showTermsReminder && !agreedToTerms && (
@@ -256,12 +262,12 @@ export default function SignupPage() {
                         </div>
 
                         {/* Sign In Link */}
-                        <Link
-                            href="/login"
+                        <button
+                            onClick={() => router.push("/login")}
                             className="w-full py-3 bg-white border-2 border-[#4A90E2] text-[#4A90E2] rounded-xl flex items-center justify-center gap-2 hover:bg-[#4A90E2]/5 active:scale-[0.98] transition-all"
                         >
                             <span className="font-medium">Already have an account? Sign In</span>
-                        </Link>
+                        </button>
                     </Card>
 
                     {/* Features List */}
@@ -285,13 +291,13 @@ export default function SignupPage() {
                     {/* Footer Text */}
                     <p className="text-center text-sm text-gray-400 mt-6 px-4 pb-6">
                         Read our{" "}
-                        <Link href="/terms" className="text-[#4A90E2] hover:underline">
+                        <button onClick={() => router.push("/terms")} className="text-[#4A90E2] hover:underline">
                             Terms & Conditions
-                        </Link>{" "}
+                        </button>{" "}
                         and{" "}
-                        <Link href="/privacy-policy" className="text-[#4A90E2] hover:underline">
+                        <button onClick={() => router.push("/privacy-policy")} className="text-[#4A90E2] hover:underline">
                             Privacy Policy
-                        </Link>
+                        </button>
                     </p>
                 </div>
             </div>

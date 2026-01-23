@@ -161,6 +161,16 @@ export default function PromptPage() {
     // Tips state - open by default, persisted to localStorage
     const [showTips, setShowTips] = useState(true);
 
+    // Capacitor detection
+    const [isNativeApp, setIsNativeApp] = useState(false);
+    useEffect(() => {
+        const checkCapacitor = () => {
+            if (typeof window === "undefined") return false;
+            return (window as any).Capacitor?.isNativePlatform?.() ?? false;
+        };
+        setIsNativeApp(checkCapacitor());
+    }, []);
+
     // Load pantry mode and tips state from localStorage on mount
     useEffect(() => {
         try {
@@ -422,8 +432,15 @@ export default function PromptPage() {
 
     return (
         <div className="min-h-screen bg-[#f8fafb]">
+            {/* Fixed status bar background for iOS Capacitor only */}
+            {isNativeApp && (
+                <div
+                    className="fixed top-0 left-0 right-0 z-40 bg-[#f8fafb] lg:hidden"
+                    style={{ height: 'env(safe-area-inset-top)' }}
+                />
+            )}
             {/* Main Content */}
-            <div className="px-6 pt-8 lg:pt-12">
+            <div className={`px-6 lg:pt-12 ${isNativeApp ? "pt-safe-8" : "pt-8"}`}>
                 <div className="max-w-2xl mx-auto">
                     {/* Greeting */}
                     <div className={`mb-6 ${animateFromSetup ? "animate-greeting-intro" : ""}`}>

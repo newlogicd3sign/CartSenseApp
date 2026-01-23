@@ -1,8 +1,12 @@
+"use client";
+
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
 import InstacartCarrot from "@/app/🥕 Instacart Logos/Logos - Carrot/RGB/PNG/Instacart_Carrot.png";
 import { LiveStats } from "@/components/LiveStats";
+import { MobileWelcome } from "@/components/MobileWelcome";
 import {
   ShoppingCart,
   Target,
@@ -65,6 +69,27 @@ const jsonLd = {
 };
 
 export default function Home() {
+  const [isNative, setIsNative] = useState(false);
+  const [isChecking, setIsChecking] = useState(true);
+
+  useEffect(() => {
+    // Check for Capacitor native bridge
+    const windowCapacitor = (window as any).Capacitor;
+    const native = windowCapacitor?.isNativePlatform?.() ?? false;
+    setIsNative(native);
+    setIsChecking(false);
+  }, []);
+
+  // Show nothing while checking to prevent flash
+  if (isChecking) {
+    return null;
+  }
+
+  // Show mobile welcome on native apps
+  if (isNative) {
+    return <MobileWelcome />;
+  }
+
   return (
     <div className="min-h-screen bg-[#f8fafb] flex flex-col overflow-x-hidden scroll-smooth" style={{ scrollPaddingTop: '160px' }}>
       {/* JSON-LD Structured Data */}

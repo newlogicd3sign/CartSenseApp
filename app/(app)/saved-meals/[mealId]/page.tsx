@@ -67,6 +67,7 @@ import {
     AlertTriangle,
 } from "lucide-react";
 import { logUserEvent } from "@/lib/logUserEvent";
+import { hapticSuccess, hapticError } from "@/lib/haptics";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { useToast } from "@/components/Toast";
@@ -553,18 +554,23 @@ export default function SavedMealDetailPage() {
 
             if (addedCount > 0 && updatedCount > 0) {
                 showToast(`Added ${addedCount} item${addedCount !== 1 ? "s" : ""}, updated ${updatedCount} item${updatedCount !== 1 ? "s" : ""}.`, "success");
+                hapticSuccess();
             } else if (addedCount > 0 && skippedStaples > 0) {
                 showToast(`Added ${addedCount} item${addedCount !== 1 ? "s" : ""}, skipped ${skippedStaples} already in list.`, "success");
+                hapticSuccess();
             } else if (addedCount > 0) {
                 showToast(`Added ${addedCount} item${addedCount !== 1 ? "s" : ""} to your shopping list.`, "success");
+                hapticSuccess();
             } else if (updatedCount > 0) {
                 showToast(`Updated quantities for ${updatedCount} item${updatedCount !== 1 ? "s" : ""}.`, "success");
+                hapticSuccess();
             } else if (skippedStaples > 0) {
                 showToast(`All items already in your shopping list.`, "info");
             }
         } catch (err) {
             console.error("Error adding to shopping list", err);
             showToast("Something went wrong adding items to your list.", "error");
+            hapticError();
         } finally {
             setAddingToList(false);
         }
@@ -603,6 +609,7 @@ export default function SavedMealDetailPage() {
 
             if (!res.ok || !data.success) {
                 showToast(data.error || "Failed to generate Instacart link.", "error");
+                hapticError();
                 return;
             }
 
@@ -610,6 +617,7 @@ export default function SavedMealDetailPage() {
             if (data.url) {
                 window.open(data.url, "_blank");
                 showToast("Opening Instacart...", "success");
+                hapticSuccess();
 
                 logUserEvent(user.uid, {
                     type: "added_to_instacart",
@@ -621,6 +629,7 @@ export default function SavedMealDetailPage() {
         } catch (err) {
             console.error("Error adding to Instacart:", err);
             showToast("Something went wrong. Please try again.", "error");
+            hapticError();
         } finally {
             setAddingToInstacart(false);
         }
@@ -1049,7 +1058,7 @@ export default function SavedMealDetailPage() {
     return (
         <div className="min-h-screen bg-[#f8fafb]">
             {/* Header with Back Button */}
-            <div className="bg-white border-b border-gray-100 px-6 py-4 sticky top-0 z-20">
+            <div className="bg-white border-b border-gray-100 px-6 pt-safe-4 pb-4 sticky sticky-safe z-20">
                 <div className="max-w-3xl mx-auto">
                     <button
                         onClick={() => router.push("/saved-meals")}
