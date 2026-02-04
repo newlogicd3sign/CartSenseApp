@@ -452,12 +452,13 @@ export function calculateUnitsNeeded(
         soldBy: "WEIGHT",
       };
     }
-    // If we can't parse as weight, use the raw amount
+    // If we can't parse as weight, default to 1 unit
+    // (raw amount without a weight unit isn't meaningful for Kroger's weight-based API)
     return {
-      unitsNeeded: recipeParsed.amount * itemCount,
+      unitsNeeded: itemCount,
       recipeAmount: recipeQuantity,
       productSize: "sold by weight",
-      calculation: `${recipeParsed.amount} × ${itemCount} = ${recipeParsed.amount * itemCount}`,
+      calculation: `default (1 unit, could not parse "${recipeQuantity}" as weight)`,
       soldBy: "WEIGHT",
     };
   }
