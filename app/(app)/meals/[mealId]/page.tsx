@@ -2,8 +2,15 @@
 
 import Image from "next/image";
 import InstacartCarrot from "@/app/🥕 Instacart Logos/Logos - Carrot/RGB/PNG/Instacart_Carrot.png";
+import { Browser } from "@capacitor/browser";
 import { Suspense, useEffect, useState, useRef, useMemo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+
+// Check if running in Capacitor
+const isCapacitor = () => {
+    if (typeof window === "undefined") return false;
+    return (window as any).Capacitor?.isNativePlatform?.() ?? false;
+};
 import { auth, db } from "@/lib/firebaseClient";
 import { authFetch } from "@/lib/authFetch";
 import { onAuthStateChanged, type User } from "firebase/auth";
@@ -1037,7 +1044,11 @@ function MealDetailPageContent() {
 
             // Open Instacart in a new tab
             if (data.url) {
-                window.open(data.url, "_blank");
+                if (isCapacitor()) {
+                    await Browser.open({ url: data.url });
+                } else {
+                    window.open(data.url, "_blank");
+                }
                 showToast("Opening Instacart...", "success");
                 hapticSuccess();
 
@@ -2022,7 +2033,7 @@ function MealDetailPageContent() {
                                 <button
                                     onClick={handleAddToInstacart}
                                     disabled={addingToInstacart || selectedIngredients.size === 0}
-                                    className="w-full h-[46px] bg-[#003D29] text-[#FAF1E5] rounded-full px-[18px] shadow-lg hover:shadow-xl hover:bg-[#004D35] transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                    className="w-full py-4 bg-[#003D29] text-[#FAF1E5] rounded-2xl shadow-lg hover:shadow-xl hover:bg-[#004D35] transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                 >
                                     {addingToInstacart ? (
                                         <>
