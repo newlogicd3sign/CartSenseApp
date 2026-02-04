@@ -461,7 +461,11 @@ export default function ShoppingListPage() {
 
             // Open Instacart in a new tab
             if (data.url) {
-                window.open(data.url, "_blank", "noopener,noreferrer");
+                if (isCapacitor()) {
+                    await Browser.open({ url: data.url });
+                } else {
+                    window.open(data.url, "_blank", "noopener,noreferrer");
+                }
                 showToast(`Opening Instacart with ${data.itemCount} items...`, "success");
                 hapticSuccess();
 
@@ -985,7 +989,7 @@ export default function ShoppingListPage() {
                                                         <button
                                                             onClick={() => void handleAddToInstacart(allDateItems)}
                                                             disabled={addingToInstacart}
-                                                            className="h-[46px] px-[18px] bg-[#003D29] text-[#FAF1E5] rounded-full text-xs sm:text-sm font-medium hover:bg-[#004D35] transition-colors disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2"
+                                                            className="h-[46px] px-[18px] bg-[#003D29] text-[#FAF1E5] rounded-2xl text-xs sm:text-sm font-medium hover:bg-[#004D35] transition-colors disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2"
                                                         >
                                                             {addingToInstacart ? (
                                                                 <>
