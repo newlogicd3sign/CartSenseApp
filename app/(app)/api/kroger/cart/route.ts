@@ -312,6 +312,10 @@ export async function POST(request: Request) {
             };
         });
 
+        const cartPayload = JSON.stringify({ items: cartItems });
+        console.log(`[CART] Sending to Kroger:`, cartPayload);
+        console.log(`[CART] URL: ${API_BASE_URL}/cart/add`);
+
         const cartRes = await fetch(`${API_BASE_URL}/cart/add`, {
             method: "PUT",
             headers: {
@@ -319,12 +323,13 @@ export async function POST(request: Request) {
                 "Content-Type": "application/json",
                 Accept: "application/json",
             },
-            body: JSON.stringify({ items: cartItems }),
+            body: cartPayload,
         });
 
         if (!cartRes.ok) {
             const errorText = await cartRes.text();
             console.error("Kroger cart error:", errorText);
+            console.error("[CART] Request payload was:", cartPayload);
 
             // Check if token is invalid
             if (cartRes.status === 401) {
