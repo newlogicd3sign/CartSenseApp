@@ -303,11 +303,12 @@ export async function POST(request: Request) {
         // Kroger's productId is the UPC
         // Use the pre-calculated units based on recipe needs vs product package size
         const cartItems = foundItems.map((item) => {
-            console.log(`[CART] ${item.originalName}: ${item.calculationDetails} → ${item.calculatedUnits} units`);
+            const qty = Math.max(1, Math.ceil(item.calculatedUnits || item.count));
+            console.log(`[CART] ${item.originalName}: ${item.calculationDetails} → ${qty} units`);
 
             return {
                 upc: item.product!.krogerProductId,
-                quantity: item.calculatedUnits || item.count,
+                quantity: qty,
             };
         });
 
