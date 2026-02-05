@@ -12,9 +12,20 @@ const config: CapacitorConfig = {
     allowsLinkPreview: false,
     scrollEnabled: true,
     backgroundColor: '#ffffff',
+    // Limits navigation to app-bound domains for better data persistence
+    limitsNavigationsToAppBoundDomains: true,
   },
   android: {
     allowMixedContent: false,
+  },
+  plugins: {
+    // Ensure cookies and storage persist across app launches
+    CapacitorCookies: {
+      enabled: true,
+    },
+    CapacitorHttp: {
+      enabled: true,
+    },
   },
 };
 

@@ -19,6 +19,7 @@ type RequestBody = {
   linkType?: InstacartLinkType; // "recipe" (default) or "shopping_list"
   userId?: string; // Optional - if provided, save items to pantry
   instructions?: string[]; // Recipe cooking instructions/steps
+  retailerKey?: string; // Pre-select a specific Instacart retailer
 };
 
 /**
@@ -78,6 +79,7 @@ export async function POST(request: Request) {
       enable_pantry_items: !isShoppingList, // Only for recipes
       link_type: linkType,
       instructions: body.instructions, // Pass recipe instructions for recipes
+      retailer_key: body.retailerKey, // Pre-select retailer if specified
     });
 
     if (!result.success) {

@@ -45,6 +45,7 @@ import {
     ChevronUp,
     Search,
     Mail,
+    Store,
 } from "lucide-react";
 import { signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential, deleteUser } from "firebase/auth";
 import { deleteDoc } from "firebase/firestore";
@@ -52,6 +53,7 @@ import { useToast } from "@/components/Toast";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { Modal } from "@/components/Modal";
 import { StoreSearchModal } from "@/components/StoreSearchModal";
+import { InstacartRetailerModal, type InstacartRetailer } from "@/components/InstacartRetailerModal";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { getStoreBrand } from "@/lib/utils";
 import { warmLocationInBackground } from "@/lib/product-engine/krogerWarm";
@@ -254,6 +256,11 @@ function AccountPageContent() {
     // Store search modal state
     const [showStoreSearchModal, setShowStoreSearchModal] = useState(false);
 
+    // Instacart retailer state
+    const [instacartRetailer, setInstacartRetailer] = useState<InstacartRetailer | null>(null);
+    const [showInstacartRetailerModal, setShowInstacartRetailerModal] = useState(false);
+    const [loadingInstacartRetailer, setLoadingInstacartRetailer] = useState(false);
+
     // Upgrade modal state for household members
     const [showHouseholdUpgradeModal, setShowHouseholdUpgradeModal] = useState(false);
 
@@ -424,6 +431,35 @@ function AccountPageContent() {
 
         void loadLocations();
     }, [user, userDoc?.defaultKrogerLocationId]);
+
+    // Load Instacart retailer preference
+    useEffect(() => {
+        if (!user) return;
+
+        const loadInstacartRetailer = async () => {
+            setLoadingInstacartRetailer(true);
+            try {
+                const token = await user.getIdToken();
+                const res = await fetch("/api/instacart/retailer", {
+                    headers: {
+                        "Authorization": `Bearer ${token}`,
+                    },
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success && data.retailer) {
+                        setInstacartRetailer(data.retailer);
+                    }
+                }
+            } catch (err) {
+                console.error("Error loading Instacart retailer:", err);
+            } finally {
+                setLoadingInstacartRetailer(false);
+            }
+        };
+
+        void loadInstacartRetailer();
+    }, [user]);
 
     // Load family members
     useEffect(() => {
@@ -795,6 +831,60 @@ function AccountPageContent() {
             showToast("Failed to update shopping preference. Please try again.", "error");
         } finally {
             setSavingShoppingPreference(false);
+        }
+    };
+
+    const handleSelectInstacartRetailer = async (retailer: InstacartRetailer) => {
+        if (!user) return;
+
+        try {
+            const token = await user.getIdToken();
+            const res = await fetch("/api/instacart/retailer", {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(retailer),
+            });
+
+            if (!res.ok) {
+                const data = await res.json();
+                showToast(data.error || "Failed to save retailer", "error");
+                throw new Error(data.error);
+            }
+
+            setInstacartRetailer(retailer);
+            showToast(`${retailer.name} saved as your default store`, "success");
+        } catch (err) {
+            console.error("Error saving Instacart retailer:", err);
+            throw err;
+        }
+    };
+
+    const handleClearInstacartRetailer = async () => {
+        if (!user) return;
+
+        try {
+            const token = await user.getIdToken();
+            const res = await fetch("/api/instacart/retailer", {
+                method: "DELETE",
+                headers: {
+                    "Authorization": `Bearer ${token}`,
+                },
+            });
+
+            if (!res.ok) {
+                const data = await res.json();
+                showToast(data.error || "Failed to clear retailer", "error");
+                throw new Error(data.error);
+            }
+
+            setInstacartRetailer(null);
+            showToast("Store preference cleared", "success");
+        } catch (err) {
+            console.error("Error clearing Instacart retailer:", err);
+            throw err;
         }
     };
 
@@ -1373,300 +1463,53 @@ function AccountPageContent() {
                                     <p className="text-xs text-gray-500">Personalize your meal suggestions</p>
                                 </div>
                             </div>
-                            {!editingDietAllergies && (
-                                <button
-                                    onClick={handleEditDietAllergies}
-                                    className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors"
-                                >
-                                    <Edit3 className="w-4 h-4 text-gray-400" />
-                                </button>
-                            )}
+                            <button
+                                onClick={handleEditDietAllergies}
+                                className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors"
+                            >
+                                <Edit3 className="w-4 h-4 text-gray-400" />
+                            </button>
                         </div>
 
                         <div className="px-5 py-4">
-                            {!editingDietAllergies ? (
-                                <div className="space-y-3">
-                                    <div>
-                                        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Diet Focus</span>
-                                        <p className="text-sm text-gray-900 mt-0.5">
-                                            {getDietLabel(userDoc?.dietType) || "Not set"}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Cooking Experience</span>
-                                        <p className="text-sm text-gray-900 mt-0.5">
-                                            {getCookingExperienceLabel(userDoc?.cookingExperience) || "Not set"}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Allergies</span>
-                                        <p className="text-sm text-gray-900 mt-0.5">
-                                            {userDoc?.allergiesAndSensitivities?.allergies?.length
-                                                ? userDoc.allergiesAndSensitivities.allergies.join(", ")
-                                                : "None"}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Sensitivities</span>
-                                        <p className="text-sm text-gray-900 mt-0.5">
-                                            {userDoc?.allergiesAndSensitivities?.sensitivities?.length
-                                                ? userDoc.allergiesAndSensitivities.sensitivities.join(", ")
-                                                : "None"}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Food Dislikes</span>
-                                        <p className="text-sm text-gray-900 mt-0.5">
-                                            {userDoc?.dislikedFoods?.length
-                                                ? userDoc.dislikedFoods.join(", ")
-                                                : "None"}
-                                        </p>
-                                    </div>
+                            <div className="space-y-3">
+                                <div>
+                                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Diet Focus</span>
+                                    <p className="text-sm text-gray-900 mt-0.5">
+                                        {getDietLabel(userDoc?.dietType) || "Not set"}
+                                    </p>
                                 </div>
-                            ) : (
-                                <div className="space-y-4">
-                                    <div>
-                                        <label className="text-sm font-medium text-gray-700 mb-2 block">Diet Focus</label>
-                                        <select
-                                            value={selectedDietType}
-                                            onChange={(e) => setSelectedDietType(e.target.value)}
-                                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:border-[#4A90E2] focus:outline-none"
-                                        >
-                                            <option value="">None</option>
-                                            {DIET_OPTIONS.map((opt) => (
-                                                <option key={opt.value} value={opt.value}>
-                                                    {opt.label}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-
-                                    <div>
-                                        <label className="text-sm font-medium text-gray-700 mb-2 block">Cooking Experience</label>
-                                        <div className="space-y-2">
-                                            {COOKING_EXPERIENCE_OPTIONS.map((opt) => (
-                                                <button
-                                                    key={opt.value}
-                                                    type="button"
-                                                    onClick={() => setSelectedCookingExperience(opt.value)}
-                                                    className={`w-full p-3 rounded-xl border text-left transition-all ${selectedCookingExperience === opt.value
-                                                        ? "border-[#4A90E2] bg-blue-50"
-                                                        : "border-gray-200 bg-gray-50 hover:border-gray-300"
-                                                        }`}
-                                                >
-                                                    <span className="font-medium text-gray-900">{opt.label}</span>
-                                                    <p className="text-xs text-gray-500 mt-0.5">{opt.description}</p>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="text-sm font-medium text-gray-700 mb-2 block">Allergies</label>
-                                        <div className="flex flex-wrap gap-2">
-                                            {ALLERGY_OPTIONS.map((item) => (
-                                                <button
-                                                    key={item}
-                                                    type="button"
-                                                    onClick={() => toggleAllergy(item)}
-                                                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${selectedAllergies.includes(item)
-                                                        ? "bg-[#4A90E2] text-white"
-                                                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                                                        }`}
-                                                >
-                                                    {item}
-                                                </button>
-                                            ))}
-                                        </div>
-                                        {/* Custom allergy input */}
-                                        <div className="flex gap-2 mt-3">
-                                            <input
-                                                type="text"
-                                                value={customAllergy}
-                                                onChange={(e) => setCustomAllergy(e.target.value)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === "Enter") {
-                                                        e.preventDefault();
-                                                        addCustomAllergy();
-                                                    }
-                                                }}
-                                                placeholder="Add custom allergy..."
-                                                className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:border-[#4A90E2] focus:outline-none"
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={addCustomAllergy}
-                                                disabled={!customAllergy.trim()}
-                                                className="px-3 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                Add
-                                            </button>
-                                        </div>
-                                        {/* Show custom selections */}
-                                        {selectedAllergies.filter(a => !ALLERGY_OPTIONS.includes(a)).length > 0 && (
-                                            <div className="mt-3">
-                                                <p className="text-xs text-gray-500 mb-2">Your additions:</p>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {selectedAllergies
-                                                        .filter(a => !ALLERGY_OPTIONS.includes(a))
-                                                        .map((item) => (
-                                                            <button
-                                                                key={item}
-                                                                type="button"
-                                                                onClick={() => toggleAllergy(item)}
-                                                                className="px-3 py-1.5 rounded-lg text-sm bg-[#4A90E2] text-white"
-                                                            >
-                                                                {item}
-                                                            </button>
-                                                        ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div>
-                                        <label className="text-sm font-medium text-gray-700 mb-2 block">Sensitivities</label>
-                                        <div className="flex flex-wrap gap-2">
-                                            {SENSITIVITY_OPTIONS.map((item) => (
-                                                <button
-                                                    key={item}
-                                                    type="button"
-                                                    onClick={() => toggleSensitivity(item)}
-                                                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${selectedSensitivities.includes(item)
-                                                        ? "bg-[#4A90E2] text-white"
-                                                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                                                        }`}
-                                                >
-                                                    {item}
-                                                </button>
-                                            ))}
-                                        </div>
-                                        {/* Custom sensitivity input */}
-                                        <div className="flex gap-2 mt-3">
-                                            <input
-                                                type="text"
-                                                value={customSensitivity}
-                                                onChange={(e) => setCustomSensitivity(e.target.value)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === "Enter") {
-                                                        e.preventDefault();
-                                                        addCustomSensitivity();
-                                                    }
-                                                }}
-                                                placeholder="Add custom sensitivity..."
-                                                className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:border-[#4A90E2] focus:outline-none"
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={addCustomSensitivity}
-                                                disabled={!customSensitivity.trim()}
-                                                className="px-3 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                Add
-                                            </button>
-                                        </div>
-                                        {/* Show custom selections */}
-                                        {selectedSensitivities.filter(s => !SENSITIVITY_OPTIONS.includes(s)).length > 0 && (
-                                            <div className="mt-3">
-                                                <p className="text-xs text-gray-500 mb-2">Your additions:</p>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {selectedSensitivities
-                                                        .filter(s => !SENSITIVITY_OPTIONS.includes(s))
-                                                        .map((item) => (
-                                                            <button
-                                                                key={item}
-                                                                type="button"
-                                                                onClick={() => toggleSensitivity(item)}
-                                                                className="px-3 py-1.5 rounded-lg text-sm bg-[#4A90E2] text-white"
-                                                            >
-                                                                {item}
-                                                            </button>
-                                                        ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div>
-                                        <label className="text-sm font-medium text-gray-700 mb-2 block">Food Dislikes</label>
-                                        <div className="flex flex-wrap gap-2">
-                                            {COMMON_DISLIKED_FOODS.map((item) => (
-                                                <button
-                                                    key={item}
-                                                    type="button"
-                                                    onClick={() => toggleDislikedFood(item)}
-                                                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${selectedDislikedFoods.includes(item)
-                                                        ? "bg-[#4A90E2] text-white"
-                                                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                                                        }`}
-                                                >
-                                                    {item}
-                                                </button>
-                                            ))}
-                                        </div>
-                                        {/* Custom food input */}
-                                        <div className="flex gap-2 mt-3">
-                                            <input
-                                                type="text"
-                                                value={customDislikedFood}
-                                                onChange={(e) => setCustomDislikedFood(e.target.value)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === "Enter") {
-                                                        e.preventDefault();
-                                                        addCustomDislikedFood();
-                                                    }
-                                                }}
-                                                placeholder="Add custom food..."
-                                                className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:border-[#4A90E2] focus:outline-none"
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={addCustomDislikedFood}
-                                                disabled={!customDislikedFood.trim()}
-                                                className="px-3 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                Add
-                                            </button>
-                                        </div>
-                                        {/* Show custom selections */}
-                                        {selectedDislikedFoods.filter(f => !COMMON_DISLIKED_FOODS.includes(f)).length > 0 && (
-                                            <div className="mt-3">
-                                                <p className="text-xs text-gray-500 mb-2">Your additions:</p>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {selectedDislikedFoods
-                                                        .filter(f => !COMMON_DISLIKED_FOODS.includes(f))
-                                                        .map((item) => (
-                                                            <button
-                                                                key={item}
-                                                                type="button"
-                                                                onClick={() => toggleDislikedFood(item)}
-                                                                className="px-3 py-1.5 rounded-lg text-sm bg-[#4A90E2] text-white"
-                                                            >
-                                                                {item}
-                                                            </button>
-                                                        ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div className="flex gap-3 pt-2">
-                                        <button
-                                            onClick={() => void handleSaveDietAllergies()}
-                                            disabled={savingDietAllergies}
-                                            className="flex-1 py-3 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white rounded-xl font-medium disabled:opacity-70"
-                                        >
-                                            {savingDietAllergies ? "Saving..." : "Save Changes"}
-                                        </button>
-                                        <button
-                                            onClick={handleCancelEditDietAllergies}
-                                            className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
-                                        >
-                                            Cancel
-                                        </button>
-                                    </div>
+                                <div>
+                                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Cooking Experience</span>
+                                    <p className="text-sm text-gray-900 mt-0.5">
+                                        {getCookingExperienceLabel(userDoc?.cookingExperience) || "Not set"}
+                                    </p>
                                 </div>
-                            )}
+                                <div>
+                                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Allergies</span>
+                                    <p className="text-sm text-gray-900 mt-0.5">
+                                        {userDoc?.allergiesAndSensitivities?.allergies?.length
+                                            ? userDoc.allergiesAndSensitivities.allergies.join(", ")
+                                            : "None"}
+                                    </p>
+                                </div>
+                                <div>
+                                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Sensitivities</span>
+                                    <p className="text-sm text-gray-900 mt-0.5">
+                                        {userDoc?.allergiesAndSensitivities?.sensitivities?.length
+                                            ? userDoc.allergiesAndSensitivities.sensitivities.join(", ")
+                                            : "None"}
+                                    </p>
+                                </div>
+                                <div>
+                                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Food Dislikes</span>
+                                    <p className="text-sm text-gray-900 mt-0.5">
+                                        {userDoc?.dislikedFoods?.length
+                                            ? userDoc.dislikedFoods.join(", ")
+                                            : "None"}
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -1988,6 +1831,79 @@ function AccountPageContent() {
                         </div>
                     )}
 
+                    {/* Instacart Store Card - Only show for Instacart preference */}
+                    {process.env.NEXT_PUBLIC_ENABLE_INSTACART === 'true' && (userDoc?.shoppingPreference || "instacart") === "instacart" && (
+                        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                            <div className="px-5 py-4 border-b border-gray-100">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-[#003D29]/10 rounded-xl flex items-center justify-center">
+                                        <Store className="w-5 h-5 text-[#003D29]" />
+                                    </div>
+                                    <div>
+                                        <h2 className="font-medium text-gray-900">Instacart Store</h2>
+                                        <p className="text-xs text-gray-500">Set a default store for Instacart shopping</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="px-5 py-4">
+                                {loadingInstacartRetailer ? (
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+                                        <span className="text-sm text-gray-500">Loading...</span>
+                                    </div>
+                                ) : instacartRetailer ? (
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            {instacartRetailer.retailer_logo_url ? (
+                                                <div className="w-12 h-12 rounded-lg overflow-hidden bg-white flex-shrink-0 border border-gray-100">
+                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                    <img
+                                                        src={instacartRetailer.retailer_logo_url}
+                                                        alt={instacartRetailer.name}
+                                                        className="w-full h-full object-contain"
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <div className="w-12 h-12 rounded-lg bg-[#003D29]/10 flex items-center justify-center flex-shrink-0">
+                                                    <Store className="w-6 h-6 text-[#003D29]" />
+                                                </div>
+                                            )}
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-medium text-gray-900">{instacartRetailer.name}</span>
+                                                    <span className="px-1.5 py-0.5 bg-[#003D29]/10 text-[#003D29] rounded text-[10px] font-medium">
+                                                        Default
+                                                    </span>
+                                                </div>
+                                                <p className="text-xs text-gray-500 mt-0.5">Pre-selected when you shop</p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => setShowInstacartRetailerModal(true)}
+                                            className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200 transition-colors"
+                                        >
+                                            Change
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <p className="text-sm text-gray-900">No store selected</p>
+                                            <p className="text-xs text-gray-500 mt-0.5">Choose a default store for faster checkout</p>
+                                        </div>
+                                        <button
+                                            onClick={() => setShowInstacartRetailerModal(true)}
+                                            className="px-3 py-1.5 bg-[#003D29] text-white rounded-lg text-xs font-medium hover:bg-[#004D35] transition-colors"
+                                        >
+                                            Select Store
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Store & Account Card - Only show for Kroger preference OR if Instacart is disabled (forcing Kroger mode) */}
                     {(userDoc?.shoppingPreference === "kroger" || process.env.NEXT_PUBLIC_ENABLE_INSTACART !== 'true') && (() => {
                         const defaultLocation = locations.find(loc => loc.krogerLocationId === userDoc?.defaultKrogerLocationId);
@@ -2124,6 +2040,274 @@ function AccountPageContent() {
                         onSetDefault={handleSetDefault}
                         onRemoveStore={handleRemoveStore}
                     />
+
+                    {/* Instacart Retailer Modal */}
+                    <InstacartRetailerModal
+                        isOpen={showInstacartRetailerModal}
+                        onClose={() => setShowInstacartRetailerModal(false)}
+                        onSelectRetailer={handleSelectInstacartRetailer}
+                        savedRetailer={instacartRetailer}
+                        onClearRetailer={handleClearInstacartRetailer}
+                    />
+
+                    {/* Diet & Allergies Modal */}
+                    <Modal
+                        isOpen={editingDietAllergies}
+                        onClose={handleCancelEditDietAllergies}
+                        title="Diet & Allergies"
+                        subtitle="Personalize your meal suggestions"
+                        variant="bottom-sheet"
+                        size="lg"
+                        footer={
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => void handleSaveDietAllergies()}
+                                    disabled={savingDietAllergies}
+                                    className="flex-1 py-3 bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white rounded-xl font-medium disabled:opacity-70"
+                                >
+                                    {savingDietAllergies ? "Saving..." : "Save Changes"}
+                                </button>
+                                <button
+                                    onClick={handleCancelEditDietAllergies}
+                                    className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        }
+                    >
+                        <div className="space-y-5">
+                            {/* Diet Focus */}
+                            <div>
+                                <label className="text-sm font-medium text-gray-700 mb-2 block">Diet Focus</label>
+                                <select
+                                    value={selectedDietType}
+                                    onChange={(e) => setSelectedDietType(e.target.value)}
+                                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:border-[#4A90E2] focus:outline-none"
+                                >
+                                    <option value="">None</option>
+                                    {DIET_OPTIONS.map((opt) => (
+                                        <option key={opt.value} value={opt.value}>
+                                            {opt.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Cooking Experience */}
+                            <div>
+                                <label className="text-sm font-medium text-gray-700 mb-2 block">Cooking Experience</label>
+                                <div className="space-y-2">
+                                    {COOKING_EXPERIENCE_OPTIONS.map((opt) => (
+                                        <button
+                                            key={opt.value}
+                                            type="button"
+                                            onClick={() => setSelectedCookingExperience(opt.value)}
+                                            className={`w-full p-3 rounded-xl border text-left transition-all ${selectedCookingExperience === opt.value
+                                                ? "border-[#4A90E2] bg-blue-50"
+                                                : "border-gray-200 bg-gray-50 hover:border-gray-300"
+                                                }`}
+                                        >
+                                            <span className="font-medium text-gray-900">{opt.label}</span>
+                                            <p className="text-xs text-gray-500 mt-0.5">{opt.description}</p>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Allergies */}
+                            <div>
+                                <label className="text-sm font-medium text-gray-700 mb-2 block">Allergies</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {ALLERGY_OPTIONS.map((item) => (
+                                        <button
+                                            key={item}
+                                            type="button"
+                                            onClick={() => toggleAllergy(item)}
+                                            className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${selectedAllergies.includes(item)
+                                                ? "bg-[#4A90E2] text-white"
+                                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                                }`}
+                                        >
+                                            {item}
+                                        </button>
+                                    ))}
+                                </div>
+                                {/* Custom allergy input */}
+                                <div className="flex gap-2 mt-3">
+                                    <input
+                                        type="text"
+                                        value={customAllergy}
+                                        onChange={(e) => setCustomAllergy(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter") {
+                                                e.preventDefault();
+                                                addCustomAllergy();
+                                            }
+                                        }}
+                                        placeholder="Add custom allergy..."
+                                        className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:border-[#4A90E2] focus:outline-none"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={addCustomAllergy}
+                                        disabled={!customAllergy.trim()}
+                                        className="px-3 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        Add
+                                    </button>
+                                </div>
+                                {/* Show custom selections */}
+                                {selectedAllergies.filter(a => !ALLERGY_OPTIONS.includes(a)).length > 0 && (
+                                    <div className="mt-3">
+                                        <p className="text-xs text-gray-500 mb-2">Your additions:</p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {selectedAllergies
+                                                .filter(a => !ALLERGY_OPTIONS.includes(a))
+                                                .map((item) => (
+                                                    <button
+                                                        key={item}
+                                                        type="button"
+                                                        onClick={() => toggleAllergy(item)}
+                                                        className="px-3 py-1.5 rounded-lg text-sm bg-[#4A90E2] text-white"
+                                                    >
+                                                        {item}
+                                                    </button>
+                                                ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Sensitivities */}
+                            <div>
+                                <label className="text-sm font-medium text-gray-700 mb-2 block">Sensitivities</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {SENSITIVITY_OPTIONS.map((item) => (
+                                        <button
+                                            key={item}
+                                            type="button"
+                                            onClick={() => toggleSensitivity(item)}
+                                            className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${selectedSensitivities.includes(item)
+                                                ? "bg-[#4A90E2] text-white"
+                                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                                }`}
+                                        >
+                                            {item}
+                                        </button>
+                                    ))}
+                                </div>
+                                {/* Custom sensitivity input */}
+                                <div className="flex gap-2 mt-3">
+                                    <input
+                                        type="text"
+                                        value={customSensitivity}
+                                        onChange={(e) => setCustomSensitivity(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter") {
+                                                e.preventDefault();
+                                                addCustomSensitivity();
+                                            }
+                                        }}
+                                        placeholder="Add custom sensitivity..."
+                                        className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:border-[#4A90E2] focus:outline-none"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={addCustomSensitivity}
+                                        disabled={!customSensitivity.trim()}
+                                        className="px-3 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        Add
+                                    </button>
+                                </div>
+                                {/* Show custom selections */}
+                                {selectedSensitivities.filter(s => !SENSITIVITY_OPTIONS.includes(s)).length > 0 && (
+                                    <div className="mt-3">
+                                        <p className="text-xs text-gray-500 mb-2">Your additions:</p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {selectedSensitivities
+                                                .filter(s => !SENSITIVITY_OPTIONS.includes(s))
+                                                .map((item) => (
+                                                    <button
+                                                        key={item}
+                                                        type="button"
+                                                        onClick={() => toggleSensitivity(item)}
+                                                        className="px-3 py-1.5 rounded-lg text-sm bg-[#4A90E2] text-white"
+                                                    >
+                                                        {item}
+                                                    </button>
+                                                ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Food Dislikes */}
+                            <div>
+                                <label className="text-sm font-medium text-gray-700 mb-2 block">Food Dislikes</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {COMMON_DISLIKED_FOODS.map((item) => (
+                                        <button
+                                            key={item}
+                                            type="button"
+                                            onClick={() => toggleDislikedFood(item)}
+                                            className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${selectedDislikedFoods.includes(item)
+                                                ? "bg-[#4A90E2] text-white"
+                                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                                }`}
+                                        >
+                                            {item}
+                                        </button>
+                                    ))}
+                                </div>
+                                {/* Custom food input */}
+                                <div className="flex gap-2 mt-3">
+                                    <input
+                                        type="text"
+                                        value={customDislikedFood}
+                                        onChange={(e) => setCustomDislikedFood(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter") {
+                                                e.preventDefault();
+                                                addCustomDislikedFood();
+                                            }
+                                        }}
+                                        placeholder="Add custom food..."
+                                        className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:border-[#4A90E2] focus:outline-none"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={addCustomDislikedFood}
+                                        disabled={!customDislikedFood.trim()}
+                                        className="px-3 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        Add
+                                    </button>
+                                </div>
+                                {/* Show custom selections */}
+                                {selectedDislikedFoods.filter(f => !COMMON_DISLIKED_FOODS.includes(f)).length > 0 && (
+                                    <div className="mt-3">
+                                        <p className="text-xs text-gray-500 mb-2">Your additions:</p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {selectedDislikedFoods
+                                                .filter(f => !COMMON_DISLIKED_FOODS.includes(f))
+                                                .map((item) => (
+                                                    <button
+                                                        key={item}
+                                                        type="button"
+                                                        onClick={() => toggleDislikedFood(item)}
+                                                        className="px-3 py-1.5 rounded-lg text-sm bg-[#4A90E2] text-white"
+                                                    >
+                                                        {item}
+                                                    </button>
+                                                ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </Modal>
 
                     {/* Household Member Upgrade Modal */}
                     {showHouseholdUpgradeModal && (

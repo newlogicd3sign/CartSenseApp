@@ -29,6 +29,7 @@ export type InstacartLinkRequest = {
   enable_pantry_items?: boolean;
   link_type?: InstacartLinkType;
   instructions?: string[]; // Recipe cooking instructions/steps
+  retailer_key?: string; // Pre-select a specific retailer (e.g., "costco", "walmart")
 };
 
 export type InstacartLinkResponse = {
@@ -228,9 +229,17 @@ export async function generateInstacartLink(
 
     console.log("[Instacart] Successfully generated link");
 
+    // Append retailer_key to URL if provided
+    let finalUrl = data.products_link_url;
+    if (request.retailer_key) {
+      const separator = finalUrl.includes("?") ? "&" : "?";
+      finalUrl = `${finalUrl}${separator}retailer_key=${encodeURIComponent(request.retailer_key)}`;
+      console.log("[Instacart] Appended retailer_key:", request.retailer_key);
+    }
+
     return {
       success: true,
-      url: data.products_link_url,
+      url: finalUrl,
     };
   } catch (error) {
     console.error("[Instacart] Error generating link:", error);

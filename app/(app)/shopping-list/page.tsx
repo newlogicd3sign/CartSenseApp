@@ -66,6 +66,7 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { ConfirmationModal } from "@/components/ConfirmationModal";
 import { Alert } from "@/components/Alert";
+import { InstacartRetailerModal, type InstacartRetailer } from "@/components/InstacartRetailerModal";
 
 type ShoppingItem = {
     id: string;
@@ -161,6 +162,10 @@ export default function ShoppingListPage() {
     const [shoppingPreference, setShoppingPreference] = useState<"kroger" | "instacart" | null>(null);
     const [userDiet, setUserDiet] = useState<string | null>(null);
     const [pantryItemKeys, setPantryItemKeys] = useState<Set<string>>(new Set());
+
+    // Instacart retailer state
+    const [instacartRetailer, setInstacartRetailer] = useState<InstacartRetailer | null>(null);
+    const [showInstacartRetailerModal, setShowInstacartRetailerModal] = useState(false);
 
     // Item detail modal state (same pattern as meal details)
     const [selectedItem, setSelectedItem] = useState<ShoppingItem | null>(null);
@@ -271,6 +276,22 @@ export default function ShoppingListPage() {
 
         void checkKrogerStatus();
         void fetchUserPreferences();
+
+        // Fetch saved Instacart retailer
+        const fetchInstacartRetailer = async () => {
+            try {
+                const res = await authFetch("/api/instacart/retailer");
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success && data.retailer) {
+                        setInstacartRetailer(data.retailer);
+                    }
+                }
+            } catch (err) {
+                console.error("Error fetching Instacart retailer:", err);
+            }
+        };
+        void fetchInstacartRetailer();
 
         // Re-check when page becomes visible (handles return from OAuth flow)
         const handleVisibilityChange = () => {
@@ -448,6 +469,7 @@ export default function ShoppingListPage() {
                     title: "CartSense Shopping List",
                     linkType: "shopping_list", // Use shopping list format (not recipe)
                     userId: user?.uid, // Save items to pantry
+                    retailerKey: instacartRetailer?.retailer_key, // Pre-select retailer if saved
                 }),
             });
 
@@ -494,6 +516,47 @@ export default function ShoppingListPage() {
         } catch (err) {
             // Silently fail - tracking should not block navigation
             console.error("Error tracking Go to Kroger click:", err);
+        }
+    };
+
+    const handleSelectInstacartRetailer = async (retailer: InstacartRetailer) => {
+        try {
+            const res = await authFetch("/api/instacart/retailer", {
+                method: "POST",
+                body: JSON.stringify(retailer),
+            });
+
+            if (!res.ok) {
+                const data = await res.json();
+                showToast(data.error || "Failed to save retailer", "error");
+                throw new Error(data.error);
+            }
+
+            setInstacartRetailer(retailer);
+            showToast(`${retailer.name} saved as your default store`, "success");
+        } catch (err) {
+            console.error("Error saving Instacart retailer:", err);
+            throw err;
+        }
+    };
+
+    const handleClearInstacartRetailer = async () => {
+        try {
+            const res = await authFetch("/api/instacart/retailer", {
+                method: "DELETE",
+            });
+
+            if (!res.ok) {
+                const data = await res.json();
+                showToast(data.error || "Failed to clear retailer", "error");
+                throw new Error(data.error);
+            }
+
+            setInstacartRetailer(null);
+            showToast("Store preference cleared", "success");
+        } catch (err) {
+            console.error("Error clearing Instacart retailer:", err);
+            throw err;
         }
     };
 
@@ -986,23 +1049,42 @@ export default function ShoppingListPage() {
                                                 <div className="flex items-center gap-2">
                                                     {/* Instacart Button - only for Instacart preference */}
                                                     {shoppingPreference === "instacart" && process.env.NEXT_PUBLIC_ENABLE_INSTACART === 'true' && (
-                                                        <button
-                                                            onClick={() => void handleAddToInstacart(allDateItems)}
-                                                            disabled={addingToInstacart}
-                                                            className="h-[46px] px-[18px] bg-[#003D29] text-[#FAF1E5] rounded-2xl text-xs sm:text-sm font-medium hover:bg-[#004D35] transition-colors disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2"
-                                                        >
-                                                            {addingToInstacart ? (
-                                                                <>
-                                                                    <div className="w-[22px] h-[22px] border-2 border-[#FAF1E5]/30 border-t-[#FAF1E5] rounded-full animate-spin" />
-                                                                    <span>Opening...</span>
-                                                                </>
-                                                            ) : (
-                                                                <>
-                                                                    <Image src={InstacartCarrot} alt="Instacart" className="w-[22px] h-[22px]" />
-                                                                    <span>Shop with Instacart</span>
-                                                                </>
-                                                            )}
-                                                        </button>
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                onClick={() => void handleAddToInstacart(allDateItems)}
+                                                                disabled={addingToInstacart}
+                                                                className="h-[46px] px-[18px] bg-[#003D29] text-[#FAF1E5] rounded-2xl text-xs sm:text-sm font-medium hover:bg-[#004D35] transition-colors disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2"
+                                                            >
+                                                                {addingToInstacart ? (
+                                                                    <>
+                                                                        <div className="w-[22px] h-[22px] border-2 border-[#FAF1E5]/30 border-t-[#FAF1E5] rounded-full animate-spin" />
+                                                                        <span>Opening...</span>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        {instacartRetailer?.retailer_logo_url ? (
+                                                                            // eslint-disable-next-line @next/next/no-img-element
+                                                                            <img
+                                                                                src={instacartRetailer.retailer_logo_url}
+                                                                                alt={instacartRetailer.name}
+                                                                                className="w-[22px] h-[22px] rounded object-contain bg-white"
+                                                                            />
+                                                                        ) : (
+                                                                            <Image src={InstacartCarrot} alt="Instacart" className="w-[22px] h-[22px]" />
+                                                                        )}
+                                                                        <span>Shop{instacartRetailer ? ` at ${instacartRetailer.name}` : ' with Instacart'}</span>
+                                                                    </>
+                                                                )}
+                                                            </button>
+                                                            <button
+                                                                onClick={() => setShowInstacartRetailerModal(true)}
+                                                                className="h-[46px] px-3 bg-[#003D29]/10 text-[#003D29] rounded-2xl text-xs font-medium hover:bg-[#003D29]/20 transition-colors flex items-center gap-1.5"
+                                                                title="Change store"
+                                                            >
+                                                                <MapPin className="w-4 h-4" />
+                                                                <span className="hidden sm:inline">Store</span>
+                                                            </button>
+                                                        </div>
                                                     )}
                                                     {/* Kroger Button - only for Kroger preference when linked */}
                                                     {shoppingPreference === "kroger" && krogerLinkStatus === "linked" && (
@@ -1637,6 +1719,15 @@ export default function ShoppingListPage() {
                     </div>
                 </div>
             )}
+
+            {/* Instacart Retailer Modal */}
+            <InstacartRetailerModal
+                isOpen={showInstacartRetailerModal}
+                onClose={() => setShowInstacartRetailerModal(false)}
+                onSelectRetailer={handleSelectInstacartRetailer}
+                savedRetailer={instacartRetailer}
+                onClearRetailer={handleClearInstacartRetailer}
+            />
 
             {/* Kroger Link Modal */}
             {showLinkModal && (

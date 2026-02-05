@@ -13,7 +13,7 @@ const isCapacitor = () => {
 import { authFetch } from "@/lib/authFetch";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, setDoc, getDoc, collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
-import { ArrowRight, AlertCircle, ShoppingCart, MapPin, CheckCircle, ExternalLink, Search } from "lucide-react";
+import { ArrowRight, AlertCircle, ShoppingCart, MapPin, CheckCircle, ExternalLink, Search, Store } from "lucide-react";
 import Image from "next/image";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
 import InstacartCarrot from "@/app/🥕 Instacart Logos/Logos - Carrot/RGB/PNG/Instacart_Carrot.png";
@@ -92,6 +92,12 @@ type KrogerLocationSearchResult = {
     zipCode: string;
 };
 
+type InstacartRetailer = {
+    retailer_key: string;
+    name: string;
+    retailer_logo_url: string;
+};
+
 const SHOPPING_PREFERENCE_OPTIONS = [
     ...(process.env.NEXT_PUBLIC_ENABLE_INSTACART === 'true' ? [{
         value: "instacart",
@@ -143,13 +149,21 @@ function SetupPageContent() {
     // Kroger state
     const [krogerLinked, setKrogerLinked] = useState(false);
 
-    // Store selection state
+    // Store selection state (Kroger)
     const [zipSearch, setZipSearch] = useState("");
     const [storeResults, setStoreResults] = useState<KrogerLocationSearchResult[]>([]);
     const [searchingStores, setSearchingStores] = useState(false);
     const [storeSearchError, setStoreSearchError] = useState<string | null>(null);
     const [selectedStore, setSelectedStore] = useState<KrogerLocationSearchResult | null>(null);
     const [savingStore, setSavingStore] = useState(false);
+
+    // Instacart retailer selection state
+    const [instacartZipSearch, setInstacartZipSearch] = useState("");
+    const [instacartRetailers, setInstacartRetailers] = useState<InstacartRetailer[]>([]);
+    const [searchingInstacartRetailers, setSearchingInstacartRetailers] = useState(false);
+    const [instacartSearchError, setInstacartSearchError] = useState<string | null>(null);
+    const [selectedInstacartRetailer, setSelectedInstacartRetailer] = useState<InstacartRetailer | null>(null);
+    const [savingInstacartRetailer, setSavingInstacartRetailer] = useState(false);
 
     useEffect(() => {
         setAccentColor(getRandomAccentColor());
@@ -486,6 +500,66 @@ function SetupPageContent() {
             setStoreSearchError("Failed to save store. Please try again.");
         } finally {
             setSavingStore(false);
+        }
+    };
+
+    const handleSearchInstacartRetailers = async () => {
+        const zip = instacartZipSearch.trim();
+        if (!zip) {
+            setInstacartSearchError("Please enter a ZIP code.");
+            setInstacartRetailers([]);
+            return;
+        }
+
+        try {
+            setSearchingInstacartRetailers(true);
+            setInstacartSearchError(null);
+            setInstacartRetailers([]);
+
+            const res = await fetch(`/api/instacart/retailers?postal_code=${encodeURIComponent(zip)}`);
+            const data = await res.json();
+
+            if (!res.ok || !data.success) {
+                setInstacartSearchError(data.error || "Could not load retailers for that ZIP.");
+                return;
+            }
+
+            const retailers = data.retailers || [];
+            setInstacartRetailers(retailers);
+            if (retailers.length === 0) {
+                setInstacartSearchError("No retailers found for that ZIP code.");
+            }
+        } catch (err) {
+            console.error("Error searching Instacart retailers", err);
+            setInstacartSearchError("Something went wrong searching for retailers.");
+        } finally {
+            setSearchingInstacartRetailers(false);
+        }
+    };
+
+    const handleSelectInstacartRetailer = async (retailer: InstacartRetailer) => {
+        if (!user) return;
+
+        try {
+            setSavingInstacartRetailer(true);
+
+            // Save to user document
+            const userRef = doc(db, "users", user.uid);
+            await setDoc(userRef, {
+                defaultInstacartRetailer: {
+                    retailer_key: retailer.retailer_key,
+                    name: retailer.name,
+                    retailer_logo_url: retailer.retailer_logo_url || "",
+                },
+            }, { merge: true });
+
+            setSelectedInstacartRetailer(retailer);
+            showToast(`${retailer.name} selected as your default store!`, "success");
+        } catch (err) {
+            console.error("Error saving Instacart retailer:", err);
+            setInstacartSearchError("Failed to save retailer. Please try again.");
+        } finally {
+            setSavingInstacartRetailer(false);
         }
     };
 
@@ -1110,40 +1184,139 @@ function SetupPageContent() {
                                 </div>
                             )}
 
-                            {/* Step 6: Instacart confirmation (for Instacart preference) */}
+                            {/* Step 6: Instacart retailer selection (for Instacart preference) */}
                             {step === 6 && shoppingPreference === "instacart" && (
                                 <div className="space-y-6">
                                     <div>
-                                        <h2 className="font-medium text-gray-900 mb-1">You&apos;re all set!</h2>
-                                        <p className="text-sm text-gray-500">Shop through Instacart when you&apos;re ready to buy ingredients</p>
+                                        <h2 className="font-medium text-gray-900 mb-1">Choose Your Preferred Store</h2>
+                                        <p className="text-sm text-gray-500">Select a default store for Instacart shopping (optional)</p>
                                     </div>
 
-                                    <div className="bg-[#003D29]/5 border border-[#003D29]/20 rounded-xl p-6 text-center">
-                                        <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-sm">
-                                            <Image src={InstacartCarrot} alt="Instacart" className="w-8 h-8" />
+                                    {selectedInstacartRetailer ? (
+                                        <div className="bg-[#003D29]/5 border border-[#003D29]/20 rounded-xl p-6">
+                                            <div className="flex items-start gap-3">
+                                                {selectedInstacartRetailer.retailer_logo_url ? (
+                                                    <div className="w-14 h-14 rounded-lg overflow-hidden bg-white flex-shrink-0 border border-gray-100">
+                                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                        <img
+                                                            src={selectedInstacartRetailer.retailer_logo_url}
+                                                            alt={selectedInstacartRetailer.name}
+                                                            className="w-full h-full object-contain"
+                                                        />
+                                                    </div>
+                                                ) : (
+                                                    <div className="w-14 h-14 rounded-lg bg-[#003D29]/10 flex items-center justify-center flex-shrink-0">
+                                                        <Store className="w-7 h-7 text-[#003D29]" />
+                                                    </div>
+                                                )}
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-2">
+                                                        <CheckCircle className="w-5 h-5 text-[#003D29]" />
+                                                        <h3 className="font-medium text-[#003D29]">{selectedInstacartRetailer.name}</h3>
+                                                    </div>
+                                                    <p className="text-sm text-[#003D29]/70 mt-1">
+                                                        This store will be pre-selected when you shop with Instacart
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedInstacartRetailer(null)}
+                                                className="mt-4 text-sm text-[#003D29]/70 hover:text-[#003D29] underline"
+                                            >
+                                                Choose a different store
+                                            </button>
                                         </div>
-                                        <h3 className="font-medium text-[#003D29] mb-1">Instacart Shopping</h3>
-                                        <p className="text-sm text-[#003D29]/70 mb-4">
-                                            When viewing your shopping list, tap &quot;Get Recipe Ingredients&quot; to add items from any supported store.
-                                        </p>
-                                        <ul className="text-left space-y-2 text-sm text-[#003D29]/70">
-                                            <li className="flex items-start gap-2">
-                                                <CheckCircle className="w-4 h-4 text-[#003D29] flex-shrink-0 mt-0.5" />
-                                                <span>Choose from multiple stores</span>
-                                            </li>
-                                            <li className="flex items-start gap-2">
-                                                <CheckCircle className="w-4 h-4 text-[#003D29] flex-shrink-0 mt-0.5" />
-                                                <span>Same-day delivery or pickup</span>
-                                            </li>
-                                            <li className="flex items-start gap-2">
-                                                <CheckCircle className="w-4 h-4 text-[#003D29] flex-shrink-0 mt-0.5" />
-                                                <span>No account linking required</span>
-                                            </li>
-                                        </ul>
-                                    </div>
+                                    ) : (
+                                        <>
+                                            {/* Info box */}
+                                            <div className="p-3 bg-blue-50 rounded-xl border border-blue-100">
+                                                <p className="text-xs font-medium text-blue-800 mb-1">Popular Instacart Retailers</p>
+                                                <p className="text-xs text-blue-700 leading-relaxed">
+                                                    Costco, Walmart, Target, Safeway, Kroger, Publix, Albertsons, Sprouts, and many more local grocers
+                                                </p>
+                                            </div>
+
+                                            {/* ZIP Search */}
+                                            <div>
+                                                <label className="text-sm font-medium text-gray-700 mb-2 block">
+                                                    Search by ZIP Code
+                                                </label>
+                                                <div className="flex gap-2">
+                                                    <input
+                                                        type="text"
+                                                        value={instacartZipSearch}
+                                                        onChange={(e) => setInstacartZipSearch(e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === "Enter") {
+                                                                e.preventDefault();
+                                                                void handleSearchInstacartRetailers();
+                                                            }
+                                                        }}
+                                                        placeholder="Enter ZIP code"
+                                                        className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:border-[#003D29] focus:ring-1 focus:ring-[#003D29] focus:outline-none transition-colors"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => void handleSearchInstacartRetailers()}
+                                                        disabled={searchingInstacartRetailers}
+                                                        className="p-2.5 bg-[#003D29] text-white rounded-lg disabled:opacity-70 flex items-center justify-center flex-shrink-0"
+                                                        aria-label="Search"
+                                                    >
+                                                        {searchingInstacartRetailers ? (
+                                                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                        ) : (
+                                                            <Search className="w-5 h-5" />
+                                                        )}
+                                                    </button>
+                                                </div>
+
+                                                {instacartSearchError && (
+                                                    <div className="flex items-start gap-2 p-3 bg-red-50 rounded-lg mt-3">
+                                                        <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                                                        <p className="text-sm text-red-600">{instacartSearchError}</p>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Search Results */}
+                                            {instacartRetailers.length > 0 && (
+                                                <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                                                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                                                        Available Retailers ({instacartRetailers.length})
+                                                    </p>
+                                                    {instacartRetailers.map((retailer) => (
+                                                        <button
+                                                            key={retailer.retailer_key}
+                                                            type="button"
+                                                            onClick={() => void handleSelectInstacartRetailer(retailer)}
+                                                            disabled={savingInstacartRetailer}
+                                                            className="w-full p-3 bg-gray-50 hover:bg-[#003D29]/5 border border-gray-200 hover:border-[#003D29]/30 rounded-lg text-left transition-colors disabled:opacity-50 flex items-center gap-3"
+                                                        >
+                                                            {retailer.retailer_logo_url ? (
+                                                                <div className="w-10 h-10 rounded-lg overflow-hidden bg-white flex-shrink-0 border border-gray-100">
+                                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                                    <img
+                                                                        src={retailer.retailer_logo_url}
+                                                                        alt={retailer.name}
+                                                                        className="w-full h-full object-contain"
+                                                                    />
+                                                                </div>
+                                                            ) : (
+                                                                <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+                                                                    <Store className="w-5 h-5 text-gray-400" />
+                                                                </div>
+                                                            )}
+                                                            <span className="font-medium text-gray-900">{retailer.name}</span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
 
                                     <p className="text-sm text-gray-400 text-center">
-                                        You can switch to Kroger direct shopping anytime in settings.
+                                        This is optional. You can always change your store later or choose a different one when shopping.
                                     </p>
                                 </div>
                             )}

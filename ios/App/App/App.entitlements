@@ -5,6 +5,7 @@
 	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>applinks:cartsenseapp.com</string>
+		<string>webcredentials:cartsenseapp.com</string>
 	</array>
 </dict>
 </plist>
