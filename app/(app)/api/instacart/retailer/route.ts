@@ -8,6 +8,7 @@ export type SavedInstacartRetailer = {
   retailer_key: string;
   name: string;
   retailer_logo_url: string;
+  postal_code?: string; // ZIP code used to find this retailer
 };
 
 /**
@@ -81,7 +82,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { retailer_key, name, retailer_logo_url } = body;
+    const { retailer_key, name, retailer_logo_url, postal_code } = body;
 
     if (!retailer_key || !name) {
       return NextResponse.json(
@@ -94,6 +95,7 @@ export async function POST(request: Request) {
       retailer_key,
       name,
       retailer_logo_url: retailer_logo_url || "",
+      postal_code: postal_code || undefined,
     };
 
     await adminDb.collection("users").doc(userId).set(

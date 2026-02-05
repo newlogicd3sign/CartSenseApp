@@ -5,15 +5,14 @@ const config: CapacitorConfig = {
   appName: 'CartSense',
   webDir: 'out',
   server: {
-    url: 'https://cartsenseapp.com',
+    url: 'http://localhost:3000',
+    cleartext: true,
   },
   ios: {
-    contentInset: 'automatic',
+    contentInset: 'never',
     allowsLinkPreview: false,
     scrollEnabled: true,
-    backgroundColor: '#ffffff',
-    // Limits navigation to app-bound domains for better data persistence
-    limitsNavigationsToAppBoundDomains: true,
+    backgroundColor: '#f8fafb',
   },
   android: {
     allowMixedContent: false,

@@ -5,12 +5,14 @@ import InstacartCarrot from "@/app/🥕 Instacart Logos/Logos - Carrot/RGB/PNG/I
 import { Browser } from "@capacitor/browser";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { openExternalUrl } from "@/lib/openExternalUrl";
 
 // Check if running in Capacitor
 const isCapacitor = () => {
     if (typeof window === "undefined") return false;
     return (window as any).Capacitor?.isNativePlatform?.() ?? false;
 };
+
 import { auth, db } from "@/lib/firebaseClient";
 import { authFetch } from "@/lib/authFetch";
 import { onAuthStateChanged, type User } from "firebase/auth";
@@ -481,13 +483,12 @@ export default function ShoppingListPage() {
                 return;
             }
 
-            // Open Instacart in a new tab
+            // Open Instacart - will open native app if installed via Universal Links
             if (data.url) {
-                if (isCapacitor()) {
-                    await Browser.open({ url: data.url });
-                } else {
-                    window.open(data.url, "_blank", "noopener,noreferrer");
-                }
+                // openExternalUrl uses AppLauncher which respects Universal Links
+                // If Instacart app is installed, it will open in the app
+                // Otherwise, opens in system browser (Safari/Chrome)
+                await openExternalUrl(data.url);
                 showToast(`Opening Instacart with ${data.itemCount} items...`, "success");
                 hapticSuccess();
 
@@ -1445,16 +1446,17 @@ export default function ShoppingListPage() {
                                     Close
                                 </button>
                                 {krogerResults.some(i => i.found) && (
-                                    <a
-                                        href={storeBrand.cartUrl}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        onClick={trackGoToKroger}
+                                    <button
+                                        onClick={async () => {
+                                            trackGoToKroger();
+                                            // Opens native Kroger/Smith's/etc app if installed, otherwise browser
+                                            await openExternalUrl(storeBrand.cartUrl);
+                                        }}
                                         className="flex-1 py-3 bg-[#0056a3] text-white rounded-xl font-medium text-center hover:bg-[#004080] transition-colors flex items-center justify-center gap-2"
                                     >
                                         <span>Go to {storeBrand.displayName}</span>
                                         <ExternalLink className="w-4 h-4" />
-                                    </a>
+                                    </button>
                                 )}
                             </div>
                         </div>

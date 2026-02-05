@@ -5,12 +5,7 @@ import InstacartCarrot from "@/app/🥕 Instacart Logos/Logos - Carrot/RGB/PNG/I
 import { Browser } from "@capacitor/browser";
 import { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
-
-// Check if running in Capacitor
-const isCapacitor = () => {
-    if (typeof window === "undefined") return false;
-    return (window as any).Capacitor?.isNativePlatform?.() ?? false;
-};
+import { openExternalUrl } from "@/lib/openExternalUrl";
 import { MealImage } from "@/components/MealImage";
 import { auth, db } from "@/lib/firebaseClient";
 import { authFetch } from "@/lib/authFetch";
@@ -387,9 +382,10 @@ export default function SavedMealDetailPage() {
         }
     }, [meal]);
 
-    // Lazy load Kroger enrichment when viewing saved meal (only if Kroger is connected)
+    // Lazy load Kroger enrichment when viewing saved meal (only if Kroger is connected and preferred)
     useEffect(() => {
         if (!user || !meal || !krogerConnected || !krogerStoreSet || hasEnrichedKroger) return;
+        if (prefs?.shoppingPreference === "instacart") return;
 
         // Check if any ingredient already has Kroger data (already enriched)
         const alreadyEnriched = meal.ingredients.some(ing => ing.krogerProductId);
@@ -440,7 +436,7 @@ export default function SavedMealDetailPage() {
         };
 
         enrichIngredients();
-    }, [user, meal, krogerConnected, krogerStoreSet, hasEnrichedKroger]);
+    }, [user, meal, krogerConnected, krogerStoreSet, hasEnrichedKroger, prefs?.shoppingPreference]);
 
     const toggleIngredient = (idx: number) => {
         setSelectedIngredients((prev) => {
@@ -620,13 +616,12 @@ export default function SavedMealDetailPage() {
                 return;
             }
 
-            // Open Instacart in a new tab
+            // Open Instacart - will open native app if installed via Universal Links
             if (data.url) {
-                if (isCapacitor()) {
-                    await Browser.open({ url: data.url });
-                } else {
-                    window.open(data.url, "_blank");
-                }
+                // openExternalUrl uses AppLauncher which respects Universal Links
+                // If Instacart app is installed, it will open in the app
+                // Otherwise, opens in system browser (Safari/Chrome)
+                await openExternalUrl(data.url);
                 showToast("Opening Instacart...", "success");
                 hapticSuccess();
 

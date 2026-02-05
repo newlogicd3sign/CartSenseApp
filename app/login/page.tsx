@@ -6,7 +6,7 @@ import { auth } from "@/lib/firebaseClient";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
-import { Mail, Lock, ArrowRight, Eye, EyeOff } from "lucide-react";
+import { Mail, Lock, ArrowRight, ArrowLeft, Eye, EyeOff } from "lucide-react";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
 import { useToast } from "@/components/Toast";
 import { Button } from "@/components/Button";
@@ -75,10 +75,24 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="min-h-screen bg-[#f8fafb] flex flex-col safe-area-top">
+        <div className="min-h-screen bg-[#f8fafb] flex flex-col px-6 py-8">
+            {/* Back Button - returns to welcome screen */}
+            {isNativeApp && (
+                <button
+                    onClick={() => {
+                        // Remove mode param to show welcome screen again
+                        router.replace("/login");
+                    }}
+                    className="self-start p-2 -ml-2 mb-4 hover:bg-gray-100 rounded-lg transition-colors"
+                    style={{ marginTop: 'env(safe-area-inset-top, 0px)' }}
+                >
+                    <ArrowLeft className="w-5 h-5 text-gray-600" />
+                </button>
+            )}
+
             {/* Main Content */}
-            <div className="flex-1 px-6 pt-12 lg:pt-16">
-                <div className="max-w-[428px] mx-auto">
+            <div className="flex-1 flex flex-col items-center justify-center">
+                <div className="w-full max-w-[428px]">
                     {/* Logo & Header */}
                     <div className="text-center mb-8">
                         <Image src={CartSenseLogo} alt="CartSense" className="h-12 w-auto mx-auto mb-6" />
@@ -169,7 +183,7 @@ export default function LoginPage() {
                     </Card>
 
                     {/* Footer Text */}
-                    <p className="text-center text-sm text-gray-400 mt-6 px-4">
+                    <p className="text-center text-sm text-gray-400 mt-6">
                         By signing in, you agree to our{" "}
                         <button onClick={() => router.push("/terms")} className="text-[#4A90E2] hover:underline">
                             Terms & Conditions

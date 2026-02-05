@@ -1,25 +1,33 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { ArrowLeft } from "lucide-react";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
 
 export default function PrivacyPolicyPage() {
+    const router = useRouter();
+
     return (
         <div className="min-h-screen bg-[#f8fafb]">
-            {/* Header */}
-            <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
+            {/* Fixed Header */}
+            <div
+                className="fixed top-0 left-0 right-0 bg-white border-b border-gray-200 z-10"
+                style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+            >
                 <div className="max-w-3xl mx-auto px-6 py-4 flex items-center gap-4">
-                    <Link
-                        href="/login"
+                    <button
+                        onClick={() => router.back()}
                         className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                     >
                         <ArrowLeft className="w-5 h-5 text-gray-600" />
-                    </Link>
+                    </button>
                     <Image src={CartSenseLogo} alt="CartSense" className="h-8 w-auto" />
                 </div>
             </div>
+
+            {/* Spacer for fixed header */}
+            <div style={{ height: 'calc(env(safe-area-inset-top, 0px) + 72px)' }} />
 
             {/* Content */}
             <div className="max-w-3xl mx-auto px-6 py-8">

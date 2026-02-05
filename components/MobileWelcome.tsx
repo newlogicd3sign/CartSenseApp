@@ -201,7 +201,7 @@ export function MobileWelcome() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#f8fafb] flex flex-col safe-area-top">
+    <div className="min-h-screen bg-[#f8fafb] flex flex-col">
       {/* Main content area */}
       <div
         className="flex-1 flex flex-col items-center justify-center px-6"

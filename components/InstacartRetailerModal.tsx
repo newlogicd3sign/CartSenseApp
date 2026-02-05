@@ -9,6 +9,7 @@ export type InstacartRetailer = {
     retailer_key: string;
     name: string;
     retailer_logo_url: string;
+    postal_code?: string;
 };
 
 interface InstacartRetailerModalProps {
@@ -70,7 +71,12 @@ export function InstacartRetailerModal({
     const handleSelectRetailer = async (retailer: InstacartRetailer) => {
         try {
             setSaving(true);
-            await onSelectRetailer(retailer);
+            // Include the postal_code used to find this retailer
+            const retailerWithZip: InstacartRetailer = {
+                ...retailer,
+                postal_code: zipSearch.trim() || undefined,
+            };
+            await onSelectRetailer(retailerWithZip);
             setRetailers([]);
             setZipSearch("");
             onClose();
@@ -137,6 +143,7 @@ export function InstacartRetailerModal({
                                 </div>
                                 <p className="text-xs text-[#003D29]/70 mt-0.5">
                                     This store will be pre-selected when you shop with Instacart
+                                    {savedRetailer.postal_code && ` • ZIP: ${savedRetailer.postal_code}`}
                                 </p>
                             </div>
                         </div>

@@ -412,3 +412,12 @@ input, textarea, select {
 .animate-scroll {
   animation: scroll 20s linear infinite;
 }
+
+/* ==========================================
+   Capacitor App Safe Area Handling
+   ========================================== */
+
+/* Minimal approach: only adjust sticky headers */
+html.capacitor-app .sticky.top-0 {
+  top: env(safe-area-inset-top, 0px) !important;
+}
