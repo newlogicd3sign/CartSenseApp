@@ -76,6 +76,9 @@ import { useToast } from "@/components/Toast";
 import { ShareModal } from "@/components/ShareModal"; // Added
 import { DietaryConflictModal } from "@/components/DietaryConflictModal";
 import { checkPromptForConflicts, getCompliantDiets, type ConflictResult, type FamilyMemberRestrictions } from "@/lib/sensitivityMapping";
+import { useNetwork } from "@/context/NetworkContext";
+import { getCachedMeal } from "@/lib/offlineStorage";
+import { WifiOff } from "lucide-react";
 
 type Ingredient = {
     name: string;
@@ -155,12 +158,14 @@ export default function SavedMealDetailPage() {
     const params = useParams();
     const mealId = params.mealId as string;
     const { showToast } = useToast();
+    const { isOffline } = useNetwork();
 
     const [user, setUser] = useState<User | null>(null);
     const [loadingUser, setLoadingUser] = useState(true);
 
     const [meal, setMeal] = useState<SavedMeal | null>(null);
     const [loadingMeal, setLoadingMeal] = useState(true);
+    const [isOfflineMode, setIsOfflineMode] = useState(false);
     const [adjustedServings, setAdjustedServings] = useState<number | null>(null);
 
     const [addingToList, setAddingToList] = useState(false);
@@ -353,19 +358,45 @@ export default function SavedMealDetailPage() {
             if (!user) return;
 
             setLoadingMeal(true);
+            setIsOfflineMode(false);
+
+            // Try Firestore first
+            if (!isOffline) {
+                try {
+                    const ref = doc(db, "savedMeals", user.uid, "meals", mealId);
+                    const snap = await getDoc(ref);
+                    if (snap.exists()) {
+                        setMeal({
+                            id: snap.id,
+                            ...(snap.data() as Omit<SavedMeal, "id">),
+                        });
+                        setLoadingMeal(false);
+                        return;
+                    } else {
+                        setMeal(null);
+                        setLoadingMeal(false);
+                        return;
+                    }
+                } catch (err) {
+                    console.error("Error loading saved meal from Firestore", err);
+                    // Fall through to try cache
+                }
+            }
+
+            // Try IndexedDB cache (when offline or Firestore failed)
             try {
-                const ref = doc(db, "savedMeals", user.uid, "meals", mealId);
-                const snap = await getDoc(ref);
-                if (snap.exists()) {
+                const cached = await getCachedMeal(mealId);
+                if (cached && cached.mealData) {
                     setMeal({
-                        id: snap.id,
-                        ...(snap.data() as Omit<SavedMeal, "id">),
+                        id: mealId,
+                        ...cached.mealData,
                     });
+                    setIsOfflineMode(true);
                 } else {
                     setMeal(null);
                 }
             } catch (err) {
-                console.error("Error loading saved meal", err);
+                console.error("Error loading saved meal from cache", err);
                 setMeal(null);
             } finally {
                 setLoadingMeal(false);
@@ -373,7 +404,7 @@ export default function SavedMealDetailPage() {
         };
 
         fetchMeal();
-    }, [user, mealId]);
+    }, [user, mealId, isOffline]);
 
     // Initialize all ingredients as selected when meal loads
     useEffect(() => {
@@ -1063,6 +1094,16 @@ export default function SavedMealDetailPage() {
 
     return (
         <div className="min-h-screen bg-[#f8fafb]">
+            {/* Offline Mode Indicator */}
+            {isOfflineMode && (
+                <div className="bg-amber-50 border-b border-amber-200 px-6 py-2">
+                    <div className="max-w-3xl mx-auto flex items-center gap-2 text-amber-700">
+                        <WifiOff className="w-4 h-4" />
+                        <span className="text-sm font-medium">Offline Mode - Viewing cached meal</span>
+                    </div>
+                </div>
+            )}
+
             {/* Header with Back Button */}
             <div className="bg-white border-b border-gray-100 px-6 pt-safe-4 pb-4 sticky sticky-safe z-20">
                 <div className="max-w-3xl mx-auto">
