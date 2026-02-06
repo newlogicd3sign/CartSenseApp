@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'CartSense',
   webDir: 'out',
   server: {
-    url: 'https://www.cartsenseapp.com',
+    url: 'https://cartsenseapp.com',
   },
   ios: {
     contentInset: 'never',
