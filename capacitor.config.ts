@@ -22,7 +22,7 @@ const config: CapacitorConfig = {
       enabled: true,
     },
     CapacitorHttp: {
-      enabled: true,
+      enabled: false, // Disabled when using remote server URL
     },
     PushNotifications: {
       presentationOptions: ["badge", "sound", "alert"],
