@@ -5,8 +5,7 @@ const config: CapacitorConfig = {
   appName: 'CartSense',
   webDir: 'out',
   server: {
-    url: 'http://localhost:3000',
-    cleartext: true,
+    url: 'https://www.cartsenseapp.com',
   },
   ios: {
     contentInset: 'never',
@@ -24,6 +23,9 @@ const config: CapacitorConfig = {
     },
     CapacitorHttp: {
       enabled: true,
+    },
+    PushNotifications: {
+      presentationOptions: ["badge", "sound", "alert"],
     },
   },
 };

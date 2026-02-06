@@ -28,6 +28,8 @@ import { ConfirmationModal } from "@/components/ConfirmationModal";
 import { MealCard } from "@/components/MealCard";
 import { ShareModal } from "@/components/ShareModal";
 import { getCompliantDiets } from "@/lib/sensitivityMapping";
+import { useOfflineMeals } from "@/lib/hooks/useOfflineMeals";
+import { WifiOff } from "lucide-react";
 
 type Ingredient = {
     name: string;
@@ -70,13 +72,18 @@ export default function SavedMealsPage() {
     const [dietType, setDietType] = useState<string | undefined>(undefined);
     const [isPremium, setIsPremium] = useState(false);
 
-    const [meals, setMeals] = useState<SavedMeal[]>([]);
+    const [firestoreMeals, setFirestoreMeals] = useState<SavedMeal[]>([]);
     const [loadingMeals, setLoadingMeals] = useState(true);
-
     const [searchQuery, setSearchQuery] = useState("");
     const [mealToDelete, setMealToDelete] = useState<SavedMeal | null>(null);
     const [mealToShare, setMealToShare] = useState<SavedMeal | null>(null);
     const [accentColor, setAccentColor] = useState<AccentColor>({ primary: "#3b82f6", dark: "#2563eb" });
+
+    // Offline meals support
+    const { meals, isOfflineMode, removeCachedMeal } = useOfflineMeals(
+        firestoreMeals,
+        loadingMeals
+    );
 
     useEffect(() => {
         setAccentColor(getRandomAccentColor());
@@ -129,12 +136,12 @@ export default function SavedMealsPage() {
                     ...(d.data() as Omit<SavedMeal, "id">),
                     id: d.id,
                 }));
-                setMeals(docs);
+                setFirestoreMeals(docs);
                 setLoadingMeals(false);
             },
             (error) => {
                 console.error("Error listening to saved meals", error);
-                setMeals([]);
+                setFirestoreMeals([]);
                 setLoadingMeals(false);
             }
         );
@@ -147,6 +154,8 @@ export default function SavedMealsPage() {
 
         try {
             await deleteDoc(doc(db, "savedMeals", user.uid, "meals", mealId));
+            // Also remove from offline cache
+            await removeCachedMeal(mealId);
             setMealToDelete(null);
         } catch (err) {
             console.error("Error deleting saved meal", err);
@@ -182,6 +191,16 @@ export default function SavedMealsPage() {
 
     return (
         <div className="min-h-screen bg-[#f8fafb]">
+            {/* Offline Mode Indicator */}
+            {isOfflineMode && (
+                <div className="bg-amber-50 border-b border-amber-200 px-6 py-2">
+                    <div className="max-w-3xl mx-auto flex items-center gap-2 text-amber-700">
+                        <WifiOff className="w-4 h-4" />
+                        <span className="text-sm font-medium">Offline Mode - Viewing cached meals</span>
+                    </div>
+                </div>
+            )}
+
             {/* Header - Sticky */}
             <div className="bg-white border-b border-gray-100 px-6 pt-safe-6 pb-6 sticky sticky-safe z-20">
                 <div className="max-w-3xl mx-auto">

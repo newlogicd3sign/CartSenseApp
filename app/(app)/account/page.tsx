@@ -55,6 +55,7 @@ import { Modal } from "@/components/Modal";
 import { StoreSearchModal } from "@/components/StoreSearchModal";
 import { InstacartRetailerModal, type InstacartRetailer } from "@/components/InstacartRetailerModal";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
+import { NotificationSettings } from "@/components/NotificationSettings";
 import { getStoreBrand } from "@/lib/utils";
 import { warmLocationInBackground } from "@/lib/product-engine/krogerWarm";
 import type { FamilyMember } from "@/types/family";
@@ -263,6 +264,14 @@ function AccountPageContent() {
 
     // Upgrade modal state for household members
     const [showHouseholdUpgradeModal, setShowHouseholdUpgradeModal] = useState(false);
+
+    // Native app state for push notifications
+    const [isNativeApp, setIsNativeApp] = useState(false);
+
+    // Detect if running in native app
+    useEffect(() => {
+        setIsNativeApp(isCapacitor());
+    }, []);
 
     const formatDietRestrictionsUpdatedAt = (value?: any) => {
         if (!value) return "";
@@ -1903,6 +1912,13 @@ function AccountPageContent() {
                             </div>
                         </div>
                     )}
+
+                    {/* Push Notifications Settings - Only show in native iOS app */}
+                    <NotificationSettings
+                        userId={user?.uid || null}
+                        currentPreferences={(userDoc as any)?.pushNotifications?.preferences || null}
+                        isNativeApp={isNativeApp}
+                    />
 
                     {/* Store & Account Card - Only show for Kroger preference OR if Instacart is disabled (forcing Kroger mode) */}
                     {(userDoc?.shoppingPreference === "kroger" || process.env.NEXT_PUBLIC_ENABLE_INSTACART !== 'true') && (() => {

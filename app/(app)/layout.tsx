@@ -16,6 +16,7 @@ import Image from "next/image";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
 import CartSenseProLogo from "@/app/CartSenseProLogo.svg";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { OfflineBanner } from "@/components/OfflineBanner";
 
 // Check if running in Capacitor
 const isCapacitor = () => {
@@ -236,6 +237,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     return (
         <div className={`relative w-full ${containerClass} ${bgColor}`}>
+            {/* Offline Banner */}
+            <OfflineBanner />
+
             {/* Mobile-first container with max-width for larger screens */}
             <div className={`w-full max-w-[428px] mx-auto lg:max-w-4xl xl:max-w-5xl ${bgColor} ${containerClass} relative`}>
                 {/* Desktop Header - Hidden on mobile and setup page */}
