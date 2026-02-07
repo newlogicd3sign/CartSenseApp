@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-// import { Dialog } from "@/components/Dialog";
 import { X, Copy, Check, Facebook, Mail, Link as LinkIcon, Share2, Twitter } from "lucide-react";
 import { Button } from "./Button";
 import { useToast } from "./Toast";
 import { LoadingSpinner } from "./LoadingSpinner";
 import { authFetch } from "@/lib/authFetch";
+import { Capacitor } from "@capacitor/core";
+import { AppLauncher } from "@capacitor/app-launcher";
 
 interface ShareModalProps {
     isOpen: boolean;
@@ -75,17 +76,60 @@ export function ShareModal({ isOpen, onClose, meal, userId }: ShareModalProps) {
         setTimeout(() => setCopied(false), 2000);
     };
 
-    const handleFacebook = () => {
+    const handleFacebook = async () => {
         if (!shareUrl) return;
+
+        // On iOS, try to open the Facebook app directly
+        if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === "ios") {
+            try {
+                // Check if Facebook app is installed
+                const { value: canOpen } = await AppLauncher.canOpenUrl({ url: "fb://" });
+
+                if (canOpen) {
+                    // Open Facebook app with share dialog
+                    // fb://facewebmodal/f?href= opens the in-app browser with share capability
+                    await AppLauncher.openUrl({
+                        url: `fb://facewebmodal/f?href=${encodeURIComponent(shareUrl)}`
+                    });
+                    return;
+                }
+            } catch (err) {
+                console.log("Could not open Facebook app:", err);
+            }
+        }
+
+        // Fallback to web share
         const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`;
         window.open(fbUrl, "_blank", "width=600,height=400");
     };
 
-    const handleTwitter = () => {
+    const handleTwitter = async () => {
         if (!shareUrl) return;
-        const text = encodeURIComponent(`Check out "${meal.name}" on CartSense!`);
-        const url = encodeURIComponent(shareUrl);
-        window.open(`https://twitter.com/intent/tweet?text=${text}&url=${url}`, "_blank", "width=600,height=400");
+        const text = `Check out "${meal.name}" on CartSense!`;
+
+        // On iOS, try to open the Twitter/X app directly
+        if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === "ios") {
+            try {
+                const { value: canOpen } = await AppLauncher.canOpenUrl({ url: "twitter://" });
+
+                if (canOpen) {
+                    // Open Twitter app with compose tweet
+                    await AppLauncher.openUrl({
+                        url: `twitter://post?message=${encodeURIComponent(text + " " + shareUrl)}`
+                    });
+                    return;
+                }
+            } catch (err) {
+                console.log("Could not open Twitter app:", err);
+            }
+        }
+
+        // Fallback to web
+        window.open(
+            `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`,
+            "_blank",
+            "width=600,height=400"
+        );
     };
 
     const handleEmail = () => {

@@ -1,53 +1,89 @@
 import { AppLauncher } from "@capacitor/app-launcher";
 import { Browser } from "@capacitor/browser";
 
-/**
- * Check if running in Capacitor native app
- */
 const isCapacitor = () => {
     if (typeof window === "undefined") return false;
     return (window as any).Capacitor?.isNativePlatform?.() ?? false;
 };
 
 /**
- * Opens a URL, preferring the native app if installed (via Universal Links).
+ * Map of URL hostname patterns to their native app URL schemes.
+ * Used to check if a native app is installed before trying Universal Links.
+ * All Kroger family stores share the "kroger://" scheme (single Kroger app).
+ */
+const APP_SCHEMES: Record<string, string> = {
+    "kroger.com": "kroger://",
+    "smithsfoodanddrug.com": "kroger://",
+    "ralphs.com": "kroger://",
+    "fredmeyer.com": "kroger://",
+    "kingsoopers.com": "kroger://",
+    "frysfood.com": "kroger://",
+    "dillons.com": "kroger://",
+    "qfc.com": "kroger://",
+    "harristeeter.com": "kroger://",
+    "picknsave.com": "kroger://",
+    "metromarket.net": "kroger://",
+    "marianos.com": "kroger://",
+    "food4less.com": "kroger://",
+    "foodsco.net": "kroger://",
+    "gerbes.com": "kroger://",
+    "jaycfoods.com": "kroger://",
+    "citymarket.com": "kroger://",
+    "pay-less.com": "kroger://",
+    "owensmarket.com": "kroger://",
+    "bakersplus.com": "kroger://",
+    "instacart.com": "instacart://",
+};
+
+/**
+ * Get the native app URL scheme for a given URL, if known.
+ */
+function getAppScheme(url: string): string | null {
+    try {
+        const hostname = new URL(url).hostname.replace(/^www\./, "");
+        return APP_SCHEMES[hostname] ?? null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Opens a URL, preferring the native app if installed.
  *
  * On iOS/Android:
- * 1. First tries AppLauncher.openUrl() which respects Universal Links
- *    - If the native app is installed and has Universal Links configured, it opens in the app
- *    - If not, it opens in the system browser (Safari/Chrome)
- * 2. Falls back to Browser.open() (in-app browser) if AppLauncher fails
+ * 1. Checks if a known native app is installed (via URL scheme)
+ * 2. If installed, opens via AppLauncher (triggers Universal Links → native app)
+ * 3. If not installed, opens in the in-app browser (keeps user in the app)
  *
- * On web: Uses window.open()
- *
- * @param url The URL to open
- * @returns Promise that resolves when the URL is opened
+ * On web: Opens in a new tab.
  */
 export async function openExternalUrl(url: string): Promise<void> {
     if (!isCapacitor()) {
-        // Web: open in new tab
         window.open(url, "_blank", "noopener,noreferrer");
         return;
     }
 
-    try {
-        // Try to open via system handler - this respects Universal Links
-        // If the app is installed and registered for this URL, it will open in the app
-        // Otherwise, it opens in the system browser (Safari/Chrome) which is outside our app
-        await AppLauncher.openUrl({ url });
-    } catch (error) {
-        // AppLauncher failed (might not support this URL type)
-        // Fall back to in-app browser
-        console.log("[openExternalUrl] AppLauncher failed, falling back to Browser:", error);
-        await Browser.open({ url });
+    const scheme = getAppScheme(url);
+
+    if (scheme) {
+        try {
+            const { value: canOpen } = await AppLauncher.canOpenUrl({ url: scheme });
+            if (canOpen) {
+                await AppLauncher.openUrl({ url });
+                return;
+            }
+        } catch {
+            // canOpenUrl failed — fall through to in-app browser
+        }
     }
+
+    // No native app or unknown domain — open in in-app browser
+    await Browser.open({ url });
 }
 
 /**
  * Opens a URL in the in-app browser.
  * Use this when you specifically want to keep the user in your app.
- *
- * @param url The URL to open
  */
 export async function openInAppBrowser(url: string): Promise<void> {
     if (!isCapacitor()) {

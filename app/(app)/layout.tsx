@@ -8,6 +8,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { auth, db } from "@/lib/firebaseClient";
 import { authFetch } from "@/lib/authFetch";
 import { signOut, onAuthStateChanged } from "firebase/auth";
+import { createAndStoreSession, restoreSession, clearStoredSession } from "@/lib/sessionPersistence";
 import { doc, getDoc } from "firebase/firestore";
 import { Search, List, BookmarkCheck, User, LogOut, Sparkles } from "lucide-react";
 import { getRandomAccentColor, type AccentColor } from "@/lib/utils";
@@ -35,6 +36,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const [authChecked, setAuthChecked] = useState(false);
     const [isPremiumUser, setIsPremiumUser] = useState(false);
     const [isNativeApp, setIsNativeApp] = useState(false);
+    const sessionRestoreAttempted = useRef(false);
 
     // Detect Capacitor on mount
     useEffect(() => {
@@ -88,14 +90,46 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         };
     }, [router]);
 
+    // Refresh stored session cookie when app resumes (keeps 14-day expiry fresh)
+    useEffect(() => {
+        if (!isCapacitor()) return;
+
+        const listener = CapApp.addListener("appStateChange", async ({ isActive }) => {
+            if (isActive && auth.currentUser) {
+                try {
+                    const idToken = await auth.currentUser.getIdToken();
+                    await createAndStoreSession(idToken);
+                } catch (e) {
+                    console.error("Failed to refresh session on resume:", e);
+                }
+            }
+        });
+
+        return () => {
+            listener.then((l) => l.remove());
+        };
+    }, []);
+
     // Check for authentication and email verification
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (user) => {
             if (!user) {
-                // Not logged in
+                // Try to restore session from stored cookie (Preferences on native, localStorage on web)
+                if (!sessionRestoreAttempted.current) {
+                    sessionRestoreAttempted.current = true;
+                    const restored = await restoreSession();
+                    if (restored) {
+                        // signInWithCustomToken will trigger onAuthStateChanged again with the user
+                        return;
+                    }
+                }
+                // Not logged in and no session to restore
                 router.push("/login");
                 return;
             }
+
+            // Valid user received — reset restore flag
+            sessionRestoreAttempted.current = false;
 
             // Check email verification
             if (!user.emailVerified) {
@@ -191,6 +225,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }, [pathname, isSetupPage]);
 
     const handleLogout = async () => {
+        await clearStoredSession();
         await signOut(auth);
         router.push("/login");
     };

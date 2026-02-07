@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { auth, db } from "@/lib/firebaseClient";
 import { createUserWithEmailAndPassword, sendEmailVerification } from "firebase/auth";
+import { createAndStoreSession } from "@/lib/sessionPersistence";
 import { doc, setDoc, getDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
@@ -93,6 +94,10 @@ export default function SignupPage() {
             if (previousData) {
                 await deleteDoc(deletedEmailRef);
             }
+
+            // Store session in Capacitor Preferences for iOS persistence
+            const idToken = await cred.user.getIdToken();
+            await createAndStoreSession(idToken);
 
             showToast("Account created! Check your email to verify.", "success");
 

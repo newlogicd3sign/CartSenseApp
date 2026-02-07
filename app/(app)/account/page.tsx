@@ -48,6 +48,7 @@ import {
     Store,
 } from "lucide-react";
 import { signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential, deleteUser } from "firebase/auth";
+import { clearStoredSession } from "@/lib/sessionPersistence";
 import { deleteDoc } from "firebase/firestore";
 import { useToast } from "@/components/Toast";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -1133,6 +1134,7 @@ function AccountPageContent() {
     };
 
     const handleLogout = async () => {
+        await clearStoredSession();
         await signOut(auth);
         router.push("/login");
     };
@@ -1250,6 +1252,9 @@ function AccountPageContent() {
 
             // Delete user document from Firestore
             await deleteDoc(userDocRef);
+
+            // Clear stored session before deleting auth user
+            await clearStoredSession();
 
             // Delete the Firebase Auth user
             await deleteUser(user);

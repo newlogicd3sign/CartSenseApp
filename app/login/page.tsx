@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Capacitor } from "@capacitor/core";
 import { auth } from "@/lib/firebaseClient";
 import { signInWithEmailAndPassword } from "firebase/auth";
+import { createAndStoreSession } from "@/lib/sessionPersistence";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { Mail, Lock, ArrowRight, ArrowLeft, Eye, EyeOff } from "lucide-react";
@@ -64,6 +65,10 @@ export default function LoginPage() {
                 router.push("/verify-email");
                 return;
             }
+
+            // Store session in Capacitor Preferences for iOS persistence
+            const idToken = await cred.user.getIdToken();
+            await createAndStoreSession(idToken);
 
             sessionStorage.setItem("animateEntry", "true");
             router.push("/prompt");
