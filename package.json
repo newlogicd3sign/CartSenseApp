@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@capacitor-community/safe-area": "^8.0.1",
+    "@capacitor-firebase/messaging": "^8.0.1",
     "@capacitor/android": "^8.0.1",
     "@capacitor/app": "^8.0.0",
     "@capacitor/app-launcher": "^8.0.0",
@@ -20,7 +21,6 @@
     "@capacitor/haptics": "^8.0.0",
     "@capacitor/ios": "^8.0.1",
     "@capacitor/preferences": "^8.0.0",
-    "@capacitor/push-notifications": "^8.0.0",
     "@capacitor/status-bar": "^8.0.0",
     "@ducanh2912/next-pwa": "^10.2.9",
     "@react-email/components": "^1.0.2",
