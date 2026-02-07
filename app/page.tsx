@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import CartSenseLogo from "@/app/CartSenseLogo.svg";
@@ -69,16 +70,30 @@ const jsonLd = {
 };
 
 export default function Home() {
+  const router = useRouter();
   const [isNative, setIsNative] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
-    // Check for Capacitor native bridge
     const windowCapacitor = (window as any).Capacitor;
     const native = windowCapacitor?.isNativePlatform?.() ?? false;
     setIsNative(native);
-    setIsChecking(false);
-  }, []);
+
+    if (native) {
+      // On native, try to restore a stored session before showing welcome
+      import("@/lib/sessionPersistence").then(({ restoreSession }) => {
+        restoreSession().then((restored) => {
+          if (restored) {
+            router.replace("/prompt");
+          } else {
+            setIsChecking(false);
+          }
+        });
+      });
+    } else {
+      setIsChecking(false);
+    }
+  }, [router]);
 
   // Show nothing while checking to prevent flash
   if (isChecking) {

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Capacitor } from "@capacitor/core";
 import { auth } from "@/lib/firebaseClient";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { createAndStoreSession } from "@/lib/sessionPersistence";
+import { createAndStoreSession, restoreSession } from "@/lib/sessionPersistence";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { Mail, Lock, ArrowRight, ArrowLeft, Eye, EyeOff } from "lucide-react";
@@ -24,9 +24,21 @@ export default function LoginPage() {
     const [showPassword, setShowPassword] = useState(false);
     const [showMobileWelcome, setShowMobileWelcome] = useState(false);
     const [isNativeApp, setIsNativeApp] = useState(false);
+    const [restoringSession, setRestoringSession] = useState(true);
 
     const searchParams = useSearchParams();
     const mode = searchParams.get("mode");
+
+    // Try to restore session before showing login form
+    useEffect(() => {
+        restoreSession().then((restored) => {
+            if (restored) {
+                router.replace("/prompt");
+            } else {
+                setRestoringSession(false);
+            }
+        });
+    }, [router]);
 
     // Check if we should show mobile welcome screen
     useEffect(() => {
@@ -47,6 +59,11 @@ export default function LoginPage() {
             localStorage.setItem("pendingShareId", shareId);
         }
     }, [searchParams]);
+
+    // Show nothing while attempting session restore
+    if (restoringSession) {
+        return null;
+    }
 
     // Show mobile welcome carousel on native apps
     if (showMobileWelcome) {
